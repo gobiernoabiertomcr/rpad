@@ -30,7 +30,7 @@
         .dq-bajada { margin: -14px 0 20px; color: var(--sg-suave); max-width: 72ch; line-height: 1.5; }
         .visualmente-oculto { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
-        /* Foco visible: anillo de tinta con el halo de sol, como en Proyectos (también en las casillas y la lista de la pestaña Correo) */
+        /* Foco visible: anillo de tinta con el halo de sol, como en Proyectos (también en las casillas y la lista de Envío y votación) */
         .dq-pagina a:focus-visible, .dq-pagina button:focus-visible, .dq-pagina summary:focus-visible, .dq-pagina [tabindex]:focus-visible,
         .dq-pagina input:focus-visible, .dq-pagina select:focus-visible,
         .dq-modal :focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; box-shadow: 0 0 0 5px var(--sol-fuerte); }
@@ -96,7 +96,7 @@
         .dq-tarjeta-rotulo svg { flex: none; width: 14px; height: 14px; }
         .dq-tarjeta-rotulo + .dq-principal-diario { margin-top: 3px; }
         .dq-principal-diario { margin: 4px 0 0; color: var(--sg-texto); font-weight: 600; font-size: 0.95rem; line-height: 1.4; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-        .dq-tarjeta-pie { margin-top: auto; padding-top: 14px; }
+        .dq-tarjeta-pie { margin-top: auto; padding-top: 14px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; }
 
         /* El envío del correo de cada edición: el texto dice qué pasó y el ícono lo acompaña (nunca solo el color) */
         .dq-envio { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 2px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 700; line-height: 1.2; background: var(--sg-sutil); color: var(--sg-suave); }
@@ -125,7 +125,7 @@
         .dq-ed-fecha { margin: 0; font-family: var(--f-titulo); font-weight: 800; font-size: clamp(2rem, 1.25rem + 2.5vw, 3.15rem); line-height: 1.02; letter-spacing: -0.03em; color: var(--sg-tinta); text-wrap: balance; overflow-wrap: anywhere; }
         .dq-ed-paquete { margin: 10px 0 0; color: var(--sg-suave); font-size: 0.9rem; line-height: 1.45; overflow-wrap: anywhere; }
         /* Las pestañas, separadas por un filete; la elegida, en tinta y con una barra gruesa debajo (no es solo el color). Distintas de las
-           de página (Ediciones y Correo), que quedan arriba. Si no entran (debajo de 360 px), la fila corre de costado, sin barra a la
+           de página (Ediciones y Envío y votación), que quedan arriba. Si no entran (debajo de 360 px), la fila corre de costado, sin barra a la
            vista, en lugar de encimarlas: por eso el filete de abajo y la barra van por dentro (lo que sale de la fila se cortaría). La
            primera deja 8 px a la izquierda: el anillo del foco va por dentro y taparía la «G» */
         .dq-ed-pestanas { display: flex; margin: 20px 0 0; border-top: 4px double var(--sg-tinta); box-shadow: inset 0 -1px 0 var(--sg-linea); overflow-x: auto; scrollbar-width: none; scroll-margin-top: calc(var(--header-height) + 12px); }
@@ -253,9 +253,8 @@
         .dq-et-validar { background: var(--sg-sol); color: var(--sg-ambar); }
         /* El borde por dentro: la etiqueta mide lo mismo que las otras */
         .dq-et-repite { background: #fff; color: var(--sg-texto); box-shadow: inset 0 0 0 1px var(--sg-borde-control); }
-        /* Para la administración, al final de la fila de las etiquetas: «Elegir como principal del equipo» o «Es la principal del equipo» */
-        .dq-elegir-esta, .dq-es-del-equipo { margin-left: auto; }
-        .dq-es-del-equipo { font-size: 0.84rem; font-weight: 600; color: var(--sg-suave); }
+        /* Con la votación abierta, para quien está en la foto, al final de la fila de las etiquetas: «Votar» o «Cambiar mi orden» */
+        .dq-votar-esta { margin-left: auto; }
         /* El título recibe el foco al elegir la propuesta: con el teclado lleva el anillo de la página; con el mouse, no */
         .dq-prop-titulo { margin: 0; font-family: var(--f-titulo); font-weight: 750; font-size: clamp(1.45rem, 1.15rem + 0.95vw, 1.9rem); line-height: 1.13; letter-spacing: -0.024em; color: var(--sg-tinta); text-wrap: balance; overflow-wrap: anywhere; scroll-margin-top: calc(var(--header-height) + 20px); }
         .dq-prop-titulo:focus:not(:focus-visible) { outline: none; box-shadow: none; }
@@ -396,7 +395,7 @@
         .dq-paso-titulo { font-size: 0.86rem; font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .dq-paso-siguiente { text-align: right; }
 
-        /* La pestaña Correo (solo administración): «Envío por correo» y «Quién lo recibe» */
+        /* La pestaña «Envío y votación» (solo administración): «Envío por correo», la votación y «Las personas» */
         .dq-correo { display: grid; gap: 16px; max-width: 960px; }
         .dq-caja { background: #fff; border: 1px solid var(--sg-linea); border-radius: 16px; padding: 20px 24px; }
         .dq-caja h2 { margin: 0; font-family: var(--f-titulo); font-weight: 700; font-size: 1.15rem; letter-spacing: -0.01em; color: var(--sg-tinta); }
@@ -420,10 +419,15 @@
         .dq-tabla-caja { overflow-x: auto; }
         .dq-tabla { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 0.92rem; }
         .dq-tabla th { text-align: left; font-size: 0.8rem; font-weight: 700; color: var(--sg-suave); padding: 8px 10px; border-bottom: 1px solid var(--sg-linea); }
-        .dq-tabla td { padding: 10px; border-bottom: 1px solid var(--sg-sutil); vertical-align: middle; color: var(--sg-texto); overflow-wrap: anywhere; }
+        .dq-tabla td { padding: 10px; border-bottom: 1px solid var(--sg-sutil); vertical-align: middle; color: var(--sg-texto); }
+        /* Una palabra nunca se corta a la mitad: lo que no entra se desliza dentro de .dq-tabla-caja, no la página. El rol va en un solo renglón;
+           el correo, entero (sin cortes) para que no quede una letra sola en el renglón de abajo */
+        .dq-tabla:not(.dq-tabla-votos) td:nth-child(2), .dq-tabla:not(.dq-tabla-votos) th:nth-child(2), .dq-tabla .dq-col-correo { white-space: nowrap; }
         .dq-tabla td small { display: block; color: var(--sg-suave); font-size: 0.8rem; }
         .dq-tabla td small.dq-licencia { color: var(--sg-ambar); font-weight: 600; }
-        .dq-tabla .dq-col-recibe { width: 110px; text-align: center; }
+        .dq-tabla .dq-col-recibe, .dq-tabla .dq-col-vota { width: 110px; text-align: center; }
+        .dq-que-es { margin: 0 0 10px; padding-left: 18px; color: var(--sg-texto); line-height: 1.5; max-width: 78ch; }
+        .dq-que-es li + li { margin-top: 2px; }
         .dq-tabla input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--sg-tinta); cursor: pointer; }
         .dq-correo-pie { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-top: 14px; }
 
@@ -446,12 +450,50 @@
         .dq-opciones input[type="radio"] { width: 18px; height: 18px; margin: 2px 0 0; flex: none; accent-color: var(--sg-tinta); }
         .dq-opciones select { margin: -4px 0 0 28px; height: 38px; border-radius: 10px; border: 1px solid var(--sg-borde-control); padding: 0 10px; font: inherit; color: var(--sg-texto); background: #fff; max-width: calc(100% - 28px); min-width: min(260px, calc(100% - 28px)); }
         .dq-reenvio-nota { margin: 14px 0 0; color: var(--sg-suave); font-size: 0.88rem; }
-        /* El diálogo de «La principal del equipo»: el texto, una opción por propuesta (lo largo no ensancha) y «Guardar» apagado sin una
-           marcada */
+        /* La votación de la principal del equipo (spec 2026-11-23-dato-quincena-principal-votacion, 4; la maqueta aprobada, forma B)
+           La franja abierta: el orden de quien mira, en chico; «Falta tu voto», la pastilla en espera, en un renglón */
+        .dq-tu-orden { margin: 10px 0 0; padding: 10px 12px; background: #fff; border: 1px solid var(--sg-linea); border-radius: 10px; max-width: 760px; }
+        .dq-tu-orden-titulo { margin: 0 0 4px; font-size: 0.8rem; font-weight: 700; color: var(--sg-suave); text-transform: uppercase; letter-spacing: 0.04em; }
+        .dq-tu-orden ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+        .dq-tu-orden li { font-size: 0.88rem; line-height: 1.4; color: var(--sg-texto); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .dq-tu-orden li b { display: inline-block; min-width: 2.2em; color: var(--sg-tinta); }
+        .dq-franja-abierta .dq-franja-acciones { align-items: center; }
+        .dq-falta-tu-voto { white-space: nowrap; }
+        /* La franja cerrada: cómo ganó, en negrita, y los votos plegados; la ganadora con fondo y «Ganó» con el tilde (no es solo el color).
+           «Ver la propuesta», arriba: con los votos abiertos la franja crece y, centrado, quedaría lejos del título */
+        .dq-franja-cerrada { align-items: start; grid-template-columns: minmax(0, 1fr); }
+        .dq-franja-cerrada .dq-franja-acciones { justify-content: flex-start; }
+        .dq-resultado { margin: 6px 0 0; font-weight: 700; color: var(--sg-tinta); font-size: 0.92rem; line-height: 1.45; overflow-wrap: anywhere; }
+        .dq-votos { margin: 10px 0 0; }
+        .dq-votos summary { cursor: pointer; font-weight: 700; color: var(--sg-tinta); font-size: 0.9rem; width: fit-content; }
+        .dq-votos-regla { margin: 8px 0; color: var(--sg-suave); font-size: 0.84rem; line-height: 1.45; max-width: 80ch; }
+        .dq-tabla-votos { font-size: 0.86rem; }
+        .dq-tabla-votos td, .dq-tabla-votos th[scope="row"] { border-bottom: 1px solid var(--sg-linea); }
+        .dq-tabla-votos th[scope="row"] { font-weight: 600; text-align: left; max-width: 420px; color: var(--sg-texto); overflow-wrap: anywhere; }
+        .dq-tabla-votos td { text-align: center; white-space: nowrap; }
+        .dq-tabla-votos .dq-col-puntos { text-align: right; }
+        .dq-tabla-votos tr.dq-gana th, .dq-tabla-votos tr.dq-gana td { background: var(--sg-cielo); }
+        .dq-gano { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; font-size: 0.78rem; font-weight: 700; color: var(--sg-verde); }
+        .dq-gano svg { width: 13px; height: 13px; flex: none; }
+        .dq-im-chica { vertical-align: middle; }
+        /* «Tu N.º»: en la propuesta, junto a las etiquetas; en el índice, con el estilo de las otras marcas */
+        .dq-et-tuyo, .dq-im-tuyo { background: var(--sg-cielo); color: var(--sg-tinta); box-shadow: inset 0 0 0 1.5px var(--sg-azul); }
+        /* El diálogo «Tu orden»: el texto del servidor, una fila por propuesta para tocarla en orden (la tocada, con el fondo, el borde, una
+           barra y su puesto: no es solo el color), lo que falta y «Empezar de nuevo»; «Guardar mi orden», apagado hasta tener todas */
         .dq-dialogo-texto { margin: 0 0 14px; color: var(--sg-texto); line-height: 1.5; }
-        .dq-opcion-aclara { color: var(--sg-suave); font-weight: 600; }
-        #dq-principal .dq-opciones label { overflow-wrap: anywhere; }
-        #dq-principal-guardar:disabled { opacity: 0.55; }
+        .dq-modal.dq-modal-voto { max-width: 640px; }
+        .dq-tocar-lista { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+        .dq-tocar { width: 100%; display: grid; grid-template-columns: 2.6em minmax(0, 1fr); gap: 10px; align-items: center; padding: 10px; border: 1.5px solid var(--sg-linea); border-radius: 10px; background: #fff; text-align: left; font: inherit; color: var(--sg-texto); cursor: pointer; }
+        .dq-tocar:hover { border-color: var(--sg-borde-control); }
+        .dq-tocada { background: var(--sg-cielo); border-color: var(--sg-tinta); box-shadow: inset 4px 0 0 var(--sg-tinta); }
+        .dq-pos { width: 2.1em; height: 2.1em; display: inline-grid; place-items: center; border-radius: 50%; border: 1.5px dashed var(--sg-borde-control); font-family: var(--f-titulo); font-weight: 800; font-size: 1.05rem; color: var(--sg-tinta); }
+        .dq-tocada .dq-pos { border: 0; background: var(--sg-tinta); color: #fff; }
+        .dq-tocar-tit { font-size: 0.9rem; line-height: 1.35; color: var(--sg-texto); overflow-wrap: anywhere; }
+        .dq-tocar-tit b { color: var(--sg-tinta); }
+        .dq-tocar-pie { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 10px 0 0; }
+        .dq-falta-tocar { margin: 0; font-size: 0.88rem; color: var(--sg-suave); }
+        .dq-de-nuevo { font-size: 0.88rem; font-weight: 700; }
+        #dq-voto-guardar:disabled { opacity: 0.55; }
 
         /* «Ver»: el texto del correo o los cálculos, en un <pre> */
         .dq-modal { max-width: 760px; border-radius: 18px; }
@@ -502,7 +544,7 @@
             .dq-hoja { margin: 0 calc(-1 * var(--relleno-main, 16px)); padding: 20px 16px 28px; border-left: 0; border-right: 0; border-radius: 0; }
             .dq-franja { grid-template-columns: minmax(0, 1fr); padding: 12px 14px; }
             .dq-franja-acciones { justify-content: flex-start; }
-            .dq-elegir-esta, .dq-es-del-equipo { margin-left: 0; }
+            .dq-votar-esta { margin-left: 0; }
             .dq-ed-fecha { font-size: clamp(1.75rem, 1.2rem + 3vw, 2.2rem); }
             .dq-ed-pestana { gap: 6px; padding: 12px 8px 14px; font-size: 0.94rem; white-space: normal; text-align: left; line-height: 1.15; }
             .dq-ed-pestana + .dq-ed-pestana::before { top: 12px; bottom: 14px; }
@@ -538,13 +580,14 @@
             .dq-modal .modal-footer { flex-wrap: wrap; }
             .dq-proximas li { grid-template-columns: minmax(0, 1fr); gap: 0; }
             .dq-tabla .dq-col-correo { display: none; }
+            .dq-tabla .dq-col-recibe, .dq-tabla .dq-col-vota { width: 76px; }
             .dq-caja { padding: 16px; }
         }
         /* Sin movimiento: la flecha de los plegados no gira, los diálogos aparecen sin achicarse ni agrandarse y el interruptor cambia
            sin deslizarse */
         @media (prefers-reduced-motion: reduce) {
             .dq-plegado > summary svg { transition: none; }
-            #dq-modal, #dq-reenvio, #dq-principal, .dq-modal, .modal-overlay.active .dq-modal { transform: none; transition: none; }
+            #dq-modal, #dq-reenvio, #dq-voto, .dq-modal, .modal-overlay.active .dq-modal { transform: none; transition: none; }
             .dq-switch input, .dq-switch input::after { transition: none; }
         }
     </style>
@@ -629,7 +672,7 @@
                 <!-- La región viva de la página: dato-quincena.js anuncia acá «Copiado» y los errores (lo que se vuelve a dibujar no la toca) -->
                 <p class="visualmente-oculto" id="dq-anuncio" role="status"></p>
 
-                <!-- Las pestañas Ediciones y Correo, solo para la administración: las dibuja dato-quincena.js -->
+                <!-- Las pestañas Ediciones y «Envío y votación», solo para la administración: las dibuja dato-quincena.js -->
                 <div id="dq-pestanas"></div>
 
                 <noscript><p class="dq-estado">Para ver las ediciones hace falta JavaScript.</p></noscript>
@@ -708,21 +751,24 @@
         </div>
     </div>
 
-    <!-- «La principal del equipo» (solo administración, spec 2026-11-21-dato-quincena-principal-equipo, 4): dato-quincena.js llena las
-         opciones (una por propuesta, marcada la vigente) y guarda con «Guardar», deshabilitado mientras no haya una marcada -->
-    <div class="modal-overlay" id="dq-principal">
-        <div class="modal dq-modal dq-modal-chico" role="dialog" aria-modal="true" aria-labelledby="dq-principal-titulo" aria-describedby="dq-principal-texto">
+    <!-- «Tu orden»: votar la principal del equipo (cualquier rol en la lista de la edición, spec 2026-11-23-dato-quincena-principal-votacion,
+         4). dato-quincena.js pone el texto del servidor, dibuja las propuestas para tocarlas en orden y lo que falta, anuncia lo que falta
+         en su región viva (adentro: con aria-modal, lo de afuera no se anuncia) y guarda con «Guardar mi orden», deshabilitado hasta que
+         todas tienen su puesto -->
+    <div class="modal-overlay" id="dq-voto">
+        <div class="modal dq-modal dq-modal-chico dq-modal-voto" role="dialog" aria-modal="true" aria-labelledby="dq-voto-titulo" aria-describedby="dq-voto-texto">
             <div class="modal-header">
-                <h2 class="modal-title" id="dq-principal-titulo">La principal del equipo</h2>
+                <h2 class="modal-title" id="dq-voto-titulo">Tu orden</h2>
                 <button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;</button>
             </div>
             <div class="modal-body">
-                <p class="dq-dialogo-texto" id="dq-principal-texto">Elegí la propuesta que el equipo va a trabajar como principal. Se puede cambiar cuando quieran.</p>
-                <div id="dq-principal-cuerpo"></div>
+                <p class="dq-dialogo-texto" id="dq-voto-texto"></p>
+                <div id="dq-voto-cuerpo"></div>
+                <p class="visualmente-oculto" id="dq-voto-anuncio" role="status"></p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="dq-btn dq-btn-borde" data-cerrar>Cancelar</button>
-                <button type="button" class="dq-btn dq-btn-tinta" id="dq-principal-guardar" disabled>Guardar</button>
+                <button type="button" class="dq-btn dq-btn-tinta" id="dq-voto-guardar" disabled>Guardar mi orden</button>
             </div>
         </div>
     </div>
@@ -732,6 +778,6 @@
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/dato-quincena.js?v=20261237"></script>
+    <script src="js/dato-quincena.js?v=20261238"></script>
 </body>
 </html>

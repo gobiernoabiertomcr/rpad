@@ -374,9 +374,10 @@ export const ultimaEdicionQueSalio = async (conexion = pool) => {
  */
 export const personasDelCorreo = async (hoy, conexion = pool) => {
   const [filas] = await conexion.query(
-    `SELECT u.id, u.nombre_completo, u.cargo, u.rol, u.email, d.usuario_id IS NOT NULL AS recibe, l.hasta
+    `SELECT u.id, u.nombre_completo, u.cargo, u.rol, u.email, d.usuario_id IS NOT NULL AS recibe, v.usuario_id IS NOT NULL AS vota, l.hasta
      FROM usuarios u
      LEFT JOIN dato_quincena_destinatarios d ON d.usuario_id = u.id
+     LEFT JOIN dato_quincena_votantes v ON v.usuario_id = u.id
      LEFT JOIN (SELECT usuario_id, DATE_FORMAT(MAX(hasta), '%Y-%m-%d') AS hasta
                 FROM usuarios_licencias
                 WHERE anulada = 0 AND desde <= ? AND hasta >= ?
@@ -385,8 +386,9 @@ export const personasDelCorreo = async (hoy, conexion = pool) => {
      ORDER BY u.nombre_completo, u.id`,
     [hoy, hoy]
   );
-  return filas.map(({ id, nombre_completo, cargo, rol, email, recibe, hasta }) => ({
-    id: Number(id), nombre: nombre_completo, cargo: cargo ?? null, rol, email, recibe: Number(recibe) === 1, hasta: hasta ?? null
+  return filas.map(({ id, nombre_completo, cargo, rol, email, recibe, vota, hasta }) => ({
+    id: Number(id), nombre: nombre_completo, cargo: cargo ?? null, rol, email, recibe: Number(recibe) === 1,
+    vota: Number(vota) === 1, hasta: hasta ?? null
   }));
 };
 
@@ -433,29 +435,24 @@ export const guardarEnvioActivo = (activo, usuarioId, ahora, conexion = pool) =>
  * toda la lista» compara con esa hora, y volver a guardar no lo hace llegar de nuevo); quien entra lleva `usuarioId` y `ahora`;
  * quien no está en `ids` sale, también una persona inactiva que había quedado en la tabla. Resuelve true si la guardó.
  */
-export const reemplazarDestinatarios = async (ids, usuarioId, ahora) => {
+export const reemplazarDestinatarios = async (ids, usuarioId, ahora, votantes = null) => {
   const conexion = await pool.getConnection();
   try {
     await conexion.beginTransaction();
     try {
-      if (ids.length > 0) {
-        // Con las filas tomadas: nadie las desactiva hasta el commit
+      // Las dos listas piden usuarios activos, con las filas tomadas: nadie las desactiva hasta el commit
+      const todos = [...new Set([...ids, ...(votantes ?? [])])];
+      if (todos.length > 0) {
         const [activos] = await conexion.query(
-          'SELECT id FROM usuarios WHERE id IN (?) AND activo = 1 LOCK IN SHARE MODE', [ids]
+          'SELECT id FROM usuarios WHERE id IN (?) AND activo = 1 LOCK IN SHARE MODE', [todos]
         );
-        if (activos.length !== ids.length) {
+        if (activos.length !== todos.length) {
           await conexion.rollback();
           return false;
         }
-        await conexion.query('DELETE FROM dato_quincena_destinatarios WHERE usuario_id NOT IN (?)', [ids]);
-        await conexion.query(
-          `INSERT INTO dato_quincena_destinatarios (usuario_id, agregado_por, agregado_at) VALUES ?
-           ON DUPLICATE KEY UPDATE usuario_id = usuario_id`,
-          [ids.map((id) => [id, usuarioId, ahora])]
-        );
-      } else {
-        await conexion.query('DELETE FROM dato_quincena_destinatarios');
       }
+      await reemplazarLista(conexion, 'dato_quincena_destinatarios', ids, usuarioId, ahora);
+      if (votantes !== null) await reemplazarLista(conexion, 'dato_quincena_votantes', votantes, usuarioId, ahora);
       await conexion.commit();
       return true;
     } catch (error) {
@@ -465,6 +462,20 @@ export const reemplazarDestinatarios = async (ids, usuarioId, ahora) => {
   } finally {
     conexion.release();
   }
+};
+
+// Deja en la tabla (una de las dos listas, nombre fijo) solo a `ids`: quien sigue conserva su fila
+const reemplazarLista = async (conexion, tabla, ids, usuarioId, ahora) => {
+  if (ids.length === 0) {
+    await conexion.query(`DELETE FROM ${tabla}`);
+    return;
+  }
+  await conexion.query(`DELETE FROM ${tabla} WHERE usuario_id NOT IN (?)`, [ids]);
+  await conexion.query(
+    `INSERT INTO ${tabla} (usuario_id, agregado_por, agregado_at) VALUES ?
+     ON DUPLICATE KEY UPDATE usuario_id = usuario_id`,
+    [ids.map((id) => [id, usuarioId, ahora])]
+  );
 };
 
 /**

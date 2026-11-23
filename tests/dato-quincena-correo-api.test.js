@@ -25,7 +25,7 @@ import { sendEmail } from '../services/emailService.js';
 
 const NO_EXISTE = { success: false, error: 'No existe esa edición.' };
 const RECHAZOS = Object.fromEntries(Object.entries(MENSAJES_CORREO).map(([clave, error]) => [clave, { success: false, error }]));
-const TABLAS = ['dato_quincena_envios', 'dato_quincena_correos', 'dato_quincena_destinatarios', 'dato_quincena_adjuntos',
+const TABLAS = ['dato_quincena_envios', 'dato_quincena_correos', 'dato_quincena_destinatarios', 'dato_quincena_votantes', 'dato_quincena_adjuntos',
   'dato_quincena_propuestas', 'dato_quincena_ediciones', 'usuarios_licencias'];
 // Las seis rutas, con un id que existe (`:id`) o no
 const SEIS = (id) => [['GET', '/dato-quincena/correo'], ['PUT', '/dato-quincena/correo/envio'],
@@ -108,6 +108,13 @@ const aLaLista = async (...personas) => {
     await query("INSERT INTO dato_quincena_destinatarios (usuario_id, agregado_at) VALUES (?, '2026-11-01 09:00:00')", [quien.id]);
   }
 };
+const aVotar = async (...personas) => {
+  for (const quien of personas) {
+    await query("INSERT INTO dato_quincena_votantes (usuario_id, agregado_at) VALUES (?, '2026-11-02 10:00:00')", [quien.id]);
+  }
+};
+const quienesVotan = async () => (await query('SELECT usuario_id FROM dato_quincena_votantes ORDER BY usuario_id'))
+  .map((fila) => Number(fila.usuario_id));
 const prender = (activo) => query('UPDATE dato_quincena_correo_config SET envio_activo = ? WHERE id = 1', [activo ? 1 : 0]);
 
 // Llega una edición por el mismo camino que el POST (guardarEdicion), con el interruptor como esté: una regular queda
@@ -255,7 +262,7 @@ describe('la configuración (GET /dato-quincena/correo)', () => {
       const despues = hoyArgentina();
       assert.equal(res.status, 200, JSON.stringify(res.body));
       assert.equal(res.body.success, true);
-      assert.deepEqual(Object.keys(res.body.data), ['envio_activo', 'proximas', 'personas', 'reciben_texto']);
+      assert.deepEqual(Object.keys(res.body.data), ['envio_activo', 'proximas', 'personas', 'reciben_texto', 'votan_texto']);
       const { envio_activo, proximas, personas, reciben_texto } = res.body.data;
       assert.equal(envio_activo, false);
       // El pie de «Quién lo recibe»: cuenta las personas activas que lo reciben (la inactiva de la lista no)
@@ -269,10 +276,10 @@ describe('la configuración (GET /dato-quincena/correo)', () => {
 
       const deLaPrueba = personas.filter((p) => p.nombre.startsWith('Prueba'));
       assert.deepEqual(deLaPrueba, [
-        { id: dos.id, nombre: dos.nombre, cargo: null, rol: 'Editor', email: dos.email, recibe: false,
+        { id: dos.id, nombre: dos.nombre, cargo: null, rol: 'Editor', email: dos.email, recibe: false, vota: false,
           licencia: textoDeLaLicencia(hasta, hoy) },
-        { id: tres.id, nombre: tres.nombre, cargo: null, rol: 'Lector', email: tres.email, recibe: false, licencia: null },
-        { id: uno.id, nombre: uno.nombre, cargo: 'Cargo inventado', rol: 'Lector', email: uno.email, recibe: true, licencia: null }
+        { id: tres.id, nombre: tres.nombre, cargo: null, rol: 'Lector', email: tres.email, recibe: false, vota: false, licencia: null },
+        { id: uno.id, nombre: uno.nombre, cargo: 'Cargo inventado', rol: 'Lector', email: uno.email, recibe: true, vota: false, licencia: null }
       ]);
       assert.match(deLaPrueba[0].licencia, /^De licencia hasta el \d{2}\/\d{2}(\/\d{4})?$/);
       // Todas las activas (también las de la sesión), por nombre; la inactiva no, aunque esté en la lista
@@ -396,6 +403,81 @@ describe('quién lo recibe (PUT /dato-quincena/correo/destinatarios)', () => {
     const vacia = await pedir(api, 'PUT', '/dato-quincena/correo/destinatarios', 'editor', { usuarios: [] });
     assert.deepEqual(vacia.body, { success: true, data: { usuarios: [] }, message: 'Se guardó la lista: no lo recibe nadie.' });
     assert.deepEqual(await laLista(), []);
+  });
+});
+
+describe('quienes votan (GET y PUT del correo)', () => {
+  it('el GET trae vota en cada persona y votan_texto', async () => {
+    const uno = await persona({ clave: 'Uno' });
+    const dos = await persona({ clave: 'Dos' });
+    await aVotar(uno);
+    let res = await leer('/dato-quincena/correo');
+    assert.equal(res.body.data.personas.find((p) => p.id === uno.id).vota, true);
+    assert.equal(res.body.data.personas.find((p) => p.id === dos.id).vota, false);
+    const esperado = res.body.data.personas.filter((p) => p.vota).length;
+    assert.equal(res.body.data.votan_texto, esperado === 1 ? 'Vota 1 persona.' : `Votan ${esperado} personas.`);
+    await query('DELETE FROM dato_quincena_votantes');
+    res = await leer('/dato-quincena/correo');
+    assert.equal(res.body.data.votan_texto, 'No vota nadie.');
+  });
+
+  it('el PUT con las dos listas las guarda y dice las dos; votantes queda ordenado en data', async () => {
+    const uno = await persona({ clave: 'Uno' });
+    const dos = await persona({ clave: 'Dos' });
+    const tres = await persona({ clave: 'Tres' });
+    await aVotar(uno);
+    const res = await pedir(api, 'PUT', '/dato-quincena/correo/destinatarios', 'admin',
+      { usuarios: [uno.id, dos.id], votantes: [tres.id, dos.id, uno.id] });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const ordenados = [uno.id, dos.id, tres.id].sort((a, b) => a - b);
+    assert.deepEqual(res.body, {
+      success: true,
+      data: { usuarios: [uno.id, dos.id].sort((a, b) => a - b), votantes: ordenados },
+      message: 'Guardamos la lista: lo reciben 2 personas y votan 3.'
+    });
+    assert.deepEqual(await quienesVotan(), ordenados);
+    const fila = (await query('SELECT agregado_por FROM dato_quincena_votantes WHERE usuario_id = ?', [tres.id]))[0];
+    assert.equal(Number(fila.agregado_por), usuarios.admin.id);
+    const vacia = await pedir(api, 'PUT', '/dato-quincena/correo/destinatarios', 'admin', { usuarios: [], votantes: [] });
+    assert.equal(vacia.body.message, 'Guardamos la lista: no lo recibe nadie y no vota nadie.');
+    assert.deepEqual(await quienesVotan(), []);
+  });
+
+  it('sin votantes (la página de antes): la lista de votantes queda y el mensaje es el de siempre', async () => {
+    const uno = await persona({ clave: 'Uno' });
+    const dos = await persona({ clave: 'Dos' });
+    await aVotar(uno, dos);
+    const res = await pedir(api, 'PUT', '/dato-quincena/correo/destinatarios', 'admin', { usuarios: [uno.id] });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body, {
+      success: true, data: { usuarios: [uno.id] }, message: 'Se guardó la lista: lo recibe 1 persona.'
+    });
+    assert.deepEqual(await quienesVotan(), [uno.id, dos.id].sort((a, b) => a - b));
+  });
+
+  it('votantes que no sirve (inactivo, repetido, texto, ausente de la base): 400 y no cambia ninguna de las dos', async () => {
+    const uno = await persona({ clave: 'Uno' });
+    const dos = await persona({ clave: 'Dos' });
+    const inactiva = await persona({ clave: 'Tres', activo: 0 });
+    await aLaLista(uno);
+    await aVotar(uno);
+    const listaAntes = await laLista();
+    for (const votantes of [[dos.id, inactiva.id], [dos.id, dos.id], 'todas', null, [dos.id, 999999], [0], [true]]) {
+      const res = await pedir(api, 'PUT', '/dato-quincena/correo/destinatarios', 'admin', { usuarios: [dos.id], votantes });
+      assert.equal(res.status, 400, JSON.stringify(votantes));
+      assert.deepEqual(res.body, RECHAZOS.listaInvalida);
+      assert.deepEqual(await laLista(), listaAntes);
+      assert.deepEqual(await quienesVotan(), [uno.id]);
+    }
+  });
+
+  it('un lector, un colaborador o sin sesión: como hoy (403 y 401), sin cambios', async () => {
+    const uno = await persona({ clave: 'Uno' });
+    for (const [rol, status] of [['lector', 403], ['colaborador', 403], [null, 401]]) {
+      const res = await pedir(api, 'PUT', '/dato-quincena/correo/destinatarios', rol, { usuarios: [], votantes: [uno.id] });
+      assert.equal(res.status, status);
+    }
+    assert.deepEqual(await quienesVotan(), []);
   });
 });
 

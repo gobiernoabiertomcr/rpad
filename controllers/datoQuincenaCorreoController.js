@@ -26,6 +26,7 @@ import {
   sePuedeReenviar, textoDelReenvio, listaDePersonas, aQuienReenviar, textoDeLaLicencia, textoDelInterruptor,
   textoDeLaListaGuardada, textoDeLosQueReciben
 } from '../services/datoQuincenaCorreoReglas.js';
+import { textoDeLosQueVotan, textoDeLasListasGuardadas } from '../services/datoQuincenaVotacionReglas.js';
 import {
   leerConfig, correoDe, listaDeHoy, personasDelCorreo, ultimaRegular, guardarEnvioActivo, reemplazarDestinatarios,
   edicionDelCorreo, enviosConNombres, usuarioDeLaPrueba
@@ -78,8 +79,8 @@ export const verCorreo = async (req, res) => {
       leerConfig(), ultimaRegular(), personasDelCorreo(hoy), leerLosFeriados()
     ]);
     const { filas, calendario } = feriados;
-    const activas = personas.map(({ id, nombre, cargo, rol, email, recibe, hasta }) => ({
-      id, nombre, cargo, rol: TEXTO_ROL[rol] ?? rol, email, recibe, licencia: textoDeLaLicencia(hasta, hoy)
+    const activas = personas.map(({ id, nombre, cargo, rol, email, recibe, vota, hasta }) => ({
+      id, nombre, cargo, rol: TEXTO_ROL[rol] ?? rol, email, recibe, vota, licencia: textoDeLaLicencia(hasta, hoy)
     })).sort(porNombre);
     res.json({
       success: true,
@@ -87,7 +88,8 @@ export const verCorreo = async (req, res) => {
         envio_activo: envioActivo,
         proximas: proximasEdiciones({ ultimaRegular: ultima, hoy, calendario, filasDeFeriados: filas }),
         personas: activas,
-        reciben_texto: textoDeLosQueReciben(activas.filter((persona) => persona.recibe === true).length)
+        reciben_texto: textoDeLosQueReciben(activas.filter((persona) => persona.recibe === true).length),
+        votan_texto: textoDeLosQueVotan(activas.filter((persona) => persona.vota === true).length)
       }
     });
   } catch (error) {
@@ -112,17 +114,26 @@ export const cambiarEnvio = async (req, res) => {
 };
 
 /**
- * PUT /api/dato-quincena/correo/destinatarios (`{ usuarios: [ids] }`): la lista completa de quienes lo reciben, ids sin repetir
+ * PUT /api/dato-quincena/correo/destinatarios (`{ usuarios: [ids], votantes: [ids] }`): la lista completa de quienes lo reciben y, si viene `votantes`, la de quienes votan (sin él, esa no cambia), ids sin repetir
  * de usuarios activos (vacía, nadie). Si no, 400 «La lista de personas no es válida.» y nada cambia. Responde los ids guardados,
  * de menor a mayor.
  */
 export const cambiarDestinatarios = async (req, res) => {
   const ids = listaDePersonas(req.body?.usuarios);
   if (ids === null) return rechazar(res, 400, 'listaInvalida');
+  // Sin `votantes` (la página de antes), la lista de quienes votan no se toca y el mensaje es el de siempre
+  const vinoVotantes = req.body?.votantes !== undefined;
+  const votantes = vinoVotantes ? listaDePersonas(req.body.votantes) : null;
+  if (vinoVotantes && votantes === null) return rechazar(res, 400, 'listaInvalida');
+  const ordenar = (lista) => [...lista].sort((uno, otro) => uno - otro);
   try {
-    if (!(await reemplazarDestinatarios(ids, req.user.userId, ahoraArgentina()))) return rechazar(res, 400, 'listaInvalida');
+    if (!(await reemplazarDestinatarios(ids, req.user.userId, ahoraArgentina(), votantes))) return rechazar(res, 400, 'listaInvalida');
     res.json({
-      success: true, data: { usuarios: [...ids].sort((uno, otro) => uno - otro) }, message: textoDeLaListaGuardada(ids.length)
+      success: true,
+      data: vinoVotantes ? { usuarios: ordenar(ids), votantes: ordenar(votantes) } : { usuarios: ordenar(ids) },
+      message: vinoVotantes
+        ? textoDeLasListasGuardadas({ reciben: ids.length, votan: votantes.length })
+        : textoDeLaListaGuardada(ids.length)
     });
   } catch (error) {
     errorInterno(res, MENSAJE_AL_GUARDAR_LA_LISTA, error);

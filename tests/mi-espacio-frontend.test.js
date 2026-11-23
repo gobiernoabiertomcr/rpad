@@ -1155,7 +1155,7 @@ const FERIADO_DIVERSIDAD = Object.freeze({ ...FERIADO_SOBERANIA, id: 2, fecha: '
 const respuestaDeEventos = ({ desde, hasta }, {
   eventos = EVENTOS_DE_PRUEBA, licencias = LICENCIAS_DE_PRUEBA, ausencias = AUSENCIAS_DE_PRUEBA,
   feriados = [FERIADO_DIVERSIDAD, FERIADO_SOBERANIA], puedeCompartir = true, conFeriados = false, miNombreCorto = 'Laura',
-  dato = [], datoActivo = false
+  dato = [], datoActivo = false, voto = undefined
 } = {}) => {
   const rango = { desde, hasta, feriados: conFeriados ? feriadosDelRango(feriados, desde, hasta) : SIN_FERIADOS };
   const seTocan = (fila) => fila.desde <= hasta && fila.hasta >= desde;
@@ -1169,7 +1169,9 @@ const respuestaDeEventos = ({ desde, hasta }, {
     ausentes,
     companeros_por_dia: companerosPorDia(ausentes),
     // Las fechas del dato de la quincena (el servidor las arma con datoQuincenaEnMiEspacio y las filtra al rango), al final
-    dato_quincena: dato.filter((item) => item.fecha >= desde && item.fecha <= hasta), dato_quincena_activo: datoActivo
+    dato_quincena: dato.filter((item) => item.fecha >= desde && item.fecha <= hasta), dato_quincena_activo: datoActivo,
+    // Votar la principal (spec 2026-11-23-dato-quincena-principal-votacion, 5): una clave nueva, ya armada por el servidor
+    ...(voto === undefined ? {} : { dato_quincena_votacion: voto.filter((item) => item.fecha >= desde && item.fecha <= hasta) })
   });
 };
 // La grilla de octubre (del lunes 28/09 al domingo 01/11) y los próximos 30 días (del 26/10 al 25/11)
@@ -1667,9 +1669,9 @@ describe('la agenda: el HTML del mes', () => {
   it('ICONOS_DEL_MES: la bandera, el sol, la persona, las dos personas, el ojo, el candado y el diario, decorativos; la clase propio, vacía', () => {
     assert.ok(Object.isFrozen(M.ICONOS_DEL_MES));
     assert.deepEqual(Object.keys(M.ICONOS_DEL_MES).sort(),
-      ['ausente', 'candado', 'compartido', 'dato', 'feriado', 'licencia', 'ojo', 'propio', 'publico-otro']);
+      ['ausente', 'candado', 'compartido', 'dato', 'feriado', 'licencia', 'ojo', 'propio', 'publico-otro', 'voto']);
     assert.equal(M.ICONOS_DEL_MES.propio, '');
-    for (const clase of ['feriado', 'licencia', 'ausente', 'compartido', 'ojo', 'candado', 'publico-otro', 'dato']) {
+    for (const clase of ['feriado', 'licencia', 'ausente', 'compartido', 'ojo', 'candado', 'publico-otro', 'dato', 'voto']) {
       const icono = M.ICONOS_DEL_MES[clase];
       assert.match(icono, /^<svg [^>]*>[\s\S]*<\/svg>$/, clase);
       const atributos = atributosDe(icono.match(/^<svg([^>]*)>/)[1]);
@@ -11154,9 +11156,9 @@ describe('mi-espacio.html: los estilos de la agenda', () => {
       .map(([, clase, icono, texto]) => ({ clase, icono, texto }));
     assert.deepEqual(muestras.map(({ clase, texto }) => [clase, texto]), [
       ['propio', 'Solo vos'], ['propio', 'Tuyos, a la vista'], ['publico-otro', 'Personales de otros'], ['compartido', 'Laborales'],
-      ['licencia', 'Tus licencias y francos'], ['feriado', 'Feriados'], ['dato', 'El dato de la quincena'], ['ausente', 'Compañeros que no están']
+      ['licencia', 'Tus licencias y francos'], ['feriado', 'Feriados'], ['dato', 'El dato de la quincena'], ['voto', 'Votar la principal'], ['ausente', 'Compañeros que no están']
     ]);
-    const iconos = ['candado', 'ojo', 'publico-otro', 'compartido', 'licencia', 'feriado', 'dato', 'ausente'];
+    const iconos = ['candado', 'ojo', 'publico-otro', 'compartido', 'licencia', 'feriado', 'dato', 'voto', 'ausente'];
     muestras.forEach(({ icono, texto }, i) => assert.equal(icono, M.ICONOS_DEL_MES[iconos[i]], texto));
   });
 
@@ -13780,5 +13782,89 @@ describe('sin el saldo inicial: la página (DOM falso)', () => {
     assert.equal(pagina.abierto('modal-saldos'), false);
     assert.equal(pagina.documento.activeElement, boton);
     assert.equal(pagina.pedidosA('PUT', '/api/mi-espacio/saldo-inicial').length, 0);
+  });
+});
+
+// Votar la principal del dato de la quincena en la agenda (spec 2026-11-23-dato-quincena-principal-votacion, 5): lo arma el servidor y
+// la página lo imprime. Es un enlace (no un botón ni un texto), en cobre, con el ícono «vote»
+describe('la agenda: votar la principal del dato de la quincena', () => {
+  const VOTO = Object.freeze({
+    fecha: '2026-10-26', hora: 'Hasta 12:00', texto: 'Votá la principal del dato de la quincena',
+    nombre: 'Votá la principal del dato de la quincena', detalle: 'Edición del lunes 26/10.',
+    titulo: 'Votá la principal del dato de la quincena. Edición del lunes 26/10. Cierra a las 12:00.', enlace: 'dato-quincena.html?id=25'
+  });
+  const DEL_MES_CON_VOTO = respuestaDeEventos({ desde: '2026-09-28', hasta: '2026-11-01' }, { dato: DATO_DE_PRUEBA, datoActivo: true, voto: [VOTO] });
+  const PROXIMOS_CON_VOTO = respuestaDeEventos({ desde: '2026-10-26', hasta: '2026-11-25' }, { dato: DATO_DE_PRUEBA, datoActivo: true, voto: [VOTO] });
+  const ENLACE_VOTAR = '<a class="sg-btn me-votar" href="dato-quincena.html?id=25" aria-label="Votar la principal del dato de la quincena">Votar</a>';
+
+  it('cosasPorDia: después del dato y antes de los eventos, con su enlace; sin la clave, o con un valor raro, todo como antes', () => {
+    assert.deepEqual(cosasDe(DEL_MES_CON_VOTO)['2026-10-26'].map((cosa) => cosa.clase), ['dato', 'voto', 'propio']);
+    assert.deepEqual(cosasDe(DEL_MES_CON_VOTO)['2026-10-26'][1], {
+      clase: 'voto', hora: 'Hasta 12:00', texto: 'Votá la principal del dato de la quincena', titulo: VOTO.titulo, enlace: 'dato-quincena.html?id=25'
+    });
+    assert.deepEqual(cosasDe(CON_EL_DATO), cosasDe({ ...CON_EL_DATO, dato_quincena_votacion: undefined }));
+    for (const raro of ['x', null, [null], [{ fecha: 'raro', texto: 'x', enlace: 'a' }], [{ fecha: '2026-10-26', texto: 'x' }], { fecha: '2026-10-26' }]) {
+      assert.deepEqual(cosasDe({ ...CON_EL_DATO, dato_quincena_votacion: raro }), cosasDe(CON_EL_DATO), JSON.stringify(raro));
+    }
+  });
+
+  it('htmlDelMes: la casilla es un enlace con «Hasta 12:00» en negrita, el ícono «vote» y el title; no es un botón ni lleva data-evento', () => {
+    const celda = celdaConFecha(M.htmlDelMes('2026-10', DEL_MES_CON_VOTO, HOY), '2026-10-26');
+    assert.ok(celda.html.includes(`<a class="me-ev voto" data-lineas="1" href="dato-quincena.html?id=25" title="${VOTO.titulo}">`
+      + `${ICONO('voto')}<b>Hasta 12:00</b> Votá la principal del dato de la quincena</a>`), celda.html);
+    assert.deepEqual([...celda.html.matchAll(/data-evento="([^"]*)"/g)].map(([, id]) => id), ['11']);
+    assert.ok(celda.html.includes('<i class="voto"></i>'));
+    assert.ok(!celdaConFecha(M.htmlDelMes('2026-10', CON_EL_DATO, HOY), '2026-10-26').html.includes('voto'));
+  });
+
+  it('htmlDelDiaElegido: la hora «Hasta 12:00», el título, el detalle y el enlace «Votar», entre el dato y los eventos', () => {
+    const html = M.htmlDelDiaElegido('2026-10-26', DEL_MES_CON_VOTO, HOY);
+    assert.deepEqual(filasDe(html).map((una) => una.clases[1]), ['ausente', 'dato', 'voto', 'propio']);
+    assert.equal(filasDe(html)[2].html, `<div class="me-elegido-cosa"><span class="me-elegido-icono" aria-hidden="true">${ICONO('voto')}</span>`
+      + '<span class="me-elegido-hora">Hasta 12:00</span> <span class="me-elegido-texto">Votá la principal del dato de la quincena '
+      + `<small>Edición del lunes 26/10.</small>${ENLACE_VOTAR}</span></div>`);
+    assert.ok(!M.htmlDelDiaElegido('2026-10-27', DEL_MES_CON_VOTO, HOY).includes('voto'));
+  });
+
+  it('htmlDeProximos: el título con su ícono, y el detalle con «Votar»', () => {
+    const html = M.htmlDeProximos(M.gruposDeProximos(PROXIMOS_CON_VOTO, HOY));
+    assert.ok(html.includes('<li class="me-prox voto"><span class="me-prox-hora">Hasta 12:00</span><span class="me-prox-titulo">'
+      + `<span class="me-prox-icono voto" aria-hidden="true">${ICONO('voto')}</span>Votá la principal del dato de la quincena</span>`
+      + `<span class="me-prox-detalle">Edición del lunes 26/10.${ENLACE_VOTAR}</span></li>`), html);
+  });
+
+  it('lo del servidor, escapado, en la casilla, el día elegido y Próximos', () => {
+    const malo = { fecha: '2026-10-26', hora: MALICIOSO, texto: MALICIOSO, nombre: MALICIOSO, titulo: CON_HTML, detalle: MALICIOSO, enlace: CON_HTML };
+    const datos = respuestaDeEventos({ desde: '2026-09-28', hasta: '2026-11-01' }, { voto: [malo] });
+    const proximos = respuestaDeEventos({ desde: '2026-10-26', hasta: '2026-11-25' }, { voto: [malo] });
+    const htmls = [celdaConFecha(M.htmlDelMes('2026-10', datos, HOY), '2026-10-26').html, M.htmlDelDiaElegido('2026-10-26', datos, HOY),
+      M.htmlDeProximos(M.gruposDeProximos(proximos, HOY))];
+    for (const html of htmls) {
+      assert.ok(html.includes(ESCAPADO) && !html.includes('<img') && !html.includes('<b>&"'), html);
+      assert.ok(html.includes(`href="${CON_HTML_ESCAPADO}"`), html);
+    }
+  });
+
+  it('la leyenda «Votar la principal» aparece solo si el mes trae el ítem', async () => {
+    const conVoto = async (datos) => {
+      const pagina = montarPagina({ hash: '#agenda', responder: conEventos({ [RUTA_DEL_MES]: ok(conLaFrase(datos, '2026-10')) }) });
+      await pagina.iniciar();
+      return pagina;
+    };
+    const con = await conVoto(DEL_MES_CON_VOTO);
+    assert.equal(con.el('ag-leyenda-voto').hidden, false);
+    assert.ok(con.el('vista-agenda').querySelector('.me-leyenda').querySelectorAll('li').filter((li) => !li.hidden).map((li) => li.textContent).includes('Votar la principal'));
+    for (const datos of [CON_EL_DATO, { ...DEL_MES_CON_VOTO, dato_quincena_votacion: [] }, { ...DEL_MES_CON_VOTO, dato_quincena_votacion: 'x' }]) {
+      assert.equal((await conVoto(datos)).el('ag-leyenda-voto').hidden, true);
+    }
+  });
+
+  it('un clic en el enlace no abre «Nuevo evento» (se sigue el enlace)', async () => {
+    const pagina = montarPagina({ hash: '#agenda', responder: conEventos({ [RUTA_DEL_MES]: ok(conLaFrase(DEL_MES_CON_VOTO, '2026-10')) }) });
+    await pagina.iniciar();
+    const enlace = pagina.el('ag-mes').querySelector('a.me-ev.voto');
+    assert.ok(enlace);
+    await pagina.tocar(enlace);
+    assert.equal(pagina.abierto('modal-evento'), false);
   });
 });

@@ -14,6 +14,8 @@
 -- Mientras esté migracion-dato-quincena-principal-equipo.sql, primero va rollback-dato-quincena-principal-equipo.sql: si no,
 -- rollback-dato-quincena.sql (que va después de este) borra los adjuntos, falla en el DROP de dato_quincena_propuestas por la FK
 -- compuesta de las elecciones y deja la base a medias.
+-- Mientras esté migracion-dato-quincena-votacion.sql, primero va rollback-dato-quincena-votacion.sql: si no,
+-- rollback-dato-quincena.sql (que va después de este) falla en las ediciones, a las que apunta la votación, y deja la base a medias.
 -- Si antes se corrió rollback-dato-quincena.sql solo y falló en las ediciones (ya borró los adjuntos y las propuestas), esto
 -- borra igual las cuatro tablas y frena en el DELETE, porque dato_quincena_adjuntos ya no existe: es lo esperado. Después,
 -- volver a correr rollback-dato-quincena.sql, que termina de borrar las ediciones.

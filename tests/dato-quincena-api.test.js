@@ -14,8 +14,10 @@
 // El contrato v1.4 (spec 2026-11-18-dato-quincena-propuestas-datasets): un piloto con tres propuestas de datasets entra con el recibo
 // de siempre y su detalle trae la prioridad de cada una, valor Bajo con riesgo Alto da 422 y una edición sin la clave sigue entrando
 // (con propuestas_datasets null en su detalle).
-// La principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo): administración la elige con un PUT, el detalle y la lista
-// la muestran, y dos elecciones a la vez no se cruzan.
+// La principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo): el detalle y la lista muestran la elegida a mano en una
+// edición de antes de la votación. La votación (spec 2026-11-23-dato-quincena-principal-votacion, 3): toda edición que llega por el
+// POST se vota, así que su detalle y su lista traen la votación abierta (sin nadie en la lista: la base de prueba no tiene votantes), y
+// el PUT de la elección a mano contesta 409 sin escribir. La votación en sí está en tests/dato-quincena-votacion-api.test.js.
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -31,6 +33,9 @@ import { MENSAJES_VALIDACION, TOPE_DEL_PEDIDO, TOPES } from '../services/datoQui
 import { envioDelRecibo, lineaDelCorreo, pastillaDelEnvio } from '../services/datoQuincenaCorreoReglas.js';
 import { calendarioCon } from '../services/feriadosReglas.js';
 import { hoyArgentina, ahoraArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
+import {
+  MENSAJES_VOTACION, cierreDeLaVotacion, llegadaDe, cierreLargo, cierreMedio, cierreCorto
+} from '../services/datoQuincenaVotacionReglas.js';
 
 const sha256 = (datos) => crypto.createHash('sha256').update(datos).digest('hex');
 
@@ -215,7 +220,12 @@ const todoLoGuardado = async () => ({
     `SELECT edicion_id, estado, motivo, DATE_FORMAT(creada_at, '%Y-%m-%d %H:%i:%s') AS creada_at
      FROM dato_quincena_correos ORDER BY edicion_id`
   ),
-  envios: await query('SELECT id, edicion_id, usuario_id, tipo, estado FROM dato_quincena_envios ORDER BY id')
+  envios: await query('SELECT id, edicion_id, usuario_id, tipo, estado FROM dato_quincena_envios ORDER BY id'),
+  // La votación nace con la edición (spec 2026-11-23-dato-quincena-principal-votacion, 3): un 200, un 409 o un 422 no crean otra
+  votaciones: await query(
+    "SELECT edicion_id, DATE_FORMAT(creada_at, '%Y-%m-%d %H:%i:%s') AS creada_at FROM dato_quincena_votaciones ORDER BY edicion_id"
+  ),
+  votacionPersonas: await query('SELECT id, edicion_id, usuario_id FROM dato_quincena_votacion_personas ORDER BY id')
 });
 
 const CLAVES_DEL_RECIBO = [
@@ -241,6 +251,38 @@ const correoConOtroByte = () => {
   correo[correo.length - 1] = 0x21;
   return correo;
 };
+
+// Toda edición que llega por el POST se vota (spec 2026-11-23-dato-quincena-principal-votacion, 3) y la base de prueba no tiene a nadie
+// en la lista de quienes votan: su votación nace abierta y sin votantes. Su cierre sale de su llegada y del calendario de la base de
+// prueba (sin filas de feriados: los 9 fijos); lo que dicen de ella el detalle y la lista, armado acá con ese cierre
+const cierreDeLaVotacionDe = async (id) => {
+  const [fila] = await query(
+    "SELECT DATE_FORMAT(fecha_edicion, '%Y-%m-%d') AS fecha_edicion, UNIX_TIMESTAMP(recibida_at) AS recibida_ts FROM dato_quincena_ediciones WHERE id = ?",
+    [id]
+  );
+  return cierreDeLaVotacion({ fecha_edicion: fila.fecha_edicion, llegada: llegadaDe(Number(fila.recibida_ts)), calendario: calendarioCon([]) });
+};
+const votacionAbiertaSinVotantes = (cierre) => ({
+  estado: 'abierta',
+  resumen: `se vota hasta ${cierreMedio(cierre)}.`,
+  cierre: `Se vota hasta ${cierreLargo(cierre)}.`,
+  participacion: 'No había nadie en la lista para votar.',
+  puede_votar: false,
+  falta_tu_voto: false,
+  tu_orden: null,
+  dialogo: null,
+  resultado: null
+});
+const votacionAbiertaEnLaLista = (cierre) => ({ texto: `Se vota hasta el ${cierreCorto(cierre)}`, falta_tu_voto: false });
+// El detalle de la página con la votación abierta (la de detalle_votacion_abierta) y la lista con la de cada edición, para comparar
+// formas: los textos dan igual
+const conLaVotacionAbierta = (respuesta) => ({
+  ...respuesta, data: { ...respuesta.data, votacion: RESPUESTAS.detalle_votacion_abierta.data.votacion }
+});
+const listaConLaVotacionAbierta = (respuesta) => ({
+  ...respuesta,
+  data: { ...respuesta.data, ediciones: respuesta.data.ediciones.map((e) => ({ ...e, votacion: { texto: '·', falta_tu_voto: false } })) }
+});
 
 // Una lectura con la sesión de `clave` (el admin, si no se dice)
 const leer = (ruta, clave = 'admin') => api.get(ruta, { token: usuarios[clave].token });
@@ -634,7 +676,7 @@ describe('la repetición (contrato v1.3)', () => {
     assert.ok(propuestas[0].para_copiar.includes(`Próxima en 29 días.\n\nRepite el dataset de la edición del 02/11/2026.\n${datosNuevos}`
       + '\n\nPara validar antes de publicar\n'));
     // La forma, la de la respuesta con repeticiones que lee la página
-    assert.deepEqual(forma(res.body), forma(RESPUESTAS.detalle_con_repeticion));
+    assert.deepEqual(forma(res.body), forma(conLaVotacionAbierta(RESPUESTAS.detalle_con_repeticion)));
   });
 
   // La previa tiene que ser una regular (un piloto de esa fecha no cuenta); una metadata previa que no se puede leer no tira; y el
@@ -789,7 +831,7 @@ describe('propuestas_datasets (contrato v1.4)', () => {
     assert.deepEqual(datasets.map((p) => p.anonimizacion),
       [null, 'Agrupar por barrio, sin direcciones exactas.', 'Contar por mes y por zona.\nNunca por persona.']);
     // La forma, la de la respuesta con datasets que lee la página
-    assert.deepEqual(forma(res.body), forma(RESPUESTAS.detalle_con_datasets));
+    assert.deepEqual(forma(res.body), forma(conLaVotacionAbierta(RESPUESTAS.detalle_con_datasets)));
     // Lo que suma el servidor para las pestañas (spec 2026-11-18-dato-quincena-detalle-pestanas, 6), de la metadata guardada
     const data = res.body.data;
     assert.deepEqual(datasets.map((p) => [p.numero, p.valor, p.riesgo]), [[1, 'Alto', 'Bajo'], [2, 'Medio', 'Medio'], [3, 'Alto', 'Alto']]);
@@ -802,7 +844,7 @@ describe('propuestas_datasets (contrato v1.4)', () => {
     const sin = await leer(`/dato-quincena/ediciones/${sinLaClave}`, 'lector');
     assert.equal(sin.status, 200, JSON.stringify(sin.body));
     assert.equal(sin.body.data.propuestas_datasets, null);
-    assert.deepEqual(forma(sin.body), forma(RESPUESTAS.detalle));
+    assert.deepEqual(forma(sin.body), forma(conLaVotacionAbierta(RESPUESTAS.detalle)));
     // Sin la clave (una edición archivada antes de la v1.4): sin matriz, sin aviso y la cantidad de datasets nuevos en null
     const sinData = sin.body.data;
     assert.deepEqual([sinData.matriz_de_prioridad, sinData.aviso_datasets_nuevos, sinData.ver_datasets_nuevos], [null, null, null]);
@@ -1178,8 +1220,10 @@ describe('las lecturas', () => {
     assert.deepEqual(posiciones, [posiciones[0], posiciones[0] + 1, posiciones[0] + 2]);
     assert.ok(delCuatro[0].id > delCuatro[1].id && delCuatro[1].id > delCuatro[2].id);
 
-    // La edición de prueba, con los textos de la respuesta de la página
-    assert.deepEqual(ediciones.find((e) => e.id === prueba), { ...RESPUESTAS.lista.data.ediciones[2], id: prueba });
+    // La edición de prueba, con los textos de la respuesta de la página y su votación abierta
+    assert.deepEqual(ediciones.find((e) => e.id === prueba), {
+      ...RESPUESTAS.lista.data.ediciones[2], id: prueba, votacion: votacionAbiertaEnLaLista(await cierreDeLaVotacionDe(prueba))
+    });
     assert.equal(ediciones.at(-1).id, prueba, 'la del 02/11 es la más vieja');
   });
 
@@ -1210,13 +1254,14 @@ describe('las lecturas', () => {
 
   it('la forma de la lista, la del detalle y la del 404 son las de las respuestas que lee la página', async () => {
     const lista = await leer('/dato-quincena/ediciones?anio=2026');
-    assert.deepEqual(forma(lista.body), forma(RESPUESTAS.lista));
+    assert.deepEqual(forma(lista.body), forma(listaConLaVotacionAbierta(RESPUESTAS.lista)));
     const deEneroLista = await leer('/dato-quincena/ediciones?anio=2027');
     assert.deepEqual(forma(deEneroLista.body), forma(RESPUESTAS.lista_de_2027));
-    // El piloto, sin nota de archivo, y las que llegaron sin el SVG o sin los cálculos, con menos archivos: la misma forma
+    // El piloto, sin nota de archivo, y las que llegaron sin el SVG o sin los cálculos, con menos archivos: la misma forma, con la
+    // votación abierta (todas llegaron por el POST)
     for (const id of [prueba, piloto, sinCalculos, sinEnlace]) {
       const detalle = await leer(`/dato-quincena/ediciones/${id}`);
-      assert.deepEqual(forma(detalle.body), forma(RESPUESTAS.detalle), `la forma del detalle ${id}`);
+      assert.deepEqual(forma(detalle.body), forma(conLaVotacionAbierta(RESPUESTAS.detalle)), `la forma del detalle ${id}`);
     }
     assert.deepEqual((await leer('/dato-quincena/ediciones/999999')).body, RESPUESTAS.no_existe);
   });
@@ -1246,10 +1291,16 @@ describe('las lecturas', () => {
     const iso = isoArgentino((await edicionGuardada(clave)).recibida_ts);
     assert.equal(res.body.data.llegada, `Llegó al RPAD el ${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)} a las ${iso.slice(11, 16)}.`);
     // El resto, igual a la respuesta de la página (armada con las mismas funciones sobre la misma edición): el dataset 2, dado de
-    // baja, sin enlace; el correo de las 11:12 Z, a las 08:12
+    // baja, sin enlace; el correo de las 11:12 Z, a las 08:12. Llegó por el POST, así que se vota: la del equipo dice hasta cuándo
+    const votacion = votacionAbiertaSinVotantes(await cierreDeLaVotacionDe(prueba));
     assert.deepEqual(
       { ...res.body, data: { ...res.body.data, id: 12, llegada: RESPUESTAS.detalle.data.llegada } },
-      RESPUESTAS.detalle
+      {
+        ...RESPUESTAS.detalle,
+        data: {
+          ...RESPUESTAS.detalle.data, principal_equipo: { ...RESPUESTAS.detalle.data.principal_equipo, resumen: votacion.resumen }, votacion
+        }
+      }
     );
   });
 
@@ -1673,24 +1724,34 @@ describe('el envío por correo', () => {
   });
 });
 
-// La principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo, 1 a 3): administración la elige con un PUT, una fila por
-// elección (la vigente es la de mayor id), y el detalle y la lista la muestran. Quien elige se llama Persona Inventada; las demás
-// cuentas son las de prueba. Va después del envío por correo: el detalle de la edición de prueba se compara con el de antes de elegir
+// La principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo, 1 a 3, y spec 2026-11-23-dato-quincena-principal-votacion,
+// 3): la elección a mano ya no se hace (el PUT queda para una pestaña con la página anterior y contesta 409 sin escribir), pero las
+// ediciones de antes de la votación conservan lo que se eligió, una fila por elección (la vigente es la de mayor id), y el detalle y la
+// lista lo muestran. Una edición de antes es una sin su fila en dato_quincena_votaciones: acá se la sacan a tres que llegaron por el
+// POST, y las elecciones se escriben a mano. Quien elige se llama Persona Inventada; las demás cuentas son las de prueba. Va después
+// del envío por correo
 describe('la principal del equipo', () => {
-  const ORDEN_INVALIDO = { success: false, error: 'Elegí una de las propuestas de la edición.' };
   const RUTA_DE = (id) => `/dato-quincena/ediciones/${id}/principal-equipo`;
+  const AHORA_SE_VOTA = { success: false, error: MENSAJES_VOTACION.ahoraSeVota };
   const SIN_ELEGIR = RESPUESTAS.detalle.data.principal_equipo;
-  let prueba, otraRegular, piloto, delEquipo;
+  let prueba, otraRegular, piloto, conVotacion, delEquipo;
 
   before(async () => {
     prueba = (await edicionGuardada(`dq:regular:${FECHA_DE_PRUEBA}`)).id;
     otraRegular = (await edicionGuardada('dq:regular:2026-11-06')).id;
     piloto = (await edicionGuardada('dq:piloto:2026-11-04:piloto-4')).id;
-    delEquipo = await crearUsuariosPrueba(api, { adminEquipo: 'admin', editorEquipo: 'editor', superadminEquipo: 'superadmin' });
+    conVotacion = (await edicionGuardada('dq:regular:2026-11-07')).id;
+    await query('DELETE FROM dato_quincena_votaciones WHERE edicion_id IN (?, ?, ?)', [prueba, otraRegular, piloto]);
+    delEquipo = await crearUsuariosPrueba(api, { adminEquipo: 'admin', editorEquipo: 'editor', superadmin: 'superadmin' });
     await query("UPDATE usuarios SET nombre_completo = 'Persona Inventada' WHERE id = ?", [delEquipo.adminEquipo.id]);
   });
 
   const elegir = (id, cuerpo, token = delEquipo.adminEquipo.token) => api.put(RUTA_DE(id), cuerpo, { token });
+  // Una elección a mano, como las guardaba el PUT de antes: quién y la hora argentina
+  const elegirAMano = async (id, orden, usuarioId) => {
+    await query('INSERT INTO dato_quincena_principal_equipo (edicion_id, orden, elegida_por, elegida_at) VALUES (?, ?, ?, ?)',
+      [id, orden, usuarioId, ahoraArgentina()]);
+  };
   const filasDe = async (id) => (await query(
     `SELECT id, orden, elegida_por, DATE_FORMAT(elegida_at, '%Y-%m-%d %H:%i:%s') AS elegida_at
      FROM dato_quincena_principal_equipo WHERE edicion_id = ? ORDER BY id`, [id]
@@ -1706,51 +1767,66 @@ describe('la principal del equipo', () => {
     `La eligió ${nombre} el ${hora.slice(8, 10)}/${hora.slice(5, 7)}/${hora.slice(0, 4)} a las ${hora.slice(11, 16)}.`;
   const sinLaDelEquipo = ({ principal_equipo: _, ...elResto }) => elResto;
 
-  // Dos ediciones distintas, cada una sin elección, a la vez: cada PUT bloquea solo la fila de su edición y no lee con un candado
-  // compartido. Con un candado así, los dos tomaban el hueco de la tabla vacía y el INSERT de cada uno esperaba al otro: un
-  // deadlock y un 500. Cinco rondas, con las dos sin elección al empezar cada una, porque el cruce depende del momento. Va primero:
-  // la tabla todavía está vacía, y al final las deja sin elección para lo que sigue
-  it('dos ediciones distintas a la vez, sin elección: 200 con cambio true en las dos y una fila en cada una', async () => {
-    const sinElegir = () => query('DELETE FROM dato_quincena_principal_equipo WHERE edicion_id IN (?, ?)', [prueba, piloto]);
-    try {
-      for (let ronda = 1; ronda <= 5; ronda++) {
-        await sinElegir();
-        const respuestas = await Promise.all([
-          elegir(prueba, { orden: 2 }), elegir(piloto, { orden: 2 }, delEquipo.editorEquipo.token)
-        ]);
-        for (const res of respuestas) {
-          assert.equal(res.status, 200, `ronda ${ronda}: ${JSON.stringify(res.body)}`);
-          assert.equal(res.body.data.cambio, true, `ronda ${ronda}`);
+  it('el PUT: 409 «La principal del equipo ahora se vota…» sin escribir, para administración y en cualquier edición', async () => {
+    const antes = await todasLasFilas();
+    for (const token of [delEquipo.adminEquipo.token, delEquipo.editorEquipo.token, delEquipo.superadmin.token]) {
+      for (const id of [prueba, piloto, conVotacion]) {
+        for (const cuerpo of [{ orden: 2 }, { orden: 1 }, { orden: 'x' }, {}, undefined]) {
+          const res = await elegir(id, cuerpo, token);
+          assert.equal(res.status, 409, `${id} ${JSON.stringify(cuerpo)}`);
+          assert.deepEqual(res.body, AHORA_SE_VOTA, `${id} ${JSON.stringify(cuerpo)}`);
         }
-        assert.deepEqual((await filasDe(prueba)).map((fila) => fila.orden), [2], `ronda ${ronda}`);
-        assert.deepEqual((await filasDe(piloto)).map((fila) => fila.orden), [2], `ronda ${ronda}`);
       }
-    } finally {
-      await sinElegir();
     }
+    // Dos a la vez, tampoco
+    for (const res of await Promise.all([elegir(prueba, { orden: 2 }), elegir(prueba, { orden: 1 }, delEquipo.editorEquipo.token)])) {
+      assert.equal(res.status, 409, JSON.stringify(res.body));
+    }
+    assert.deepEqual(await todasLasFilas(), antes);
+    assert.deepEqual(antes, []);
   });
 
-  it('sin elegir: el detalle trae la de Datito y la del equipo sin elegir, como las respuestas de la página; la lista, la de Datito', async () => {
-    assert.deepEqual(await filasDe(prueba), []);
+  it('un lector y un colaborador: 403 sin escribir (la ruta sigue siendo de administración); sin sesión o con el token del bot, 401', async () => {
+    for (const rol of ['lector', 'colaborador']) {
+      const res = await elegir(prueba, { orden: 2 }, usuarios[rol].token);
+      assert.equal(res.status, 403, rol);
+      assert.equal(res.body.success, false, rol);
+    }
+    for (const token of [null, TOKEN]) {
+      const res = await elegir(prueba, { orden: 2 }, token);
+      assert.equal(res.status, 401, String(token === null));
+      assert.equal(res.body.success, false);
+    }
+    assert.deepEqual(await todasLasFilas(), []);
+  });
+
+  it('404 «No existe esa edición.» con un id que no es un entero positivo o que no existe, antes del 409 y de mirar el cuerpo', async () => {
+    for (const id of ['999999', 'abc', '0', '-1', '1.5', '01', '99999999999']) {
+      for (const cuerpo of [{ orden: 1 }, { orden: 'x' }, {}]) {
+        const res = await elegir(id, cuerpo);
+        assert.equal(res.status, 404, `${id} ${JSON.stringify(cuerpo)}`);
+        assert.deepEqual(res.body, NO_EXISTE, `${id} ${JSON.stringify(cuerpo)}`);
+      }
+    }
+    assert.deepEqual(await todasLasFilas(), []);
+  });
+
+  it('una de antes sin elegir: el detalle trae la de Datito, la del equipo sin elegir y la votación en null; la lista, la de Datito', async () => {
     const detalle = await detalleDe(prueba);
     assert.deepEqual(detalle.principal_datito, RESPUESTAS.detalle.data.principal_datito);
     assert.deepEqual(detalle.principal_equipo, SIN_ELEGIR);
+    assert.equal(detalle.votacion, null);
+    assert.deepEqual(forma({ success: true, data: detalle }), forma(RESPUESTAS.detalle));
     const { ediciones } = (await leer('/dato-quincena/ediciones?anio=2026')).body.data;
-    assert.deepEqual(ediciones.find((e) => e.id === prueba).principal, RESPUESTAS.lista.data.ediciones[2].principal);
+    const enLaLista = ediciones.find((e) => e.id === prueba);
+    assert.deepEqual(enLaLista.principal, RESPUESTAS.lista.data.ediciones[2].principal);
+    assert.equal(enLaLista.votacion, null);
   });
 
-  it('un admin elige la 2: 200 con cambio true y su mensaje; una fila con quién y cuándo, y el detalle la muestra', async () => {
+  it('una de antes con la 2 elegida: el detalle la muestra con quién y cuándo, y lo demás no cambia', async () => {
     const antesDelDetalle = await detalleDe(prueba);
-    const antes = ahoraArgentina();
-    const res = await elegir(prueba, { orden: 2 });
-    const despues = ahoraArgentina();
-    assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.deepEqual(res.body, { success: true, data: { cambio: true }, message: 'Quedó la propuesta 2 como principal del equipo.' });
+    await elegirAMano(prueba, 2, delEquipo.adminEquipo.id);
     const filas = await filasDe(prueba);
-    assert.equal(filas.length, 1);
-    assert.deepEqual({ ...filas[0], id: 0, elegida_at: '·' }, { id: 0, orden: 2, elegida_por: delEquipo.adminEquipo.id, elegida_at: '·' });
-    // La hora argentina del momento del pedido (ahoraArgentina, nunca NOW())
-    assert.ok(filas[0].elegida_at >= antes && filas[0].elegida_at <= despues, `${antes} ≤ ${filas[0].elegida_at} ≤ ${despues}`);
     const detalle = await detalleDe(prueba);
     assert.deepEqual(detalle.principal_equipo, {
       ...RESPUESTAS.detalle_equipo_otra.data.principal_equipo, quien: quienDe('Persona Inventada', filas[0])
@@ -1759,13 +1835,6 @@ describe('la principal del equipo', () => {
     assert.deepEqual(sinLaDelEquipo(detalle), sinLaDelEquipo(antesDelDetalle));
     const [deDatito] = await query('SELECT orden FROM dato_quincena_propuestas WHERE edicion_id = ? AND principal = 1', [prueba]);
     assert.equal(deDatito.orden, 1);
-  });
-
-  it('la 2 otra vez: 200 con cambio false y «ya era», sin otra fila', async () => {
-    const res = await elegir(prueba, { orden: 2 });
-    assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.deepEqual(res.body, { success: true, data: { cambio: false }, message: 'La propuesta 2 ya era la principal del equipo.' });
-    assert.equal((await filasDe(prueba)).length, 1);
   });
 
   it('la lista muestra la del equipo con su rótulo y el resto sin ella; la forma de la lista y la del detalle son las de la página', async () => {
@@ -1785,93 +1854,39 @@ describe('la principal del equipo', () => {
     }
   });
 
-  it('un editor elige la de Datito y el superadmin la valida otra vez: «Quedó la de Datito…», coincide y «ya era»', async () => {
-    const res = await elegir(prueba, { orden: 1 }, delEquipo.editorEquipo.token);
-    assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.deepEqual(res.body, { success: true, data: { cambio: true }, message: 'Quedó la de Datito como principal del equipo.' });
+  it('después, la de Datito elegida por un editor: coincide, y la lista la muestra con el rótulo del equipo', async () => {
+    await elegirAMano(prueba, 1, delEquipo.editorEquipo.id);
     const filas = await filasDe(prueba);
     assert.deepEqual(filas.map(({ orden, elegida_por }) => [orden, elegida_por]),
       [[2, delEquipo.adminEquipo.id], [1, delEquipo.editorEquipo.id]]);
     assert.deepEqual((await detalleDe(prueba)).principal_equipo, {
       ...RESPUESTAS.detalle_equipo_coincide.data.principal_equipo, quien: quienDe('Test editorEquipo', filas[1])
     });
-    // En la lista, la misma propuesta que la de Datito, con el rótulo del equipo
     const { ediciones } = (await leer('/dato-quincena/ediciones?anio=2026')).body.data;
     assert.deepEqual(ediciones.find((e) => e.id === prueba).principal,
       { ...RESPUESTAS.lista.data.ediciones[2].principal, rotulo: 'Principal del equipo' });
-
-    const otra = await elegir(prueba, { orden: 1 }, delEquipo.superadminEquipo.token);
-    assert.equal(otra.status, 200, JSON.stringify(otra.body));
-    assert.deepEqual(otra.body, { success: true, data: { cambio: false }, message: 'La de Datito ya era la principal del equipo.' });
-    assert.equal((await filasDe(prueba)).length, 2);
   });
 
-  it('un lector y un colaborador: 403 sin escribir; sin sesión o con el token del bot, 401', async () => {
-    const antes = await todasLasFilas();
-    for (const rol of ['lector', 'colaborador']) {
-      const res = await elegir(prueba, { orden: 2 }, usuarios[rol].token);
-      assert.equal(res.status, 403, rol);
-      assert.equal(res.body.success, false, rol);
-    }
-    for (const token of [null, TOKEN]) {
-      const res = await elegir(prueba, { orden: 2 }, token);
-      assert.equal(res.status, 401, String(token === null));
-      assert.equal(res.body.success, false);
-    }
-    assert.deepEqual(await todasLasFilas(), antes);
+  it('la vigente es la de mayor id', async () => {
+    await elegirAMano(otraRegular, 1, delEquipo.adminEquipo.id);
+    await elegirAMano(otraRegular, 2, delEquipo.editorEquipo.id);
+    assert.equal((await detalleDe(otraRegular)).principal_equipo.orden, 2);
+    await elegirAMano(otraRegular, 1, delEquipo.adminEquipo.id);
+    assert.equal((await detalleDe(otraRegular)).principal_equipo.orden, 1);
   });
 
-  it('un orden que no es el número de una propuesta de la edición: 400 sin escribir', async () => {
-    const antes = await todasLasFilas();
-    for (const cuerpo of [{ orden: '2' }, { orden: 0 }, { orden: -1 }, { orden: 1.5 }, { orden: 300 }, { orden: null }, {},
-      { orden: 3 }, { orden: 255 }, { orden: true }, { orden: [2] }, { orden: { valor: 2 } }, { otra: 2 }, [2], undefined]) {
-      const res = await elegir(prueba, cuerpo);
-      assert.equal(res.status, 400, JSON.stringify(cuerpo));
-      assert.deepEqual(res.body, ORDEN_INVALIDO, JSON.stringify(cuerpo));
-    }
-    assert.deepEqual(await todasLasFilas(), antes);
+  it('una edición que se vota no lee la elección a mano: manda la votación', async () => {
+    await elegirAMano(conVotacion, 2, delEquipo.adminEquipo.id);
+    const detalle = await detalleDe(conVotacion);
+    assert.equal(detalle.votacion.estado, 'abierta');
+    assert.deepEqual(detalle.principal_equipo, { ...SIN_ELEGIR, resumen: detalle.votacion.resumen });
+    const { ediciones } = (await leer('/dato-quincena/ediciones?anio=2026')).body.data;
+    assert.equal(ediciones.find((e) => e.id === conVotacion).principal.rotulo, 'Principal de Datito');
   });
 
-  it('404 «No existe esa edición.» con un id que no es un entero positivo o que no existe, antes de mirar el cuerpo', async () => {
-    const antes = await todasLasFilas();
-    for (const id of ['999999', 'abc', '0', '-1', '1.5', '01', '99999999999']) {
-      for (const cuerpo of [{ orden: 1 }, { orden: 'x' }, {}]) {
-        const res = await elegir(id, cuerpo);
-        assert.equal(res.status, 404, `${id} ${JSON.stringify(cuerpo)}`);
-        assert.deepEqual(res.body, NO_EXISTE, `${id} ${JSON.stringify(cuerpo)}`);
-      }
-    }
-    assert.deepEqual(await todasLasFilas(), antes);
-  });
-
-  // Las dos esperan la fila de la edición (FOR UPDATE): no se cruzan, gana la última y la misma elección no se repite
-  it('dos a la vez con órdenes distintos: dos filas y el detalle muestra la de mayor id; con el mismo orden, una sola', async () => {
-    assert.deepEqual(await filasDe(otraRegular), []);
-    const distintos = await Promise.all([elegir(otraRegular, { orden: 1 }), elegir(otraRegular, { orden: 2 }, delEquipo.editorEquipo.token)]);
-    for (const res of distintos) {
-      assert.equal(res.status, 200, JSON.stringify(res.body));
-      assert.equal(res.body.data.cambio, true);
-    }
-    const filas = await filasDe(otraRegular);
-    assert.deepEqual(filas.map((fila) => fila.orden).sort(), [1, 2]);
-    assert.equal((await detalleDe(otraRegular)).principal_equipo.orden, filas.at(-1).orden);
-
-    // La que no es la vigente, cinco veces a la vez: una sola fila nueva y un solo cambio
-    const otroOrden = filas.at(-1).orden === 1 ? 2 : 1;
-    const iguales = await Promise.all(Array.from({ length: 5 }, () => elegir(otraRegular, { orden: otroOrden })));
-    for (const res of iguales) assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.deepEqual(iguales.map((res) => res.body.data.cambio).sort(), [false, false, false, false, true]);
-    const despues = await filasDe(otraRegular);
-    assert.equal(despues.length, 3);
-    assert.equal(despues.at(-1).orden, otroOrden);
-    assert.equal((await detalleDe(otraRegular)).principal_equipo.orden, otroOrden);
-  });
-
-  it('un piloto también; si la cuenta de quien eligió se borra, «La eligió el equipo…»', async () => {
+  it('un piloto de antes también; si la cuenta de quien eligió se borra, «La eligió el equipo…»', async () => {
     const [deUnaVez] = Object.values(await crearUsuariosPrueba(api, { deUnaVez: 'admin' }));
-    const res = await elegir(piloto, { orden: 1 }, deUnaVez.token);
-    assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.equal(res.body.message, 'Quedó la de Datito como principal del equipo.');
+    await elegirAMano(piloto, 1, deUnaVez.id);
     await query('DELETE FROM usuarios_auditoria WHERE usuario_id = ?', [deUnaVez.id]);
     await query('DELETE FROM usuarios_tokens WHERE usuario_id = ?', [deUnaVez.id]);
     await query('DELETE FROM usuarios WHERE id = ?', [deUnaVez.id]);
@@ -1886,27 +1901,25 @@ describe('la principal del equipo', () => {
     for (const rol of ['lector', 'colaborador']) assert.deepEqual(await detalleDe(prueba, usuarios[rol].token), delAdmin, rol);
   });
 
-  it('si falla la base, 500 con su mensaje fijo y, en la consola, solo el código y el mensaje; sin la tabla, el detalle tampoco sale', async () => {
+  it('sin la tabla de la elección a mano, el detalle y la lista no salen (500); el PUT sigue en 409', async () => {
     await query('RENAME TABLE dato_quincena_principal_equipo TO dato_quincena_principal_equipo_fuera');
     try {
-      const res = await elegir(prueba, { orden: 2 });
-      assert.equal(res.status, 500, JSON.stringify(res.body));
-      assert.deepEqual(res.body, { success: false, error: 'Error al guardar la principal del equipo' });
       const detalle = await leer(`/dato-quincena/ediciones/${prueba}`);
       assert.equal(detalle.status, 500);
+      assert.deepEqual(detalle.body, { success: false, error: 'Error al obtener la edición' });
+      const lista = await leer('/dato-quincena/ediciones?anio=2026');
+      assert.equal(lista.status, 500);
+      assert.deepEqual(lista.body, { success: false, error: 'Error al obtener las ediciones' });
+      const res = await elegir(prueba, { orden: 2 });
+      assert.equal(res.status, 409, JSON.stringify(res.body));
     } finally {
       await query('RENAME TABLE dato_quincena_principal_equipo_fuera TO dato_quincena_principal_equipo');
     }
-    const esperada = 'Error al guardar la principal del equipo ER_NO_SUCH_TABLE';
-    for (let i = 0; i < 20 && !servidor.logs().includes(esperada); i++) await new Promise((listo) => setTimeout(listo, 100));
-    const lineas = servidor.logs().split('\n').filter((linea) => linea.startsWith('Error al guardar la principal del equipo'));
-    assert.ok(lineas.some((linea) => linea.startsWith(esperada)), `la consola registra «${esperada}»`);
-    for (const linea of lineas) assert.ok(!/SELECT|INSERT|FROM|WHERE/.test(linea), 'la consola no trae la consulta');
     // Y todo vuelve a andar
-    assert.equal((await elegir(prueba, { orden: 1 })).status, 200);
+    assert.equal((await leer(`/dato-quincena/ediciones/${prueba}`)).status, 200);
   });
 
-  it('elegir no manda ningún mail', async () => {
+  it('nada de esto manda un mail', async () => {
     assert.deepEqual(await mailpit.mensajes(), []);
   });
 });

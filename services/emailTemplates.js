@@ -347,14 +347,22 @@ export const sinAuditorTemplate = (cambios, { hasta = null } = {}) => {
 // PLANTILLAS DE USUARIOS: acceso al RPAD y avisos al superadmin (spec 10)
 // =====================================================
 
+// Un párrafo del email simple: el HTML de un texto va en un <p>; un bloque (`{ bloque }`: un recuadro o una tabla, que no pueden ir
+// dentro de un <p>) va en una tabla de una celda, con el mismo espacio arriba como relleno (Outlook de escritorio no respeta el margin
+// entre tablas)
+const parrafoOBloque = (p, margen) => (p !== null && typeof p === 'object'
+  ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width: 100%; border-collapse: collapse;"><tr><td style="padding: ${margen};">${p.bloque}</td></tr></table>`
+  : parrafo(p, margen));
+
 /**
  * Email simple con el marco de los demás: título, párrafos, botón y notas al pie.
- * parrafos y notas: HTML ya escapado (pueden traer <strong>). boton: { texto, url } o null.
+ * parrafos y notas: HTML ya escapado (pueden traer <strong>); un párrafo puede ser `{ bloque }`, un recuadro o una tabla ya escapados.
+ * boton: { texto, url } o null.
  */
 export const plantillaSimple = ({ titulo, parrafos, boton: botonDelEmail = null, notas = [] }) => marcoEmail({
   titulo,
   cuerpo: [
-    tituloCuerpo(titulo) + parrafos.map((p, i) => parrafo(p, `${i === 0 ? '16px' : '12px'} 0 0 0`)).join(''),
+    tituloCuerpo(titulo) + parrafos.map((p, i) => parrafoOBloque(p, `${i === 0 ? '16px' : '12px'} 0 0 0`)).join(''),
     botonDelEmail ? boton(botonDelEmail) : null,
     notas.map((n, i) => `<p style="margin: ${i === 0 ? '0' : '8px'} 0 0 0; color: ${COLORES.secundario}; font-size: 12px; line-height: 1.5;">${n}</p>`).join('')
   ]
@@ -1277,6 +1285,117 @@ export const datoQuincenaTemplate = (modelo, { conSvg = false } = {}) => {
       ...propuestas.map(textoDeLaPropuesta),
       ...(datasetsNuevos === null ? [] : [datasetsNuevosEnTexto(datasetsNuevos)]),
       `${BOTON_DEL_DATO_QUINCENA}: ${url}`,
+      nota
+    ].join('\n\n')
+  };
+};
+
+// =====================================================
+// EL RESULTADO DE LA VOTACIÓN DE LA PRINCIPAL DEL EQUIPO
+// =====================================================
+
+// El nombre del bot del modelo (`nombreDelBot`, el de NOMBRE_DEL_BOT: acá no se nombra, como en el mail del dato de la quincena) en
+// «la de …» y «La misma de …»; sin nombre, «del bot»
+const delBot = (nombreDelBot) => {
+  const nombre = typeof nombreDelBot === 'string' ? nombreDelBot.trim() : '';
+  return nombre === '' ? 'del bot' : `de ${nombre}`;
+};
+const marcaDelBot = (fila, bot) => (fila?.de_datito === true ? ` (la ${bot})` : '');
+const propuestaN = (orden) => `Propuesta ${String(orden)}`;
+
+// El rótulo del recuadro de la ganadora: «Propuesta 2» o «Propuesta 1 · La misma de …» (en el HTML, en mayúsculas)
+const rotuloDeLaGanadora = (ganadora, bot) => `${propuestaN(ganadora?.orden)}${ganadora?.de_datito === true ? ` · La misma ${bot}` : ''}`;
+
+// El recuadro de la ganadora, en el celeste del encabezado: el rótulo, el título y la cifra clave (si hay). El rótulo va en el color del
+// título: el gris de la maqueta no llega a 4,5:1 sobre el celeste
+const recuadroDeLaGanadora = (ganadora, bot) => {
+  const cifra = textoDelDato(ganadora?.cifra_clave);
+  return caja(
+    `background-color: ${COLORES.encabezado}; border: 1px solid ${COLORES.bordeEncabezado}; border-radius: 6px`,
+    `<p style="margin: 0; color: ${COLORES.titulo}; font-size: 12px; font-weight: 600;">${escapeHtml(rotuloDeLaGanadora(ganadora, bot).toLocaleUpperCase('es'))}</p>`
+      + `<p style="margin: 4px 0 0 0; color: ${COLORES.titulo}; font-size: 16px; font-weight: 600; line-height: 1.35;">${conRenglones(ganadora?.titulo)}</p>`
+      + (cifra === '' ? '' : `<p style="margin: 8px 0 0 0; color: ${COLORES.texto}; font-size: 14px; line-height: 1.5;">${conRenglones(cifra)}</p>`)
+  );
+};
+
+// La tabla de los votos (`tabla` de votacionDelDetalle: `{ votantes, filas }`), una tabla de datos con sus encabezados: una fila por
+// propuesta, de la que más puntos sacó a la que menos, con el puesto que le dio cada persona y sus puntos. La ganadora, resaltada y en
+// negrita (el color no es lo único que la distingue). Sin tabla (nadie votó), null
+const CELDA_DE_LOS_VOTOS = `padding: 6px 8px; border-bottom: 1px solid ${COLORES.borde}; font-size: 13px; color: ${COLORES.texto};`;
+const tablaDeLosVotos = (tabla, bot) => {
+  const filas = listaDelDato(tabla?.filas);
+  if (filas.length === 0) return null;
+  const encabezado = (texto, alineado) => `<th scope="col" style="${CELDA_DE_LOS_VOTOS} font-weight: 600; text-align: ${alineado};">${escapeHtml(texto)}</th>`;
+  const celda = (html, alineado) => `<td style="${CELDA_DE_LOS_VOTOS} text-align: ${alineado};">${html}</td>`;
+  const filaDeLaTabla = (fila) => {
+    const nombre = escapeHtml(propuestaN(fila?.orden));
+    const gana = fila?.gana === true;
+    return `<tr${gana ? ` style="background-color: ${COLORES.recuadro};"` : ''}>`
+      + celda(`${gana ? `<strong>${nombre}</strong>` : nombre}${escapeHtml(marcaDelBot(fila, bot))}`, 'left')
+      + listaDelDato(fila?.puestos).map((puesto) => celda(escapeHtml(textoDelDato(puesto)), 'center')).join('')
+      + celda(`<strong>${escapeHtml(String(fila?.puntos ?? ''))}</strong>`, 'right')
+      + '</tr>';
+  };
+  return `<table width="100%" cellspacing="0" cellpadding="0" style="width: 100%; border-collapse: collapse;">`
+    + `<tr>${encabezado('Propuesta', 'left')}${listaDelDato(tabla.votantes).map((nombre) => encabezado(textoDelDato(nombre), 'center')).join('')}`
+    + `${encabezado('Puntos', 'right')}</tr>${filas.map(filaDeLaTabla).join('')}</table>`;
+};
+
+// Los votos en el texto plano: un renglón por propuesta, «Propuesta 2: Persona Uno, 1.º; Persona Dos, 2.º. 10 puntos.»
+const losVotosEnTexto = (tabla, bot) => {
+  const votantes = listaDelDato(tabla?.votantes);
+  return listaDelDato(tabla?.filas).map((fila) => {
+    const puestos = listaDelDato(fila?.puestos).map((puesto, i) => `${textoDelDato(votantes[i])}, ${textoDelDato(puesto)}`).join('; ');
+    const puntos = Number(fila?.puntos) === 1 ? '1 punto' : `${String(fila?.puntos ?? '')} puntos`;
+    return `${propuestaN(fila?.orden)}${marcaDelBot(fila, bot)}: ${puestos}. ${puntos}.`;
+  }).join('\n');
+};
+
+/**
+ * El mail del resultado de la votación de la principal del equipo (spec 2026-11-23-dato-quincena-principal-votacion, 6), con el marco de
+ * siempre, como la maqueta: el título (el `titulo` del modelo, sin el año; el asunto sí lo lleva); el saludo y la frase; la ganadora en
+ * un recuadro celeste (su rótulo, su título y su cifra clave); el resultado en negrita con la participación y el cierre; la tabla de los
+ * votos y la regla en chico, solo si alguien votó; el botón a la edición y la nota. `modelo`: el de modeloDelMailDeLaVotacion, con `nombreDelBot` (el servicio le suma el de NOMBRE_DEL_BOT). Todo texto del
+ * modelo va escapado; el texto plano dice lo mismo, en bloques separados por un renglón en blanco.
+ */
+// La intro escapada, con la edición (un tramo de la misma intro, que el modelo da aparte) en negrita; si no está dentro, sin negrita
+const introConLaEdicion = (intro, edicion) => {
+  const lugar = edicion === '' ? -1 : intro.indexOf(edicion);
+  if (lugar === -1) return escapeHtml(intro);
+  return `${escapeHtml(intro.slice(0, lugar))}<strong>${escapeHtml(edicion)}</strong>${escapeHtml(intro.slice(lugar + edicion.length))}`;
+};
+
+export const votacionResultadoTemplate = (modelo) => {
+  const bot = delBot(modelo?.nombreDelBot);
+  const ganadora = modelo?.ganadora ?? null;
+  const asunto = textoDelDato(modelo?.asunto);
+  const [titulo, saludo, intro, resultado, participacion, cierre, regla, nota] = [
+    'titulo', 'saludo', 'intro', 'resultado', 'participacion', 'cierre', 'regla', 'nota'
+  ].map((clave) => textoDelDato(modelo?.[clave]));
+  const boton = { texto: textoDelDato(modelo?.boton?.texto), url: textoDelDato(modelo?.boton?.url) };
+  const tabla = tablaDeLosVotos(modelo?.tabla, bot);
+  const cifra = textoDelDato(ganadora?.cifra_clave);
+  return {
+    subject: asunto,
+    html: plantillaSimple({
+      titulo,
+      parrafos: [
+        escapeHtml(saludo),
+        introConLaEdicion(intro, textoDelDato(modelo?.edicion)),
+        { bloque: recuadroDeLaGanadora(ganadora, bot) },
+        `<strong>${escapeHtml(resultado)}</strong> ${escapeHtml(participacion)} ${escapeHtml(cierre)}`,
+        ...(tabla === null ? [] : [{ bloque: tabla }, `<span style="color: ${COLORES.secundario}; font-size: 13px;">${escapeHtml(regla)}</span>`])
+      ],
+      boton,
+      notas: [escapeHtml(nota)]
+    }),
+    text: [
+      saludo,
+      intro,
+      [rotuloDeLaGanadora(ganadora, bot), textoDelDato(ganadora?.titulo), ...(cifra === '' ? [] : [cifra])].join('\n'),
+      `${resultado} ${participacion} ${cierre}`,
+      ...(tabla === null ? [] : [losVotosEnTexto(modelo.tabla, bot), regla]),
+      `${boton.texto}: ${boton.url}`,
       nota
     ].join('\n\n')
   };

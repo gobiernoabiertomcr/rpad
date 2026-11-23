@@ -9,6 +9,7 @@ import fs from 'fs';
 import vm from 'vm';
 import { anioDeLaLista } from '../services/datoQuincenaReglas.js';
 import { textoDeLosQueReciben } from '../services/datoQuincenaCorreoReglas.js';
+import { textoDeLosQueVotan } from '../services/datoQuincenaVotacionReglas.js';
 
 const leer = (ruta) => fs.readFileSync(new URL(`../public/${ruta}`, import.meta.url), 'utf8');
 const RESPUESTAS = JSON.parse(fs.readFileSync(new URL('./fixtures/dato-quincena-respuestas.json', import.meta.url), 'utf8'));
@@ -33,11 +34,12 @@ const CORREO = () => ({
     { edicion: '2026-12-21', sale: '2026-12-21', motivo: null, edicion_texto: 'lunes 21/12/2026', texto: 'Sale ese día a las 8:05.' }
   ],
   personas: [
-    { id: 31, nombre: 'PruebaUno Ejemplo', cargo: 'Cargo inventado', rol: 'Lector', email: 'uno@ejemplo.test', recibe: true, licencia: null },
-    { id: 32, nombre: 'PruebaDos Ejemplo', cargo: null, rol: 'Editor', email: 'dos@ejemplo.test', recibe: false,
+    { id: 31, nombre: 'PruebaUno Ejemplo', cargo: 'Cargo inventado', rol: 'Lector', email: 'uno@ejemplo.test', recibe: true, vota: false, licencia: null },
+    { id: 32, nombre: 'PruebaDos Ejemplo', cargo: null, rol: 'Editor', email: 'dos@ejemplo.test', recibe: false, vota: true,
       licencia: 'De licencia hasta el 30/11' }
   ],
-  reciben_texto: 'Lo recibe 1 persona.'
+  reciben_texto: 'Lo recibe 1 persona.',
+  votan_texto: 'Vota 1 persona.'
 });
 const CAJA = () => ({
   resumen: 'Enviada el martes 24/11/2026 a las 8:05, a 1 de 2 personas.',
@@ -169,7 +171,7 @@ describe('dato-quincena.js: las respuestas del servidor (spec, 9) son el contrat
       for (const anio of data.anios) assert.deepEqual(Object.keys(anio), ['anio', 'cantidad'], nombre);
       for (const edicion of data.ediciones) {
         assert.deepEqual(Object.keys(edicion),
-          ['id', 'fecha_texto', 'marca', 'principal', 'resto', 'numero', 'fecha_partes', 'cantidad', 'envio'], nombre);
+          ['id', 'fecha_texto', 'marca', 'principal', 'resto', 'numero', 'fecha_partes', 'cantidad', 'envio', 'votacion'], nombre);
         // La principal que cuenta (spec 2026-11-21-dato-quincena-principal-equipo, 3): la del equipo si eligió; si no, la de Datito,
         // con su rótulo
         assert.deepEqual(Object.keys(edicion.principal), ['titulo', 'cifra_clave', 'rotulo'], nombre);
@@ -185,11 +187,13 @@ describe('dato-quincena.js: las respuestas del servidor (spec, 9) son el contrat
   it('el detalle: con su id y los textos ya armados, la agenda, las propuestas, las de datasets y los archivos', () => {
     const conDatasets = [respuesta('detalle_con_datasets').data, respuesta('detalle_datasets_vacia').data];
     const delEquipo = [respuesta('detalle_equipo_coincide').data, respuesta('detalle_equipo_otra').data];
-    for (const detalle of [DETALLE(), DETALLE_CON_REPETICION(), ...conDatasets, ...delEquipo]) {
+    const votados = ['detalle_votacion_abierta', 'detalle_votacion_abierta_con_voto', 'detalle_votacion_cerrada_puntos',
+      'detalle_votacion_cerrada_desempate', 'detalle_votacion_cerrada_nadie'].map((n) => respuesta(n).data);
+    for (const detalle of [DETALLE(), DETALLE_CON_REPETICION(), ...conDatasets, ...delEquipo, ...votados]) {
       assert.deepEqual(Object.keys(detalle), [
         'id', 'fecha_texto', 'marca', 'numero', 'titulo', 'nota_archivo', 'llegada', 'correo', 'cantidad', 'agenda', 'agenda_grupos',
         'propuestas', 'propuestas_datasets', 'matriz_de_prioridad', 'cantidades', 'ver_propuestas', 'aviso_datasets_nuevos',
-        'ver_datasets_nuevos', 'archivos', 'principal_datito', 'principal_equipo'
+        'ver_datasets_nuevos', 'archivos', 'principal_datito', 'principal_equipo', 'votacion'
       ]);
       // Las dos principales (spec 2026-11-21-dato-quincena-principal-equipo, 3), con los textos ya armados
       assert.deepEqual(Object.keys(detalle.principal_datito), ['orden', 'rotulo', 'pastilla', 'marca', 'infografia_pie', 'infografia_alt']);
@@ -493,11 +497,11 @@ describe('dato-quincena.js: la lista en tarjetas (spec 2026-11-12-dato-quincena-
     assert.ok(html.includes('Todavía no llegó ninguna edición. Datito manda cada una cada dos lunes.'));
   });
 
-  it('las pestañas: tablist con Ediciones y Correo, la activa con aria-selected y las otras fuera del orden del teclado', () => {
+  it('las pestañas: tablist con Ediciones y «Envío y votación», la activa con aria-selected y las otras fuera del orden del teclado', () => {
     const html = ctx.htmlDePestanas('ediciones');
     assert.match(html, /^<div class="dq-pestanas" role="tablist" aria-label="El dato de la quincena">/);
     assert.ok(html.includes('<button type="button" class="dq-pestana dq-activa" role="tab" id="dq-tab-ediciones" aria-selected="true" aria-controls="dq-contenido" data-pestana="ediciones">Ediciones</button>'));
-    assert.ok(html.includes('<button type="button" class="dq-pestana" role="tab" id="dq-tab-correo" aria-selected="false" aria-controls="dq-contenido" tabindex="-1" data-pestana="correo">Correo</button>'));
+    assert.ok(html.includes('<button type="button" class="dq-pestana" role="tab" id="dq-tab-correo" aria-selected="false" aria-controls="dq-contenido" tabindex="-1" data-pestana="correo">Envío y votación</button>'));
     const otra = ctx.htmlDePestanas('correo');
     assert.ok(otra.includes('id="dq-tab-correo" aria-selected="true"'));
     assert.ok(otra.includes('id="dq-tab-ediciones" aria-selected="false"'));
@@ -1728,7 +1732,10 @@ describe('dato-quincena.js: todo texto del servidor va escapado', () => {
     const todo = [ctx.htmlDeLaLista(LISTA_DOS_ANIOS(), 1), ctx.htmlDeLaLista(LISTA_VACIA(), 1), ctx.htmlDelDetalle(DETALLE()), ctx.htmlDePestanas('ediciones'),
       ...['detalle', 'detalle_equipo_coincide', 'detalle_equipo_otra'].flatMap((nombre) => [true, false].flatMap((admin) => ['general', 'propuestas']
         .map((vista) => ctx.htmlDelDetalle(respuesta(nombre).data, { admin, vista })))),
-      ...['detalle', 'detalle_equipo_otra'].map((nombre) => ctx.htmlDelDialogoDeLaPrincipal(respuesta(nombre).data)),
+      ...['detalle_votacion_abierta', 'detalle_votacion_abierta_con_voto', 'detalle_votacion_cerrada_puntos', 'detalle_votacion_cerrada_desempate',
+        'detalle_votacion_cerrada_nadie'].flatMap((nombre) => ['general', 'propuestas'].map((vista) => ctx.htmlDelDetalle(respuesta(nombre).data, { vista }))),
+      ctx.htmlDelDialogoDelVoto(respuesta('detalle_votacion_abierta').data, [2]),
+      ctx.htmlDeTarjeta({ ...LISTA().ediciones[0], votacion: { texto: 'Se vota hasta el mar 03/11 a las 12:00', falta_tu_voto: true } }),
       ctx.htmlDelDetalle(DETALLE_CON_REPETICION()), ctx.htmlDelDetalle(respuesta('detalle_con_datasets').data, { admin: true, vista: 'datasets' }),
       ctx.htmlDelDetalle(respuesta('detalle_datasets_vacia').data),
       ctx.htmlDelDetalle(DETALLE(), { admin: true }), ctx.htmlDelCorreo(CORREO()), ctx.htmlDelCorreo({ ...CORREO(), proximas: [] }),
@@ -1799,13 +1806,22 @@ describe('dato-quincena.js: la pestaña Correo (spec 2026-11-12-dato-quincena-co
     assert.equal(ctx.textoDeLosQueReciben(1), 'Lo recibe 1 persona.');
   });
 
-  it('htmlDelCorreo: «Envío por correo» con el interruptor prendido, la regla y las próximas; «Quién lo recibe» con la tabla', () => {
+  // spec 2026-11-23-dato-quincena-principal-votacion, 4: la otra copia, para contar «Vota» mientras se tilda
+  it('textoDeLosQueVotan: la misma regla que la del servidor', () => {
+    for (let n = 0; n <= 25; n++) assert.equal(ctx.textoDeLosQueVotan(n), textoDeLosQueVotan(n), String(n));
+    assert.deepEqual([0, 1, 3].map((n) => ctx.textoDeLosQueVotan(n)), ['No vota nadie.', 'Vota 1 persona.', 'Votan 3 personas.']);
+  });
+
+  it('htmlDelCorreo: «Envío por correo» con el interruptor prendido, la regla y las próximas; la votación; «Las personas» con la tabla', () => {
     const html = ctx.htmlDelCorreo(CORREO());
     assert.match(html, /^<div class="dq-correo"><section class="dq-caja" aria-labelledby="dq-auto-titulo">/);
-    assert.equal(cuantas(html, /<section class="dq-caja"/g), 2);
+    assert.equal(cuantas(html, /<section class="dq-caja"/g), 3);
     assert.ok(html.includes('<h2 id="dq-auto-titulo">Envío por correo</h2>'));
-    assert.ok(html.includes('<h2 id="dq-quien-titulo">Quién lo recibe</h2>'));
-    assert.ok(html.indexOf('dq-auto-titulo') < html.indexOf('dq-quien-titulo'));
+    assert.ok(html.includes('<h2 id="dq-votacion-titulo">La votación de la principal del equipo</h2>'));
+    assert.ok(html.includes('<h2 id="dq-quien-titulo">Las personas</h2>'));
+    assert.ok(html.indexOf('dq-auto-titulo') < html.indexOf('dq-votacion-titulo'));
+    assert.ok(html.indexOf('dq-votacion-titulo') < html.indexOf('dq-quien-titulo'));
+    assert.ok(!html.includes('Quién lo recibe'));
     // El interruptor: una casilla con role="switch", prendida, y el texto que dice cómo está (nunca solo el color)
     assert.ok(html.includes('<label class="dq-switch" for="dq-envio-activo"><input type="checkbox" id="dq-envio-activo" role="switch" aria-label="Envío automático" checked>'
       + '<span id="dq-envio-estado">Envío automático prendido</span></label>'));
@@ -1816,17 +1832,34 @@ describe('dato-quincena.js: la pestaña Correo (spec 2026-11-12-dato-quincena-co
     assert.ok(html.includes('<h3 class="dq-caja-subtitulo">Las próximas ediciones</h3><ul class="dq-proximas">'
       + '<li><b>Edición del lunes 23/11/2026</b><span class="dq-corrida">Sale el martes 24/11/2026 a las 8:05: no es hábil el lunes 23/11, Día de la Soberanía Nacional.</span></li>'
       + '<li><b>Edición del lunes 21/12/2026</b><span>Sale ese día a las 8:05.</span></li></ul>'));
-    // La tabla: persona y cargo (y la licencia), rol, correo y «Lo recibe»
+    // La votación, en dos párrafos (la maqueta aprobada), con el nombre del bot de la constante de la página
+    assert.ok(html.includes('<section class="dq-caja" aria-labelledby="dq-votacion-titulo"><div class="dq-caja-cabeza"><h2 id="dq-votacion-titulo">La votación de la principal del equipo</h2></div>'
+      + '<p>Cada edición se vota hasta las <b>12:00 del día en que sale el mail</b>; si sale a las 14:00, hasta las 12:00 del día hábil siguiente. '
+      + 'Cada persona que vota toca las propuestas de la que más quiere trabajar a la que menos: el 1.º puesto da tantos puntos como propuestas hay y el último, 1. '
+      + 'Gana la que suma más; si empatan, la de Datito o, si no está entre las empatadas, la de número más bajo. Si nadie vota, queda la de Datito.</p>'
+      + '<p class="dq-suave">Hasta el cierre se ve quién votó; el orden de cada persona, después. A las 14:00 del día del cierre, administración recibe un mail con la que ganó '
+      + '(si ese día está de licencia, no le llega). Los pilotos se votan igual, sin ese mail.</p></section>'));
+    // «Las personas»: qué es cada casilla, en dos renglones
+    assert.ok(html.includes('<ul class="dq-que-es"><li><b>Recibe el mail:</b> a cada persona le llega su propio mail, a la casilla de su cuenta. Si ese día está de licencia, no le llega.</li>'
+      + '<li><b>Vota:</b> ordena las propuestas de cada edición hasta el cierre. Puede ser de cualquier rol.</li></ul>'));
+    // La tabla: persona y cargo (y la licencia), rol, correo, «Recibe el mail» y «Vota»
     assert.ok(html.includes('<table class="dq-tabla" aria-labelledby="dq-quien-titulo"><thead><tr><th scope="col">Persona</th><th scope="col">Rol</th>'
-      + '<th scope="col" class="dq-col-correo">Correo</th><th scope="col" class="dq-col-recibe">Lo recibe</th></tr></thead>'));
+      + '<th scope="col" class="dq-col-correo">Correo</th><th scope="col" class="dq-col-recibe">Recibe el mail</th><th scope="col" class="dq-col-vota">Vota</th></tr></thead>'));
     assert.ok(html.includes('<tr><td>PruebaUno Ejemplo<small>Cargo inventado</small></td><td>Lector</td><td class="dq-col-correo">uno@ejemplo.test</td>'
-      + '<td class="dq-col-recibe"><input type="checkbox" data-usuario="31" aria-label="PruebaUno Ejemplo recibe el mail" checked></td></tr>'));
+      + '<td class="dq-col-recibe"><input type="checkbox" data-usuario="31" aria-label="PruebaUno Ejemplo recibe el mail" checked></td>'
+      + '<td class="dq-col-vota"><input type="checkbox" data-vota="31" aria-label="PruebaUno Ejemplo vota"></td></tr>'));
     assert.ok(html.includes('<tr><td>PruebaDos Ejemplo<small class="dq-licencia">De licencia hasta el 30/11</small></td><td>Editor</td><td class="dq-col-correo">dos@ejemplo.test</td>'
-      + '<td class="dq-col-recibe"><input type="checkbox" data-usuario="32" aria-label="PruebaDos Ejemplo recibe el mail"></td></tr>'));
-    // El pie: el texto del servidor tal cual («Lo recibe 1 persona.», no «Lo reciben 1 personas.») y «Guardar»
-    assert.ok(html.includes('<div class="dq-correo-pie"><p class="dq-suave" id="dq-cuantas-reciben">Lo recibe 1 persona.</p>'
+      + '<td class="dq-col-recibe"><input type="checkbox" data-usuario="32" aria-label="PruebaDos Ejemplo recibe el mail"></td>'
+      + '<td class="dq-col-vota"><input type="checkbox" data-vota="32" aria-label="PruebaDos Ejemplo vota" checked></td></tr>'));
+    // El pie: los textos del servidor tal cual y un solo «Guardar»
+    assert.ok(html.includes('<div class="dq-correo-pie"><p class="dq-suave"><span id="dq-cuantas-reciben">Lo recibe 1 persona.</span> '
+      + '<span id="dq-cuantas-votan">Vota 1 persona.</span></p>'
       + '<button type="button" class="dq-btn dq-btn-tinta" data-guardar-lista>Guardar</button></div>'));
+    assert.equal(cuantas(html, /data-guardar-lista/g), 1);
     assert.ok(!html.includes('Lo reciben 1'));
+    // Solo el true literal está tildado
+    const textos = ctx.htmlDelCorreo({ ...CORREO(), personas: CORREO().personas.map((p) => ({ ...p, recibe: 'true', vota: 1 })) });
+    assert.equal(cuantas(textos, / checked>/g), 1, 'solo el interruptor');
   });
 
   it('apagado, sin checked y lo dice; sin próximas (no se pudo leer el calendario), lo dice; una persona sin un id que sirva, sin casilla', () => {
@@ -1837,7 +1870,7 @@ describe('dato-quincena.js: la pestaña Correo (spec 2026-11-12-dato-quincena-co
     // Solo el true literal está prendido
     assert.ok(ctx.htmlDelCorreo({ ...CORREO(), envio_activo: 'true' }).includes('Envío automático apagado'));
     const rara = ctx.htmlDelCorreo({ ...CORREO(), personas: [{ ...CORREO().personas[0], id: '31" onclick="x' }] });
-    assert.ok(!rara.includes('data-usuario'), rara);
+    assert.ok(!rara.includes('data-usuario') && !rara.includes('data-vota'), rara);
   });
 
   it('htmlDeLaCajaDelCorreo: el resumen, una fila por persona (la que no lo recibió, en ámbar con su texto), los reenvíos y los botones', () => {
@@ -1914,9 +1947,10 @@ describe('dato-quincena.js: la pestaña Correo (spec 2026-11-12-dato-quincena-co
     const nombre = '<b>Negrita</b>';
     const correo = ctx.htmlDelCorreo(conTextos(CORREO(), XSS));
     assert.ok(!correo.includes('<img'), correo);
-    assert.ok(cuantas(correo, /&lt;img src=x onerror=1&gt;/g) >= 12);
+    assert.ok(cuantas(correo, /&lt;img src=x onerror=1&gt;/g) >= 14);
     const conNombre = ctx.htmlDelCorreo({ ...CORREO(), personas: [{ ...CORREO().personas[0], nombre }] });
     assert.ok(conNombre.includes('aria-label="&lt;b&gt;Negrita&lt;/b&gt; recibe el mail"'));
+    assert.ok(conNombre.includes('aria-label="&lt;b&gt;Negrita&lt;/b&gt; vota"'));
     assert.ok(!conNombre.includes('<b>Negrita'));
     const caja = ctx.htmlDeLaCajaDelCorreo(conTextos(CAJA(), XSS));
     assert.ok(!caja.includes('<img'), caja);
@@ -1961,7 +1995,7 @@ const paginaFalsa = ({ admin = true, search = '', hash = '', lugares = {}, respo
   const location = { search, hash, href: '' };
   const todos = { 'dq-contenido': falso(), 'dq-pestanas': falso(), 'dq-anuncio': falso(), 'dq-bajada': falso(), 'dq-modal': falso(),
     'dq-modal-descargar': falso(), 'dq-reenvio': falso(), 'dq-reenvio-confirmar': falso(), 'dq-reenvio-cuerpo': falso(),
-    'dq-principal': falso(), 'dq-principal-cuerpo': falso(), 'dq-principal-guardar': falso(), ...lugares };
+    'dq-voto': falso(), 'dq-voto-cuerpo': falso(), 'dq-voto-guardar': falso(), 'dq-voto-texto': falso(), 'dq-voto-anuncio': falso(), ...lugares };
   // Los oyentes del documento se suman: Escape lo escuchan los tres diálogos y cada uno mira si está abierto
   const sumarOyente = (clave, f) => {
     const antes = oyentes[clave];
@@ -2059,17 +2093,20 @@ describe('dato-quincena.js: el interruptor, «Guardar», la caja del detalle y q
     assert.equal(casilla.checked, false);
   });
 
-  it('tildar cuenta en vivo con la copia de la regla; «Guardar» manda los tildados y queda deshabilitado hasta la respuesta', async () => {
+  it('tildar cuenta en vivo con las copias de las reglas; «Guardar» manda las dos listas y queda deshabilitado hasta la respuesta', async () => {
     const casillas = [falso({ checked: true, dataset: { usuario: '31' } }), falso({ checked: false, dataset: { usuario: '32' } }),
       falso({ checked: true, dataset: { usuario: '33' } })];
+    const votan = [falso({ checked: false, dataset: { vota: '31' } }), falso({ checked: true, dataset: { vota: '32' } }),
+      falso({ checked: false, dataset: { vota: '33' } })];
     const cuantasReciben = falso();
+    const cuantasVotan = falso();
     let boton;
-    const contenido = falso({ querySelectorAll: (selector) => (selector === 'input[data-usuario]' ? casillas : []) });
+    const contenido = falso({ querySelectorAll: (selector) => ({ 'input[data-usuario]': casillas, 'input[data-vota]': votan })[selector] ?? [] });
     const { c, pedidos, avisos } = paginaFalsa({
-      lugares: { 'dq-contenido': contenido, 'dq-cuantas-reciben': cuantasReciben },
+      lugares: { 'dq-contenido': contenido, 'dq-cuantas-reciben': cuantasReciben, 'dq-cuantas-votan': cuantasVotan },
       responder: () => {
         assert.equal(boton.disabled, true, 'deshabilitado hasta la respuesta');
-        return { success: true, data: { usuarios: [31, 33] }, message: 'Se guardó la lista: lo reciben 2 personas.' };
+        return { success: true, data: { usuarios: [31, 33], votantes: [32] }, message: 'Guardamos la lista: lo reciben 2 personas y vota 1.' };
       }
     });
     c.contarLosQueRecibenDq();
@@ -2082,13 +2119,26 @@ describe('dato-quincena.js: el interruptor, «Guardar», la caja del detalle y q
     assert.equal(cuantasReciben.textContent, 'Todavía no lo recibe nadie.');
     casillas[0].checked = true;
     casillas[2].checked = true;
+    // «Vota», con su copia: cada casilla cuenta al cambiar, por #dq-contenido
+    const cambio = (casilla) => c.alCambiarDq({ target: { ...casilla, matches: (selector) => selector === 'input[data-vota]' } });
+    cambio(votan[1]);
+    assert.equal(cuantasVotan.textContent, 'Vota 1 persona.');
+    votan[0].checked = true;
+    cambio(votan[0]);
+    assert.equal(cuantasVotan.textContent, 'Votan 2 personas.');
+    votan[0].checked = false;
+    votan[1].checked = false;
+    cambio(votan[1]);
+    assert.equal(cuantasVotan.textContent, 'No vota nadie.');
+    assert.equal(cuantasReciben.textContent, 'Todavía no lo recibe nadie.', 'tildar «Vota» no cambia el pie de «Recibe el mail»');
+    votan[1].checked = true;
     boton = falso();
     const guardando = c.guardarListaDq(boton);
     await c.guardarListaDq(boton);
     await guardando;
-    assert.deepEqual(pedidos, [['PUT', '/dato-quincena/correo/destinatarios', { usuarios: [31, 33] }]], 'un doble clic manda un solo pedido');
+    assert.deepEqual(pedidos, [['PUT', '/dato-quincena/correo/destinatarios', { usuarios: [31, 33], votantes: [32] }]], 'un doble clic manda un solo pedido');
     assert.equal(boton.disabled, false);
-    assert.deepEqual(avisos, [['Se guardó la lista: lo reciben 2 personas.', 'success']]);
+    assert.deepEqual(avisos, [['Guardamos la lista: lo reciben 2 personas y vota 1.', 'success']]);
   });
 
   it('solo la administración pide el correo: un lector con #correo ve la lista; su detalle no pide la caja', async () => {
@@ -2139,7 +2189,7 @@ describe('dato-quincena.js: el interruptor, «Guardar», la caja del detalle y q
     assert.deepEqual(pedidos.at(-1), ['GET', '/dato-quincena/correo']);
     assert.equal(todos['dq-contenido'].innerHTML, c.htmlDelCorreo(CORREO()));
     assert.equal(todos['dq-contenido'].getAttribute('aria-labelledby'), 'dq-tab-correo');
-    assert.equal(c.document.title, 'Correo - El dato de la quincena - RPAD');
+    assert.equal(c.document.title, 'Envío y votación - El dato de la quincena - RPAD');
     await c.elegirPestanaDq('ediciones');
     assert.equal(urls.at(-1), 'dato-quincena.html?anio=2026&pagina=2');
     assert.deepEqual(pedidos.at(-1), ['GET', '/dato-quincena/ediciones?anio=2026']);
@@ -2273,7 +2323,8 @@ describe('dato-quincena.html: la página', () => {
   });
 
   it('#dq-anuncio es la región viva, una sola vez y fuera de lo que se vuelve a dibujar', () => {
-    assert.equal(cuantas(html, /role="status"/g), 2, 'la región viva y «Cargando…»');
+    // La región viva de la página, «Cargando…» y la del diálogo «Tu orden» (aria-modal: lo de afuera no se anuncia mientras está abierto)
+    assert.equal(cuantas(html, /role="status"/g), 3, 'la región viva, «Cargando…» y la del diálogo');
     assert.ok(html.includes('<p class="visualmente-oculto" id="dq-anuncio" role="status"></p>'));
     assert.ok(html.indexOf('id="dq-anuncio"') < html.indexOf('id="dq-contenido"'));
   });
@@ -2300,22 +2351,28 @@ describe('dato-quincena.html: la página', () => {
     assert.ok(html.indexOf('</footer>') < html.indexOf('id="dq-reenvio"'));
   });
 
-  // spec 2026-11-21-dato-quincena-principal-equipo, 4: el diálogo de «La principal del equipo», como el de «Reenviar»
-  it('el diálogo de «La principal del equipo»: el título, el texto que lo describe, la ×, el cuerpo que llena el script, «Cancelar» y «Guardar» deshabilitado', () => {
-    const desde = html.indexOf('<div class="modal-overlay" id="dq-principal">');
+  // spec 2026-11-23-dato-quincena-principal-votacion, 4: el diálogo «Tu orden», como el de «Reenviar»; el de la principal elegida a mano
+  // ya no está
+  it('el diálogo «Tu orden»: el título, el texto que llena el script, la ×, el cuerpo, su región viva, «Cancelar» y «Guardar mi orden» deshabilitado', () => {
+    const desde = html.indexOf('<div class="modal-overlay" id="dq-voto">');
     assert.ok(desde > html.indexOf('</footer>'), 'después del footer');
     const modal = html.slice(desde, html.indexOf('<!--', desde));
-    assert.match(modal, /<div class="modal dq-modal dq-modal-chico" role="dialog" aria-modal="true" aria-labelledby="dq-principal-titulo" aria-describedby="dq-principal-texto">/);
-    assert.match(modal, /<h2 class="modal-title" id="dq-principal-titulo">La principal del equipo<\/h2>/);
+    assert.match(modal, /<div class="modal dq-modal dq-modal-chico dq-modal-voto" role="dialog" aria-modal="true" aria-labelledby="dq-voto-titulo" aria-describedby="dq-voto-texto">/);
+    assert.ok(modal.includes(`<h2 class="modal-title" id="dq-voto-titulo">${constante('TEXTOS_DEL_VOTO').tuOrden}</h2>`));
     assert.match(modal, /<button type="button" class="modal-close" data-cerrar aria-label="Cerrar">&times;<\/button>/);
-    assert.match(modal, /<p class="dq-dialogo-texto" id="dq-principal-texto">Elegí la propuesta que el equipo va a trabajar como principal\. Se puede cambiar cuando quieran\.<\/p>/);
-    assert.match(modal, /<div id="dq-principal-cuerpo"><\/div>/);
+    // El texto es el del servidor (votacion.dialogo): el HTML lo deja vacío
+    assert.match(modal, /<p class="dq-dialogo-texto" id="dq-voto-texto"><\/p>/);
+    assert.match(modal, /<div id="dq-voto-cuerpo"><\/div>/);
+    // La región viva del diálogo, fuera del cuerpo que se vuelve a dibujar en cada toque
+    assert.match(modal, /<div id="dq-voto-cuerpo"><\/div>\s*<p class="visualmente-oculto" id="dq-voto-anuncio" role="status"><\/p>/);
     assert.match(modal, /<button type="button" class="dq-btn dq-btn-borde" data-cerrar>Cancelar<\/button>/);
-    // «Guardar» empieza deshabilitado: el script lo habilita cuando hay una opción marcada
-    assert.match(modal, /<button type="button" class="dq-btn dq-btn-tinta" id="dq-principal-guardar" disabled>Guardar<\/button>/);
+    // «Guardar mi orden» empieza deshabilitado: el script lo habilita cuando todas tienen su puesto
+    assert.ok(modal.includes(`<button type="button" class="dq-btn dq-btn-tinta" id="dq-voto-guardar" disabled>${constante('TEXTOS_DEL_VOTO').guardar}</button>`));
+    assert.ok(!html.includes('id="dq-principal'), 'sin el diálogo de la principal elegida a mano');
     // Nada se mueve con movimiento reducido
     const estilo = html.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? '';
-    assert.match(estilo, /@media \(prefers-reduced-motion: reduce\) \{[^@]*#dq-principal,/);
+    assert.match(estilo, /@media \(prefers-reduced-motion: reduce\) \{[^@]*#dq-voto,/);
+    assert.doesNotMatch(estilo, /#dq-principal/);
   });
 
   it('ningún id se repite: en la página, ni en la página con el panel de Correo o con el detalle, su caja y el diálogo', () => {
@@ -2329,11 +2386,12 @@ describe('dato-quincena.html: la página', () => {
       + ctx.htmlDeLaCajaDelCorreo(CAJA()) + ctx.htmlDelReenvio(CAJA().lista_de_hoy)), []);
     assert.deepEqual(repetidos(html + ctx.htmlDePestanas('ediciones') + ctx.htmlDelDetalle(respuesta('detalle_con_datasets').data, { admin: true })
       + ctx.htmlDeLaCajaDelCorreo(CAJA())), []);
-    // Con la franja del equipo y el cuerpo del diálogo de la principal
-    for (const nombre of ['detalle', 'detalle_equipo_coincide', 'detalle_equipo_otra']) {
+    // Con la franja del equipo (de antes y votada), los votos y el cuerpo del diálogo «Tu orden»
+    for (const nombre of ['detalle', 'detalle_equipo_coincide', 'detalle_equipo_otra', 'detalle_votacion_abierta', 'detalle_votacion_abierta_con_voto',
+      'detalle_votacion_cerrada_puntos', 'detalle_votacion_cerrada_desempate', 'detalle_votacion_cerrada_nadie']) {
       const detalle = respuesta(nombre).data;
       assert.deepEqual(repetidos(html + ctx.htmlDePestanas('ediciones') + ctx.htmlDelDetalle(detalle, { admin: true, vista: 'propuestas' })
-        + ctx.htmlDelDialogoDeLaPrincipal(detalle)), [], nombre);
+        + ctx.htmlDelDialogoDelVoto(detalle, [1])), [], nombre);
     }
   });
 
@@ -2506,7 +2564,7 @@ describe('dato-quincena.html: la página', () => {
   it('el CSS de la pestaña Correo y de la caja del detalle (la maqueta aprobada): el interruptor quieto con movimiento reducido', () => {
     const estilo = html.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? '';
     for (const clase of ['dq-correo', 'dq-caja', 'dq-caja-cabeza', 'dq-switch', 'dq-proximas', 'dq-corrida', 'dq-tabla', 'dq-col-correo',
-      'dq-col-recibe', 'dq-correo-pie', 'dq-envio-caja', 'dq-mal', 'dq-envio-acciones', 'dq-opciones', 'dq-licencia']) {
+      'dq-col-recibe', 'dq-col-vota', 'dq-que-es', 'dq-correo-pie', 'dq-envio-caja', 'dq-mal', 'dq-envio-acciones', 'dq-opciones', 'dq-licencia']) {
       assert.ok(estilo.includes(`.${clase}`), clase);
     }
     assert.match(estilo, /@media \(prefers-reduced-motion: reduce\) \{[^@]*\.dq-switch input, \.dq-switch input::after \{ transition: none; \}/);
@@ -2764,9 +2822,10 @@ describe('dato-quincena.js: las propuestas de datasets nuevos (el detalle)', () 
   });
 });
 
-// spec 2026-11-21-dato-quincena-principal-equipo, 4: la principal del equipo en General (la franja), en Propuestas (las marcas, las
-// pastillas, el botón y la que se abre), en el diálogo y en la tarjeta de la lista; y la agenda con tantas columnas como grupos
-describe('dato-quincena.js: la principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo, 4)', () => {
+// spec 2026-11-21-dato-quincena-principal-equipo, 4, y spec 2026-11-23-dato-quincena-principal-votacion, 4: en una edición de antes (sin
+// votación) la franja muestra lo que se eligió a mano, sin botones para nadie; las marcas, las pastillas y la que se abre en Propuestas; la
+// tarjeta de la lista; y la agenda con tantas columnas como grupos
+describe('dato-quincena.js: la principal del equipo en una edición de antes (spec 2026-11-23-dato-quincena-principal-votacion, 4)', () => {
   const SIN = () => DETALLE();
   const COINCIDE = () => respuesta('detalle_equipo_coincide').data;
   const OTRA = () => respuesta('detalle_equipo_otra').data;
@@ -2780,55 +2839,34 @@ describe('dato-quincena.js: la principal del equipo (spec 2026-11-21-dato-quince
   const franja = (detalle, admin) => franjaDe(panelDe(ctx.htmlDelDetalle(detalle, { admin }), 'general'));
   const accionesDe = (html) => [...html.matchAll(/<(button|a) ([^>]*)>([^<]*)<\/\1>/g)].map(([, etiqueta, atributos, texto]) => [etiqueta, atributos, texto]);
   const ROTULO = `<span class="dq-franja-rotulo">${ICONO}<b>Principal del equipo:</b></span>`;
-  const CAMBIAR = ['button', 'type="button" class="dq-btn dq-btn-borde dq-btn-chico" data-elegir-principal aria-haspopup="dialog"', 'Cambiar'];
   const QUIEN = '<p class="dq-franja-quien">La eligió Persona Inventada el 23/11/2026 a las 10:12.</p>';
+  const VER = (orden) => ['a', `class="dq-btn dq-btn-borde dq-btn-chico" href="dato-quincena.html?id=12&amp;vista=propuestas&amp;propuesta=${orden}" data-ver-principal="${orden}"`,
+    'Ver la propuesta'];
 
-  it('la franja, sin elegir: «Principal del equipo:» en negrita y «todavía no la eligió.»; administración, «Validar la de Datito» y «Elegir otra»', () => {
-    const arriba = '^<section class="dq-franja dq-franja-sin" aria-labelledby="dq-franja-titulo"><div class="dq-franja-texto">'
-      + `<h3 class="dq-franja-titulo" id="dq-franja-titulo">${ROTULO} todavía no la eligió\\.</h3></div>`;
-    const lector = franja(SIN(), false);
-    assert.match(lector, new RegExp(`${arriba}</section>$`));
-    assert.deepEqual(accionesDe(lector), []);
-    const admin = franja(SIN(), true);
-    assert.match(admin, new RegExp(`${arriba}<div class="dq-franja-acciones">`));
-    assert.deepEqual(accionesDe(admin), [
-      ['button', 'type="button" class="dq-btn dq-btn-borde dq-btn-chico" data-guardar-principal="1"', 'Validar la de Datito'],
-      ['button', 'type="button" class="dq-btn dq-btn-borde dq-btn-chico" data-elegir-principal aria-haspopup="dialog"', 'Elegir otra']
-    ]);
-    assert.ok(admin.endsWith('</div></section>'));
-    assert.ok(!admin.includes('dq-franja-cifra') && !admin.includes('dq-franja-quien'), 'sin cifra ni quién');
-    // «Validar» guarda la de Datito: el orden del servidor
-    const deLaSegunda = { ...SIN(), principal_datito: { ...SIN().principal_datito, orden: 2 } };
-    assert.ok(franja(deLaSegunda, true).includes('data-guardar-principal="2">Validar la de Datito</button>'));
-  });
-
-  it('la franja, con la misma de Datito: su resumen, quién y cuándo, «Ver la propuesta» (la 1) para todos y «Cambiar» para administración', () => {
-    const lector = franja(COINCIDE(), false);
-    assert.match(lector, new RegExp('^<section class="dq-franja dq-franja-elegida" aria-labelledby="dq-franja-titulo"><div class="dq-franja-texto">'
-      + `<h3 class="dq-franja-titulo" id="dq-franja-titulo">${ROTULO} ${literal('la misma de Datito (propuesta 1).')}</h3>${literal(QUIEN)}</div>`));
-    assert.ok(!lector.includes('dq-franja-cifra'), 'sin cifra');
-    const ver = ['a', 'class="dq-btn dq-btn-borde dq-btn-chico" href="dato-quincena.html?id=12&amp;vista=propuestas&amp;propuesta=1" data-ver-principal="1"', 'Ver la propuesta'];
-    assert.deepEqual(accionesDe(lector), [ver]);
-    assert.deepEqual(accionesDe(franja(COINCIDE(), true)), [ver, CAMBIAR]);
-  });
-
-  it('la franja, con otra: «Propuesta 2 · título», la cifra en chico, quién y cuándo, «Ver la propuesta» (la 2) y «Cambiar»', () => {
-    const admin = franja(OTRA(), true);
-    assert.match(admin, new RegExp(`${ROTULO} ${literal('Propuesta 2 · Otro título inventado')}</h3>`
-      + `<p class="dq-franja-cifra">${literal('56 casos · septiembre de 2026')}</p>${literal(QUIEN)}</div>`));
-    assert.deepEqual(accionesDe(admin), [
-      ['a', 'class="dq-btn dq-btn-borde dq-btn-chico" href="dato-quincena.html?id=12&amp;vista=propuestas&amp;propuesta=2" data-ver-principal="2"', 'Ver la propuesta'],
-      CAMBIAR
-    ]);
-    assert.deepEqual(accionesDe(franja(OTRA(), false)).map(([, , texto]) => texto), ['Ver la propuesta']);
-    // Con una elegida, nunca «Validar» ni «Elegir otra»; sin elegir, nunca «Cambiar»
-    for (const detalle of [COINCIDE(), OTRA()]) {
-      const html = franja(detalle, true);
-      assert.ok(!html.includes('Validar la de Datito') && !html.includes('Elegir otra'));
+  it('sin elegir: «Principal del equipo:» en negrita y «todavía no la eligió.», sin botones para nadie (tampoco para administración)', () => {
+    for (const admin of [false, true]) {
+      const html = franja(SIN(), admin);
+      assert.match(html, new RegExp('^<section class="dq-franja dq-franja-sin" aria-labelledby="dq-franja-titulo"><div class="dq-franja-texto">'
+        + `<h3 class="dq-franja-titulo" id="dq-franja-titulo">${ROTULO} todavía no la eligió\\.</h3></div></section>$`), String(admin));
+      assert.deepEqual(accionesDe(html), [], String(admin));
     }
-    assert.ok(!franja(SIN(), true).includes('>Cambiar<'));
-    // La administración es el true literal
-    for (const detalle of [SIN(), OTRA()]) assert.ok(!franja(detalle, 'true').includes('<button'));
+  });
+
+  it('con la misma de Datito: su resumen, quién y cuándo y «Ver la propuesta» (la 1), igual para todos', () => {
+    const html = franja(COINCIDE(), true);
+    assert.match(html, new RegExp('^<section class="dq-franja dq-franja-elegida" aria-labelledby="dq-franja-titulo"><div class="dq-franja-texto">'
+      + `<h3 class="dq-franja-titulo" id="dq-franja-titulo">${ROTULO} ${literal('la misma de Datito (propuesta 1).')}</h3>${literal(QUIEN)}</div>`));
+    assert.ok(!html.includes('dq-franja-cifra'), 'sin cifra');
+    assert.deepEqual(accionesDe(html), [VER(1)]);
+    assert.equal(franja(COINCIDE(), false), html);
+  });
+
+  it('con otra: «Propuesta 2 · título», la cifra en chico, quién y cuándo y «Ver la propuesta» (la 2), igual para todos', () => {
+    const html = franja(OTRA(), true);
+    assert.match(html, new RegExp(`${ROTULO} ${literal('Propuesta 2 · Otro título inventado')}</h3>`
+      + `<p class="dq-franja-cifra">${literal('56 casos · septiembre de 2026')}</p>${literal(QUIEN)}</div>`));
+    assert.deepEqual(accionesDe(html), [VER(2)]);
+    assert.equal(franja(OTRA(), false), html);
   });
 
   it('la franja va solo en General, arriba de la portada; sin principal_equipo (un servidor de antes) o sin propuestas, no va', () => {
@@ -2844,7 +2882,9 @@ describe('dato-quincena.js: la principal del equipo (spec 2026-11-21-dato-quince
     assert.ok(!ctx.htmlDelDetalle({ ...OTRA(), propuestas: [] }, { admin: true }).includes('dq-franja'));
     // Un orden que la edición no tiene (no llega: la FK lo impide) se toma como sin elegir: sin «Ver la propuesta»
     const fuera = franja({ ...OTRA(), principal_equipo: { ...OTRA().principal_equipo, orden: 9 } }, true);
-    assert.ok(!fuera.includes('data-ver-principal') && fuera.includes('Elegir otra'));
+    assert.ok(!fuera.includes('data-ver-principal') && fuera.startsWith('<section class="dq-franja dq-franja-sin"'));
+    // Una votación que no es un objeto, o con un estado que no se conoce, es la franja de antes
+    for (const votacion of [null, 'abierta', [], { estado: 'otra' }]) assert.equal(franja({ ...OTRA(), votacion }, true), franja(OTRA(), true), JSON.stringify(votacion));
   });
 
   it('el índice: la marca de Datito («Datito») y la del equipo («Equipo»), cada una con su ícono y lo que se lee; las dos en la misma si coinciden', () => {
@@ -2863,33 +2903,26 @@ describe('dato-quincena.js: la principal del equipo (spec 2026-11-21-dato-quince
     assert.deepEqual(marcas(deAntes), [['dq-im-principal: Principal (Principal)'], []]);
   });
 
-  it('la propuesta que se ve: las pastillas de las dos principales y, para administración, «Elegir como principal del equipo» o «Es la principal del equipo»', () => {
+  it('la propuesta que se ve: las pastillas de las dos principales, sin botones para nadie (la elección a mano ya no existe)', () => {
     const arriba = (detalle, propuesta, admin) => articuloDe(ctx.htmlDelDetalle(detalle, { admin, vista: 'propuestas', propuesta }))
       .match(/<div class="dq-prop-arriba">[\s\S]*?<\/div>/)?.[0] ?? '';
     const EQUIPO = `<span class="dq-etiqueta dq-et-equipo">${ICONO}Principal del equipo</span>`;
-    const boton = (orden) => `<button type="button" class="dq-btn dq-btn-borde dq-btn-chico dq-elegir-esta" data-guardar-principal="${orden}">Elegir como principal del equipo</button>`;
-    const ES = '<span class="dq-es-del-equipo">Es la principal del equipo</span>';
-    // Sin elegir: el botón en todas, para la administración
-    assert.ok(arriba(SIN(), 1, true).endsWith(`${boton(1)}</div>`));
-    assert.ok(arriba(SIN(), 2, true).endsWith(`${boton(2)}</div>`));
-    // Otra (la 2): la 2 con su pastilla y el texto; la 1, la de Datito, con su pastilla y el botón
-    assert.match(arriba(OTRA(), 2, true), new RegExp(`^<div class="dq-prop-arriba"><span class="dq-orden">Propuesta 2</span>${EQUIPO}`
-      + `<span class="dq-etiqueta dq-et-agenda">Agenda</span>${ES}</div>$`));
-    assert.match(arriba(OTRA(), 1, true), new RegExp(`^<div class="dq-prop-arriba"><span class="dq-orden">Propuesta 1</span>${PASTILLA_DE_DATITO.source}`
-      + `<span class="dq-etiqueta dq-et-validar">${ICONO}Validar</span>${literal(boton(1))}</div>$`));
-    // Coincide: la 1 con las dos pastillas y el texto
-    assert.match(arriba(COINCIDE(), 1, true), new RegExp(`^<div class="dq-prop-arriba"><span class="dq-orden">Propuesta 1</span>${EQUIPO}${PASTILLA_DE_DATITO.source}`));
-    assert.ok(arriba(COINCIDE(), 1, true).endsWith(`${ES}</div>`));
-    assert.ok(arriba(COINCIDE(), 2, true).endsWith(`${boton(2)}</div>`));
-    // Un lector ve las pastillas, sin el botón ni el texto
-    for (const [detalle, propuesta] of [[SIN(), 1], [OTRA(), 1], [OTRA(), 2], [COINCIDE(), 1]]) {
-      const html = arriba(detalle, propuesta, false);
-      assert.ok(!html.includes('data-guardar-principal') && !html.includes('dq-es-del-equipo'), html);
+    for (const admin of [true, false]) {
+      // Otra (la 2): la 2 con su pastilla; la 1, la de Datito, con la suya
+      assert.match(arriba(OTRA(), 2, admin), new RegExp(`^<div class="dq-prop-arriba"><span class="dq-orden">Propuesta 2</span>${EQUIPO}`
+        + '<span class="dq-etiqueta dq-et-agenda">Agenda</span></div>$'));
+      assert.match(arriba(OTRA(), 1, admin), new RegExp(`^<div class="dq-prop-arriba"><span class="dq-orden">Propuesta 1</span>${PASTILLA_DE_DATITO.source}`
+        + `<span class="dq-etiqueta dq-et-validar">${ICONO}Validar</span></div>$`));
+      // Coincide: la 1 con las dos pastillas
+      assert.match(arriba(COINCIDE(), 1, admin), new RegExp(`^<div class="dq-prop-arriba"><span class="dq-orden">Propuesta 1</span>${EQUIPO}${PASTILLA_DE_DATITO.source}`));
+      for (const [detalle, propuesta] of [[SIN(), 1], [SIN(), 2], [OTRA(), 1], [OTRA(), 2], [COINCIDE(), 1], [COINCIDE(), 2]]) {
+        const html = arriba(detalle, propuesta, admin);
+        assert.ok(!html.includes('<button') && !html.includes('dq-es-del-equipo') && !html.includes('dq-et-tuyo'), html);
+      }
     }
-    assert.match(arriba(OTRA(), 2, false), new RegExp(EQUIPO));
-    // Sin principal_equipo (un servidor de antes), ni la pastilla del equipo ni el botón
+    // Sin principal_equipo (un servidor de antes), sin la pastilla del equipo
     const { principal_equipo: _pe, ...sinEquipo } = OTRA();
-    assert.ok(!arriba(sinEquipo, 2, true).includes('dq-et-equipo') && !arriba(sinEquipo, 2, true).includes('data-guardar-principal'));
+    assert.ok(!arriba(sinEquipo, 2, true).includes('dq-et-equipo'));
   });
 
   it('sin &propuesta=, Propuestas abre la del equipo; si no eligió, la de Datito; &propuesta= manda', () => {
@@ -2901,24 +2934,6 @@ describe('dato-quincena.js: la principal del equipo (spec 2026-11-21-dato-quince
     assert.deepEqual(actualDe(vista(OTRA(), 9)), ['2'], 'una que no existe: la del equipo');
     assert.equal(ctx.posicionDeLaPropuesta(OTRA(), null), 1);
     assert.equal(ctx.posicionDeLaPropuesta(OTRA(), 1), 0);
-  });
-
-  it('el cuerpo del diálogo: una opción por propuesta, «Propuesta N · título», la de Datito con «(la de Datito)» y marcada la del equipo (o ninguna)', () => {
-    const opciones = (detalle) => [...ctx.htmlDelDialogoDeLaPrincipal(detalle).matchAll(/<label><input type="radio" name="dq-principal" value="(\d+)"( checked)?> <span><b>([^<]*)<\/b> · ([^<]*?)(?: <span class="dq-opcion-aclara">([^<]*)<\/span>)?<\/span><\/label>/g)]
-      .map(([, valor, marcada, numero, titulo, aclara]) => [valor, Boolean(marcada), numero, titulo, aclara ?? null]);
-    assert.deepEqual(opciones(SIN()), [
-      ['1', false, 'Propuesta 1', 'Un título inventado', '(la de Datito)'],
-      ['2', false, 'Propuesta 2', 'Otro título inventado', null]
-    ]);
-    assert.deepEqual(opciones(COINCIDE()).map(([valor, marcada]) => [valor, marcada]), [['1', true], ['2', false]]);
-    assert.deepEqual(opciones(OTRA()).map(([valor, marcada]) => [valor, marcada]), [['1', false], ['2', true]]);
-    const html = ctx.htmlDelDialogoDeLaPrincipal(OTRA());
-    assert.match(html, /^<fieldset class="dq-opciones"><legend class="visualmente-oculto">Las propuestas de la edición<\/legend><label>/);
-    assert.ok(html.endsWith('</label></fieldset>'));
-    assert.equal(cuantas(ctx.htmlDelDialogoDeLaPrincipal(SIN()), / checked/g), 0);
-    // Sin propuestas, nada
-    assert.equal(ctx.htmlDelDialogoDeLaPrincipal({ ...SIN(), propuestas: [] }), '');
-    assert.equal(ctx.htmlDelDialogoDeLaPrincipal(null), '');
   });
 
   it('la tarjeta de la lista: el rótulo de la principal que cuenta, con su ícono, arriba del título', () => {
@@ -2935,7 +2950,7 @@ describe('dato-quincena.js: la principal del equipo (spec 2026-11-21-dato-quince
     assert.equal(cuantas(ctx.htmlDeTarjeta(regular), /<a /g), 1);
   });
 
-  it('un título con HTML sale escapado en la franja, el diálogo, las marcas, las pastillas y la tarjeta', () => {
+  it('un título con HTML sale escapado en la franja, las marcas, las pastillas y la tarjeta', () => {
     const detalle = OTRA();
     detalle.propuestas = detalle.propuestas.map((p) => ({ ...p, titulo: XSS_ALERTA, orden_texto: XSS_ALERTA }));
     detalle.principal_equipo = { ...detalle.principal_equipo, resumen: `Propuesta 2 · ${XSS_ALERTA}`, cifra_clave: XSS_ALERTA, quien: XSS_ALERTA,
@@ -2952,9 +2967,6 @@ describe('dato-quincena.js: la principal del equipo (spec 2026-11-21-dato-quince
     const articulo = (propuesta) => articuloDe(ctx.htmlDelDetalle(detalle, { admin: true, vista: 'propuestas', propuesta }));
     assert.match(articulo(2), new RegExp(`<span class="dq-etiqueta dq-et-equipo">${ICONO}${literal(XSS_ALERTA_ESCAPADO)}</span>`));
     assert.match(articulo(1), new RegExp(`<span class="dq-etiqueta dq-et-principal">${ICONO}${literal(XSS_ALERTA_ESCAPADO)}</span>`));
-    const dialogo = ctx.htmlDelDialogoDeLaPrincipal(detalle);
-    assert.ok(!dialogo.includes('<img'), dialogo);
-    assert.ok(dialogo.includes(`<b>${XSS_ALERTA_ESCAPADO}</b> · ${XSS_ALERTA_ESCAPADO} <span class="dq-opcion-aclara">`));
     const tarjeta = ctx.htmlDeTarjeta({ ...LISTA().ediciones[0], principal: { titulo: XSS_ALERTA, cifra_clave: XSS_ALERTA, rotulo: XSS_ALERTA } });
     assert.ok(!tarjeta.includes('<img'), tarjeta);
     assert.ok(tarjeta.includes(`${XSS_ALERTA_ESCAPADO}</p><p class="dq-principal-diario">${XSS_ALERTA_ESCAPADO}</p>`));
@@ -2971,11 +2983,10 @@ describe('dato-quincena.js: la principal del equipo (spec 2026-11-21-dato-quince
     assert.match(angosta, /\.dq-agenda-cols \{ grid-auto-flow: row; grid-template-columns: minmax\(0, 1fr\);/);
   });
 
-  it('el <style>: la franja, las marcas, las pastillas, el botón de la propuesta, la tarjeta y el diálogo', () => {
+  it('el <style>: la franja, las marcas, las pastillas y la tarjeta; lo de la elección a mano ya no está', () => {
     const estilo = leer('dato-quincena.html').match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? '';
     for (const clase of ['dq-franja', 'dq-franja-sin', 'dq-franja-texto', 'dq-franja-titulo', 'dq-franja-rotulo', 'dq-franja-cifra', 'dq-franja-quien',
-      'dq-franja-acciones', 'dq-im-equipo', 'dq-et-equipo', 'dq-elegir-esta', 'dq-es-del-equipo', 'dq-tarjeta-rotulo', 'dq-dialogo-texto',
-      'dq-opcion-aclara']) assert.ok(estilo.includes(`.${clase}`), clase);
+      'dq-franja-acciones', 'dq-im-equipo', 'dq-et-equipo', 'dq-tarjeta-rotulo', 'dq-dialogo-texto']) assert.ok(estilo.includes(`.${clase}`), clase);
     // La del equipo, blanca con un borde de tinta; la de Datito, en tinta: además del ícono y el texto
     assert.match(estilo, /\.dq-im-equipo, \.dq-et-equipo \{ background: #fff; color: var\(--sg-tinta\); box-shadow: inset 0 0 0 1\.5px var\(--sg-tinta\); \}/);
     // Lo largo no ensancha la franja; en el teléfono, en una columna, con los botones debajo
@@ -2983,21 +2994,314 @@ describe('dato-quincena.js: la principal del equipo (spec 2026-11-21-dato-quince
     const telefono = estilo.match(/@media \(max-width: 640px\) \{([\s\S]*?)\n {8}\}/)?.[1] ?? '';
     assert.match(telefono, /\.dq-franja \{ grid-template-columns: minmax\(0, 1fr\);/);
     assert.doesNotMatch(estilo, /Datito/);
+    for (const clase of ['dq-elegir-esta', 'dq-es-del-equipo', 'dq-opcion-aclara']) assert.ok(!estilo.includes(`.${clase}`), clase);
   });
 });
 
-// La parte del DOM de la principal del equipo, con una página falsa
-describe('dato-quincena.js: la principal del equipo (la parte del DOM)', () => {
-  const SIN = () => DETALLE();
-  const COINCIDE = () => respuesta('detalle_equipo_coincide').data;
+// spec 2026-11-23-dato-quincena-principal-votacion, 4: la principal del equipo se vota. La franja abierta y cerrada, los votos, el diálogo
+// «Tu orden» (la forma B de la maqueta, «Tocar en orden»), Propuestas, la tarjeta de la lista; los textos, todos del servidor
+describe('dato-quincena.js: la votación de la principal del equipo (spec 2026-11-23-dato-quincena-principal-votacion, 4)', () => {
+  const ABIERTA = () => respuesta('detalle_votacion_abierta').data;
+  const CON_VOTO = () => respuesta('detalle_votacion_abierta_con_voto').data;
+  const PUNTOS = () => respuesta('detalle_votacion_cerrada_puntos').data;
+  const DESEMPATE = () => respuesta('detalle_votacion_cerrada_desempate').data;
+  const NADIE = () => respuesta('detalle_votacion_cerrada_nadie').data;
+  const conVotacion = (detalle, cambios) => ({ ...detalle, votacion: { ...detalle.votacion, ...cambios } });
+  // Quien mira no está en la foto de la edición (spec 3): no puede votar, no le falta su voto y no tiene orden
+  const FUERA = () => conVotacion(ABIERTA(), { puede_votar: false, falta_tu_voto: false, tu_orden: null, dialogo: null });
+  // Sin calendario (spec 2): abierta, «se está votando.», el cierre no se sabe y nadie puede votar
+  const SIN_CALENDARIO = () => {
+    const detalle = conVotacion(ABIERTA(), { resumen: 'se está votando.', cierre: 'No se pudo leer el calendario: el cierre se confirma en unos minutos.',
+      puede_votar: false, falta_tu_voto: false, dialogo: null });
+    return { ...detalle, principal_equipo: { ...detalle.principal_equipo, resumen: 'se está votando.' } };
+  };
+  // Cuatro propuestas (la 3 y la 4, inventadas) y una sola (Review Focus 3)
+  const CUATRO = () => {
+    const detalle = ABIERTA();
+    const segunda = detalle.propuestas[1];
+    detalle.propuestas = [...detalle.propuestas, ...[3, 4].map((orden) => ({ ...segunda, orden, orden_texto: `Propuesta ${orden}`, titulo: `Título inventado ${orden}` }))];
+    return detalle;
+  };
+  const UNA = () => {
+    const detalle = ABIERTA();
+    detalle.propuestas = detalle.propuestas.slice(0, 1);
+    return detalle;
+  };
+  const I = { equipo: constante('ICONO_EQUIPO'), aviso: constante('ICONO_AVISO'), check: constante('ICONO_CHECK'), reloj: constante('ICONO_RELOJ'),
+    datito: constante('ICONO_DATITO') };
+  const franjaDe = (html) => html.match(/<section class="dq-franja[\s\S]*?<\/section>/)?.[0] ?? '';
+  const franja = (detalle, admin = false) => franjaDe(panelDe(ctx.htmlDelDetalle(detalle, { admin }), 'general'));
+  const ROTULO = `<span class="dq-franja-rotulo">${I.equipo}<b>Principal del equipo:</b></span>`;
+  const VOTAR = '<button type="button" class="dq-btn dq-btn-tinta dq-btn-chico" data-votar aria-haspopup="dialog">Votar</button>';
+  const CAMBIAR = '<button type="button" class="dq-btn dq-btn-tinta dq-btn-chico" data-votar aria-haspopup="dialog">Cambiar mi orden</button>';
+  const FALTA = `<span class="dq-envio dq-envio-espera dq-falta-tu-voto">${I.aviso}Falta tu voto</span>`;
+  const NO_ESTAS = '<p class="dq-franja-quien">Votan las personas de la lista que arma administración.</p>';
+  // La marca de la de Datito en los votos y en el diálogo: lo que se ve y lo que se lee
+  const MARCA = `<span class="dq-im dq-im-principal dq-im-chica">${I.datito}<span aria-hidden="true">Datito</span><span class="visualmente-oculto">(la de Datito)</span></span>`;
+  const abiertaArriba = (resumen) => '<section class="dq-franja dq-franja-sin dq-franja-abierta" aria-labelledby="dq-franja-titulo"><div class="dq-franja-texto">'
+    + `<h3 class="dq-franja-titulo" id="dq-franja-titulo">${ROTULO} ${resumen}</h3>`;
+  const cerradaArriba = (resumen) => '<section class="dq-franja dq-franja-elegida dq-franja-cerrada" aria-labelledby="dq-franja-titulo"><div class="dq-franja-texto">'
+    + `<h3 class="dq-franja-titulo" id="dq-franja-titulo">${ROTULO} ${resumen}</h3>`;
+  const verLaPropuesta = (orden) => `<div class="dq-franja-acciones"><a class="dq-btn dq-btn-borde dq-btn-chico" href="dato-quincena.html?id=12&amp;vista=propuestas&amp;propuesta=${orden}" `
+    + `data-ver-principal="${orden}">Ver la propuesta</a></div></section>`;
+
+  it('los textos de la página', () => {
+    assert.deepEqual(constante('TEXTOS_DEL_VOTO'), {
+      votar: 'Votar', cambiar: 'Cambiar mi orden', guardar: 'Guardar mi orden', deNuevo: 'Empezar de nuevo', faltaTuVoto: 'Falta tu voto',
+      noEstas: 'Votan las personas de la lista que arma administración.', verLosVotos: 'Ver los votos', gano: 'Ganó', tuOrden: 'Tu orden',
+      primero: 'Tocá primero la que más querés trabajar.', error: 'No se pudo guardar tu orden. Probá de nuevo en unos minutos.'
+    });
+    assert.ok(vm.runInContext('Object.isFrozen(TEXTOS_DEL_VOTO)', ctx));
+    // La elección a mano ya no está: ni sus textos, ni su diálogo, ni su ruta (que ahora contesta siempre 409)
+    const script = leer('js/dato-quincena.js');
+    for (const resto of ['TEXTOS_DE_LA_PRINCIPAL', 'htmlDelDialogoDeLaPrincipal', 'abrirLaPrincipalDq', 'cerrarLaPrincipalDq', 'confirmarLaPrincipalDq',
+      'conectarLaPrincipalDq', 'guardarLaPrincipalDq', 'actualizarGuardarLaPrincipalDq', 'FOCO_DESPUES_DE_ELEGIR', 'guardandoPrincipal',
+      'data-guardar-principal', 'data-elegir-principal', '/principal-equipo', 'dq-principal-guardar']) assert.ok(!script.includes(resto), resto);
+  });
+
+  it('abierta, sin su voto: el resumen, la participación, «Falta tu voto» (sol, con el triángulo) y «Votar», igual para cualquier rol', () => {
+    const html = franja(ABIERTA());
+    assert.equal(html, abiertaArriba('se vota hasta el martes 03/11 a las 12:00.')
+      + '<p class="dq-franja-quien">Ya votó 1 de 3: Persona Dos. Faltan los votos de Persona Uno y Persona Tres.</p></div>'
+      + `<div class="dq-franja-acciones">${FALTA}${VOTAR}</div></section>`);
+    assert.equal(franja(ABIERTA(), true), html, 'votar no depende del rol: depende de estar en la foto');
+  });
+
+  it('abierta, con su voto: «Tu orden» en una lista corta y «Cambiar mi orden», sin «Falta tu voto»', () => {
+    assert.equal(franja(CON_VOTO()), abiertaArriba('se vota hasta el martes 03/11 a las 12:00.')
+      + '<p class="dq-franja-quien">Ya votaron 2 de 3: Persona Uno y Persona Dos. Falta el voto de Persona Tres.</p>'
+      + '<div class="dq-tu-orden"><p class="dq-tu-orden-titulo" id="dq-tu-orden-titulo">Tu orden</p><ol aria-labelledby="dq-tu-orden-titulo">'
+      + '<li><b>1.º</b> Propuesta 2 · Otro título inventado</li><li><b>2.º</b> Propuesta 1 · Un título inventado</li></ol></div></div>'
+      + `<div class="dq-franja-acciones">${CAMBIAR}</div></section>`);
+  });
+
+  it('abierta, fuera de la foto o sin calendario: la participación y quiénes votan, sin botón ni pastilla', () => {
+    assert.equal(franja(FUERA(), true), abiertaArriba('se vota hasta el martes 03/11 a las 12:00.')
+      + `<p class="dq-franja-quien">Ya votó 1 de 3: Persona Dos. Faltan los votos de Persona Uno y Persona Tres.</p>${NO_ESTAS}</div></section>`);
+    assert.equal(franja(SIN_CALENDARIO()), abiertaArriba('se está votando.')
+      + `<p class="dq-franja-quien">Ya votó 1 de 3: Persona Dos. Faltan los votos de Persona Uno y Persona Tres.</p>${NO_ESTAS}</div></section>`);
+    // Solo el true literal deja votar y muestra la pastilla
+    for (const raro of ['true', 1, null]) {
+      const html = franja(conVotacion(ABIERTA(), { puede_votar: raro, falta_tu_voto: raro }));
+      assert.ok(!html.includes('data-votar') && !html.includes('dq-falta-tu-voto') && html.includes(NO_ESTAS), String(raro));
+    }
+  });
+
+  it('cerrada por puntos: la ganadora con su cifra, cómo ganó en negrita, la participación con el cierre, «Ver los votos» plegado y «Ver la propuesta»', () => {
+    const { resultado } = PUNTOS().votacion;
+    assert.equal(franja(PUNTOS()), cerradaArriba('Propuesta 2 · Otro título inventado')
+      + '<p class="dq-franja-cifra">56 casos · septiembre de 2026</p>'
+      + '<p class="dq-resultado">Ganó por puntos: 5, contra 4 de la que siguió.</p>'
+      + '<p class="dq-franja-quien">Votaron 3 de 3. La votación cerró el martes 03/11/2026 a las 12:00.</p>'
+      + `<details class="dq-votos"><summary>Ver los votos</summary><p class="dq-votos-regla">${resultado.regla}</p>${ctx.htmlDeLosVotos(resultado)}</details></div>`
+      + verLaPropuesta(2));
+    assert.equal(franja(PUNTOS(), true), franja(PUNTOS()));
+  });
+
+  it('cerrada por desempate y sin votos: la de Datito; sin votos, sin «Ver los votos»', () => {
+    const { resultado } = DESEMPATE().votacion;
+    assert.equal(franja(DESEMPATE()), cerradaArriba('la misma de Datito (propuesta 1).')
+      + '<p class="dq-resultado">Ganó por desempate: empató con la 2, con 3 puntos, y es la de Datito.</p>'
+      + '<p class="dq-franja-quien">Votaron 2 de 3: no votó Persona Tres. La votación cerró el martes 03/11/2026 a las 12:00.</p>'
+      + `<details class="dq-votos"><summary>Ver los votos</summary><p class="dq-votos-regla">${resultado.regla}</p>${ctx.htmlDeLosVotos(resultado)}</details></div>`
+      + verLaPropuesta(1));
+    assert.equal(franja(NADIE()), cerradaArriba('la misma de Datito (propuesta 1).')
+      + '<p class="dq-resultado">Nadie votó: quedó la de Datito.</p>'
+      + '<p class="dq-franja-quien">No votó nadie de 3. La votación cerró el martes 03/11/2026 a las 12:00.</p></div>'
+      + verLaPropuesta(1));
+  });
+
+  it('htmlDeLosVotos: Propuesta, una columna por quien votó y Puntos; cada propuesta, encabezado de su fila; la ganadora con fondo y «Ganó» con el tilde', () => {
+    assert.equal(ctx.htmlDeLosVotos(PUNTOS().votacion.resultado), '<div class="dq-tabla-caja"><table class="dq-tabla dq-tabla-votos">'
+      + '<caption class="visualmente-oculto">El puesto que le dio cada persona a cada propuesta y sus puntos</caption>'
+      + '<thead><tr><th scope="col">Propuesta</th><th scope="col">Persona Uno</th><th scope="col">Persona Dos</th><th scope="col">Persona Tres</th>'
+      + '<th scope="col" class="dq-col-puntos">Puntos</th></tr></thead><tbody>'
+      + '<tr class="dq-gana"><th scope="row">Propuesta 2 · Otro título inventado</th><td>1.º</td><td>1.º</td><td>2.º</td>'
+      + `<td class="dq-col-puntos"><b>5</b> <span class="dq-gano">${I.check}Ganó</span></td></tr>`
+      + `<tr><th scope="row">Propuesta 1 · Un título inventado ${MARCA}</th><td>2.º</td><td>2.º</td><td>1.º</td><td class="dq-col-puntos"><b>4</b></td></tr>`
+      + '</tbody></table></div>');
+    // La de Datito, ganadora: el fondo, «Ganó» y su marca
+    const desempate = ctx.htmlDeLosVotos(DESEMPATE().votacion.resultado);
+    assert.ok(desempate.includes(`<tr class="dq-gana"><th scope="row">Propuesta 1 · Un título inventado ${MARCA}</th><td>2.º</td><td>1.º</td>`
+      + `<td class="dq-col-puntos"><b>3</b> <span class="dq-gano">${I.check}Ganó</span></td></tr>`));
+    // Un número va con String (Utils.escapeHtml(0) da ''); sin tabla (nadie votó) o sin resultado, nada
+    const conCero = { tabla: { votantes: ['Persona Uno'], filas: [{ orden: 1, texto: 'x', de_datito: false, puestos: ['1.º'], puntos: 0, gana: false }] } };
+    assert.ok(ctx.htmlDeLosVotos(conCero).includes('<td class="dq-col-puntos"><b>0</b></td>'));
+    for (const raro of [NADIE().votacion.resultado, null, undefined, { tabla: 'x' }]) assert.equal(ctx.htmlDeLosVotos(raro), '', JSON.stringify(raro));
+  });
+
+  it('todo texto de la votación va escapado (un título con <b> sale como texto); no queda nada de la elección a mano', () => {
+    const NEGRITA = '<b>Negrita</b>';
+    for (const fabrica of [ABIERTA, CON_VOTO, PUNTOS, DESEMPATE, NADIE, FUERA]) {
+      const detalle = fabrica();
+      detalle.propuestas = detalle.propuestas.map((p) => ({ ...p, titulo: NEGRITA, orden_texto: NEGRITA }));
+      detalle.principal_equipo = conTextos(detalle.principal_equipo, NEGRITA);
+      detalle.votacion = { ...conTextos(detalle.votacion, NEGRITA), estado: detalle.votacion.estado };
+      for (const vista of ['general', 'propuestas']) {
+        const html = ctx.htmlDelDetalle(detalle, { admin: true, vista });
+        assert.ok(!html.includes(NEGRITA), `${fabrica.name} ${vista}`);
+        assert.ok(html.includes('&lt;b&gt;Negrita&lt;/b&gt;'), `${fabrica.name} ${vista}`);
+      }
+      assert.ok(!ctx.htmlDelDialogoDelVoto(detalle, [1]).includes(NEGRITA));
+    }
+    for (const nombre of ['detalle', 'detalle_equipo_coincide', 'detalle_equipo_otra', 'detalle_votacion_abierta', 'detalle_votacion_abierta_con_voto',
+      'detalle_votacion_cerrada_puntos', 'detalle_votacion_cerrada_desempate', 'detalle_votacion_cerrada_nadie']) {
+      for (const admin of [true, false]) {
+        for (const vista of ['general', 'propuestas']) {
+          const html = ctx.htmlDelDetalle(respuesta(nombre).data, { admin, vista });
+          for (const resto of ['Validar la de Datito', 'Elegir otra', '>Cambiar<', 'Elegir como principal del equipo', 'Es la principal del equipo']) {
+            assert.ok(!html.includes(resto), `${nombre} ${vista} ${resto}`);
+          }
+        }
+      }
+    }
+  });
+
+  it('Propuestas: con puede_votar, «Votar» o, con su voto, «Tu N.º» y «Cambiar mi orden» en la cabecera; cerrada o sin poder votar, nada', () => {
+    const arriba = (detalle, propuesta, admin = false) => articuloDe(ctx.htmlDelDetalle(detalle, { admin, vista: 'propuestas', propuesta }))
+      .match(/<div class="dq-prop-arriba">[\s\S]*?<\/div>/)?.[0] ?? '';
+    const boton = (texto) => `<button type="button" class="dq-btn dq-btn-borde dq-btn-chico dq-votar-esta" data-votar aria-haspopup="dialog">${texto}</button>`;
+    assert.ok(arriba(ABIERTA(), 1).endsWith(`<span class="dq-etiqueta dq-et-validar">${constante('ICONO_VALIDAR')}Validar</span>${boton('Votar')}</div>`));
+    assert.equal(arriba(ABIERTA(), 2), `<div class="dq-prop-arriba"><span class="dq-orden">Propuesta 2</span><span class="dq-etiqueta dq-et-agenda">Agenda</span>${boton('Votar')}</div>`);
+    assert.equal(arriba(CON_VOTO(), 2), '<div class="dq-prop-arriba"><span class="dq-orden">Propuesta 2</span><span class="dq-etiqueta dq-et-agenda">Agenda</span>'
+      + `<span class="dq-etiqueta dq-et-tuyo">Tu 1.º</span>${boton('Cambiar mi orden')}</div>`);
+    assert.ok(arriba(CON_VOTO(), 1).endsWith(`<span class="dq-etiqueta dq-et-tuyo">Tu 2.º</span>${boton('Cambiar mi orden')}</div>`));
+    assert.equal(arriba(CON_VOTO(), 1, true), arriba(CON_VOTO(), 1), 'igual para cualquier rol');
+    for (const [detalle, nombre] of [[FUERA(), 'fuera'], [SIN_CALENDARIO(), 'sin calendario'], [PUNTOS(), 'puntos'], [NADIE(), 'nadie']]) {
+      for (const propuesta of [1, 2]) assert.ok(!arriba(detalle, propuesta, true).includes('data-votar'), `${nombre} ${propuesta}`);
+    }
+    // Sin calendario, con su orden de antes: «Tu N.º» sí (es lo que guardó), el botón no
+    const conOrden = conVotacion(SIN_CALENDARIO(), { tu_orden: CON_VOTO().votacion.tu_orden });
+    assert.ok(arriba(conOrden, 2).endsWith('<span class="dq-etiqueta dq-et-tuyo">Tu 1.º</span></div>'));
+    // Cerrada: la ganadora con la pastilla del equipo, como la elegida
+    assert.ok(arriba(PUNTOS(), 2).includes(`<span class="dq-etiqueta dq-et-equipo">${I.equipo}Principal del equipo</span>`));
+    assert.ok(!arriba(PUNTOS(), 1).includes('dq-et-equipo'));
+  });
+
+  it('el índice: «Tu N.º» en cada propuesta que ordenó, con el estilo de las otras marcas; la del equipo, en la ganadora al cerrar', () => {
+    const marcas = (detalle) => indiceDe(ctx.htmlDelPanelPropuestas(detalle)).map((i) => i.marcas.filter((m) => !m.startsWith('dq-im-validar')));
+    const DATITO = 'dq-im-principal: Datito (Principal de Datito)';
+    assert.deepEqual(marcas(ABIERTA()), [[DATITO], []]);
+    assert.deepEqual(marcas(CON_VOTO()), [[DATITO, 'dq-im-tuyo: Tu 2.º'], ['dq-im-tuyo: Tu 1.º']]);
+    assert.deepEqual(marcas(PUNTOS()), [[DATITO], ['dq-im-equipo: Equipo (Principal del equipo)']]);
+    assert.deepEqual(marcas(DESEMPATE()), [['dq-im-equipo: Equipo (Principal del equipo)', DATITO], []]);
+    // Sin votar, abre la de Datito; con la ganadora, ella
+    assert.deepEqual(actualDe(panelDe(ctx.htmlDelDetalle(ABIERTA(), { vista: 'propuestas' }), 'propuestas')), ['1']);
+    assert.deepEqual(actualDe(panelDe(ctx.htmlDelDetalle(PUNTOS(), { vista: 'propuestas' }), 'propuestas')), ['2']);
+  });
+
+  it('htmlDelDialogoDelVoto: una fila por propuesta (el puesto o un punto, «Propuesta N», el título, la marca de Datito), lo que falta y «Empezar de nuevo»', () => {
+    const fila = (orden, titulo, puesto, marca = '') => `<li><button type="button" class="dq-tocar${puesto ? ' dq-tocada' : ''}" data-tocar="${orden}" aria-pressed="${Boolean(puesto)}">`
+      + (puesto ? `<span class="dq-pos">${puesto}</span>` : '<span class="dq-pos" aria-hidden="true">·</span>')
+      + ` <span class="dq-tocar-tit"><b>Propuesta ${orden}</b> ${titulo}${marca ? ` ${marca}` : ''}</span></button></li>`;
+    const DE_NUEVO = '<button type="button" class="dq-link dq-de-nuevo" data-de-nuevo>Empezar de nuevo</button>';
+    assert.equal(ctx.htmlDelDialogoDelVoto(ABIERTA(), []), `<ul class="dq-tocar-lista">${fila(1, 'Un título inventado', null, MARCA)}${fila(2, 'Otro título inventado', null)}</ul>`
+      + '<div class="dq-tocar-pie"><p class="dq-falta-tocar">Tocá primero la que más querés trabajar.</p></div>');
+    assert.equal(ctx.htmlDelDialogoDelVoto(ABIERTA(), [2]), `<ul class="dq-tocar-lista">${fila(1, 'Un título inventado', null, MARCA)}${fila(2, 'Otro título inventado', '1.º')}</ul>`
+      + `<div class="dq-tocar-pie"><p class="dq-falta-tocar">Te falta 1.</p>${DE_NUEVO}</div>`);
+    assert.equal(ctx.htmlDelDialogoDelVoto(ABIERTA(), [2, 1]), `<ul class="dq-tocar-lista">${fila(1, 'Un título inventado', '2.º', MARCA)}${fila(2, 'Otro título inventado', '1.º')}</ul>`
+      + `<div class="dq-tocar-pie"><p class="dq-falta-tocar">Listo: ya están las 2.</p>${DE_NUEVO}</div>`);
+    // En el orden de la edición, con cuatro: lo que falta, en plural
+    const cuatro = ctx.htmlDelDialogoDelVoto(CUATRO(), [3]);
+    assert.deepEqual([...cuatro.matchAll(/data-tocar="(\d)" aria-pressed="(true|false)"/g)].map((m) => `${m[1]} ${m[2]}`), ['1 false', '2 false', '3 true', '4 false']);
+    assert.ok(cuatro.includes('<p class="dq-falta-tocar">Te faltan 3.</p>'));
+    // Una sola propuesta (Review Focus 3): una fila y, con ella tocada, lista
+    assert.equal(ctx.htmlDelDialogoDelVoto(UNA(), [1]), `<ul class="dq-tocar-lista">${fila(1, 'Un título inventado', '1.º', MARCA)}</ul>`
+      + `<div class="dq-tocar-pie"><p class="dq-falta-tocar">Listo: ya está la única.</p>${DE_NUEVO}</div>`);
+    // Sin propuestas, nada
+    assert.equal(ctx.htmlDelDialogoDelVoto({ ...ABIERTA(), propuestas: [] }, []), '');
+    assert.equal(ctx.htmlDelDialogoDelVoto(null, []), '');
+  });
+
+  it('tocar en orden: 3, 1, 4 y 2 da [3, 1, 4, 2]; tocar una con puesto se lo saca y las de atrás suben; lo que falta, contado', () => {
+    let tocadas = [];
+    for (const orden of [3, 1, 4, 2]) tocadas = plano(ctx.tocadasDespuesDeTocar(tocadas, orden));
+    assert.deepEqual(tocadas, [3, 1, 4, 2]);
+    const antes = [3, 1, 4, 2];
+    assert.deepEqual(plano(ctx.tocadasDespuesDeTocar(antes, 1)), [3, 4, 2]);
+    assert.deepEqual(antes, [3, 1, 4, 2], 'no cambia la de antes');
+    assert.deepEqual(plano(ctx.tocadasDespuesDeTocar([3, 4, 2], 1)), [3, 4, 2, 1], 'vuelve al final');
+    // Los puestos que se ven, después de sacar la 1: la 4 sube a 2.º y la 2 a 3.º
+    const html = ctx.htmlDelDialogoDelVoto(CUATRO(), [3, 4, 2]);
+    assert.deepEqual([...html.matchAll(/data-tocar="(\d)" aria-pressed="(?:true|false)"><span class="dq-pos"[^>]*>([^<]*)</g)].map((m) => `${m[1]} ${m[2]}`),
+      ['1 ·', '2 3.º', '3 1.º', '4 2.º']);
+    // Lo que falta
+    assert.deepEqual([0, 1, 2, 3, 4].map((n) => ctx.textoDeLoQueFaltaTocar(4, n)),
+      ['Tocá primero la que más querés trabajar.', 'Te faltan 3.', 'Te faltan 2.', 'Te falta 1.', 'Listo: ya están las 4.']);
+    assert.deepEqual([0, 1].map((n) => ctx.textoDeLoQueFaltaTocar(1, n)), ['Tocá primero la que más querés trabajar.', 'Listo: ya está la única.']);
+    // Al abrir: sin voto, vacío (no empuja a dejar el orden de Datito); con voto, el suyo
+    assert.deepEqual(plano(ctx.tocadasAlAbrir(ABIERTA())), []);
+    assert.deepEqual(plano(ctx.tocadasAlAbrir(CON_VOTO())), [2, 1]);
+    // Un orden que la edición no tiene no entra
+    assert.deepEqual(plano(ctx.tocadasAlAbrir(conVotacion(CON_VOTO(), { tu_orden: [...CON_VOTO().votacion.tu_orden, { puesto: '3.º', orden: 9, texto: 'x' }] }))), [2, 1]);
+  });
+
+  it('la tarjeta: abierta, «Se vota hasta …» (cielo, con el reloj) y, si falta su voto, «Falta tu voto» (sol, con el triángulo), antes de la pastilla del envío', () => {
+    const [regular] = LISTA().ediciones;
+    const pie = (item) => ctx.htmlDeTarjeta(item).match(/<div class="dq-tarjeta-pie">[\s\S]*?<\/div>/)?.[0] ?? '';
+    const ENVIO = `<span class="dq-envio dq-envio-enviada">${I.check}Enviada el lun 16/11</span>`;
+    const SE_VOTA = `<span class="dq-envio dq-envio-programada">${I.reloj}Se vota hasta el mar 03/11 a las 12:00</span>`;
+    const FALTA_EN_LA_TARJETA = `<span class="dq-envio dq-envio-espera">${I.aviso}Falta tu voto</span>`;
+    assert.equal(pie({ ...regular, votacion: { texto: 'Se vota hasta el mar 03/11 a las 12:00', falta_tu_voto: true } }),
+      `<div class="dq-tarjeta-pie">${SE_VOTA}${FALTA_EN_LA_TARJETA}${ENVIO}</div>`);
+    assert.equal(pie({ ...regular, votacion: { texto: 'Se vota hasta el mar 03/11 a las 12:00', falta_tu_voto: false } }), `<div class="dq-tarjeta-pie">${SE_VOTA}${ENVIO}</div>`);
+    assert.equal(pie({ ...regular, votacion: null }), `<div class="dq-tarjeta-pie">${ENVIO}</div>`);
+    // Sin envío, solo las de la votación; sin ninguna, sin pie
+    assert.equal(pie({ ...regular, envio: null, votacion: { texto: 'Se está votando', falta_tu_voto: false } }),
+      `<div class="dq-tarjeta-pie"><span class="dq-envio dq-envio-programada">${I.reloj}Se está votando</span></div>`);
+    assert.ok(!ctx.htmlDeTarjeta({ ...regular, envio: null, votacion: null }).includes('dq-tarjeta-pie'));
+    // Solo el true literal; el texto, escapado; algo que no es un objeto, nada
+    assert.ok(!pie({ ...regular, votacion: { texto: 'x', falta_tu_voto: 'true' } }).includes('Falta tu voto'));
+    assert.ok(pie({ ...regular, votacion: { texto: '<b>x</b>', falta_tu_voto: false } }).includes('&lt;b&gt;x&lt;/b&gt;'));
+    for (const raro of ['x', 3, []]) assert.equal(pie({ ...regular, votacion: raro }), `<div class="dq-tarjeta-pie">${ENVIO}</div>`, JSON.stringify(raro));
+    // Sigue siendo un solo enlace
+    assert.equal(cuantas(ctx.htmlDeTarjeta({ ...regular, votacion: { texto: 'x', falta_tu_voto: true } }), /<a /g), 1);
+  });
+
+  it('el <style>: la franja abierta y cerrada, los votos, «Tu N.º», el diálogo, la tarjeta con dos pastillas y «Las personas»; nada se mueve', () => {
+    const estilo = leer('dato-quincena.html').match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? '';
+    for (const clase of ['dq-franja-abierta', 'dq-franja-cerrada', 'dq-tu-orden', 'dq-tu-orden-titulo', 'dq-falta-tu-voto', 'dq-resultado', 'dq-votos',
+      'dq-votos-regla', 'dq-tabla-votos', 'dq-col-puntos', 'dq-gana', 'dq-gano', 'dq-im-chica', 'dq-et-tuyo', 'dq-im-tuyo', 'dq-votar-esta', 'dq-modal-voto',
+      'dq-tocar-lista', 'dq-tocar', 'dq-tocada', 'dq-pos', 'dq-tocar-tit', 'dq-tocar-pie', 'dq-falta-tocar', 'dq-de-nuevo']) {
+      assert.ok(estilo.includes(`.${clase}`), clase);
+    }
+    // La ganadora con fondo (y «Ganó» con el tilde: no es solo el color); la que se tocó, con el fondo, el borde y una barra
+    assert.match(estilo, /\.dq-tabla-votos tr\.dq-gana th, \.dq-tabla-votos tr\.dq-gana td \{ background: var\(--sg-cielo\); \}/);
+    assert.match(estilo, /\.dq-tocada \{[^}]*background: var\(--sg-cielo\);[^}]*box-shadow: inset 4px 0 0 var\(--sg-tinta\);/);
+    // «Tu N.º», con el estilo de las otras marcas
+    assert.match(estilo, /\.dq-et-tuyo, \.dq-im-tuyo \{[^}]*background: var\(--sg-cielo\); color: var\(--sg-tinta\);/);
+    // Lo largo no ensancha el diálogo; la tarjeta, con sus pastillas en un renglón que se parte
+    assert.match(estilo, /\.dq-tocar-tit \{[^}]*overflow-wrap: anywhere;/);
+    assert.match(estilo, /\.dq-tarjeta-pie \{[^}]*display: flex; flex-wrap: wrap;/);
+    // En el teléfono, el botón de la propuesta debajo de las etiquetas
+    const telefono = estilo.match(/@media \(max-width: 640px\) \{([\s\S]*?)\n {8}\}/)?.[1] ?? '';
+    assert.match(telefono, /\.dq-votar-esta \{ margin-left: 0; \}/);
+    // «Guardar mi orden» deshabilitado se ve apagado
+    assert.match(estilo, /#dq-voto-guardar:disabled \{ opacity: 0\.55; \}/);
+    assert.doesNotMatch(estilo, /Datito/);
+    assert.doesNotMatch(estilo, /\.mq-/);
+  });
+});
+
+// La parte del DOM de la votación, con una página falsa: el diálogo «Tu orden», guardar y volver a dibujar, una por vez
+describe('dato-quincena.js: votar (la parte del DOM)', () => {
+  const ABIERTA = () => respuesta('detalle_votacion_abierta').data;
+  const CON_VOTO = () => respuesta('detalle_votacion_abierta_con_voto').data;
+  const PUNTOS = () => respuesta('detalle_votacion_cerrada_puntos').data;
   const OTRA = () => respuesta('detalle_equipo_otra').data;
+  const UNA = () => {
+    const detalle = ABIERTA();
+    detalle.propuestas = detalle.propuestas.slice(0, 1);
+    return detalle;
+  };
+  const MENSAJE = 'Guardamos tu orden. Lo podés cambiar hasta el martes 03/11 a las 12:00.';
   const despues = () => new Promise((listo) => setImmediate(listo));
-  const conDetalle = (c, detalle, { vista = 'general', propuesta = null, caja = null } = {}) => vm.runInContext(
-    `vistaDatoQuincena.admin = true; vistaDatoQuincena.detalle = ${JSON.stringify(detalle)}; vistaDatoQuincena.vista = ${JSON.stringify(vista)};`
+  const conDetalle = (c, detalle, { vista = 'general', propuesta = null, caja = null, admin = false } = {}) => vm.runInContext(
+    `vistaDatoQuincena.admin = ${admin}; vistaDatoQuincena.detalle = ${JSON.stringify(detalle)}; vistaDatoQuincena.vista = ${JSON.stringify(vista)};`
     + ` vistaDatoQuincena.propuesta = ${JSON.stringify(propuesta)}; vistaDatoQuincena.caja = ${JSON.stringify(caja)};`, c);
   // #dq-contenido con los elementos que se buscan después de volver a dibujar, por su selector
   const contenidoFalso = (elementos = {}) => falso({ querySelector: (selector) => elementos[selector] ?? null });
-  // Un botón con un data- (el clic llega por #dq-contenido)
+  // Un botón con un data- (el clic llega por #dq-contenido o por el diálogo)
   const botonCon = (selector, dataset) => {
     const boton = falso({ dataset });
     boton.closest = (pedido) => (pedido === selector ? boton : null);
@@ -3008,61 +3312,281 @@ describe('dato-quincena.js: la principal del equipo (la parte del DOM)', () => {
     elemento.focus = () => { elemento.enfocado = true; };
     return elemento;
   };
-  // El diálogo falso: sus opciones (la marcada se cambia con `marcar`) y los oyentes que le engancha la página
+  // El diálogo falso: el velo (con los oyentes que le engancha la página), el cuerpo (cada botón que se busca para el foco anota su
+  // selector) y «Guardar mi orden»
   const dialogoFalso = () => {
-    const radios = [falso({ value: '1' }), falso({ value: '2' })];
     const oyentes = {};
-    let marcada = null;
-    const modal = falso({
-      querySelector: (selector) => ({ 'input[name="dq-principal"]:checked': marcada, 'input[name="dq-principal"]': radios[0] })[selector] ?? null,
-      addEventListener: (tipo, f) => { oyentes[tipo] = f; }
-    });
-    const guardar = falso({ addEventListener: (tipo, f) => { oyentes[`guardar:${tipo}`] = f; } });
-    return { modal, guardar, radios, oyentes, marcar: (radio) => { marcada = radio; } };
-  };
-
-  it('«Validar la de Datito»: PUT con { orden: 1 }, deshabilitado hasta la respuesta; el aviso, la edición de nuevo en la misma pestaña y el foco en «Cambiar»', async () => {
-    let boton;
-    const cambiar = enfocable();
-    const contenido = contenidoFalso({ '#dq-panel-general button[data-elegir-principal]': cambiar });
-    const lugar = falso();
-    const { c, pedidos, avisos, urls } = paginaFalsa({
-      search: '?id=12', lugares: { 'dq-contenido': contenido, 'dq-envio-lugar': lugar },
-      responder: (metodo) => {
-        if (metodo === 'PUT') {
-          assert.equal(boton.disabled, true, 'deshabilitado hasta la respuesta');
-          return { success: true, data: { cambio: true }, message: 'Quedó la de Datito como principal del <equipo>.' };
-        }
-        return { success: true, data: COINCIDE() };
+    const enfocados = [];
+    const modal = falso({ addEventListener: (tipo, f) => { oyentes[tipo] = f; } });
+    const cuerpo = falso({
+      querySelector: (selector) => {
+        if (!selector.startsWith('button[data-tocar')) return null;
+        const boton = falso();
+        boton.focus = () => enfocados.push(selector);
+        return boton;
       }
     });
-    conDetalle(c, SIN(), { caja: CAJA() });
-    boton = botonCon('button[data-guardar-principal]', { guardarPrincipal: '1' });
-    c.alTocarDq({ target: boton });
-    c.alTocarDq({ target: boton });
-    await despues();
-    assert.deepEqual(pedidos, [['PUT', '/dato-quincena/ediciones/12/principal-equipo', { orden: 1 }], ['GET', '/dato-quincena/ediciones/12']],
+    const guardar = falso({ addEventListener: (tipo, f) => { oyentes[`guardar:${tipo}`] = f; } });
+    const lugares = { 'dq-voto': modal, 'dq-voto-cuerpo': cuerpo, 'dq-voto-guardar': guardar };
+    return { modal, cuerpo, guardar, oyentes, enfocados, lugares };
+  };
+  const tocar = (dialogo, orden) => dialogo.oyentes.click({ target: botonCon('button[data-tocar]', { tocar: String(orden) }) });
+  const tocadas = (c) => plano(vm.runInContext('vistaDatoQuincena.voto?.tocadas ?? null', c));
+
+  it('un lector en la foto: «Votar» abre «Tu orden» vacío con el texto del servidor; tocar da el puesto y lo anuncia; con todas, «Guardar mi orden»; Escape cierra', async () => {
+    const d = dialogoFalso();
+    const { c, todos, oyentes } = paginaFalsa({ admin: false, search: '?id=12', lugares: d.lugares, responder: () => ({ success: true, data: ABIERTA() }) });
+    c.setTimeout = (f) => f();
+    // El diálogo se engancha para cualquier rol: votar no es de administración
+    await c.iniciarDatoQuincena();
+    assert.equal(typeof d.oyentes.click, 'function');
+    const votar = botonCon('button[data-votar]', {});
+    votar.focus = () => d.enfocados.push('votar');
+    c.alTocarDq({ target: votar });
+    assert.ok(d.modal.classList.contains('active'));
+    assert.equal(todos['dq-voto-texto'].textContent, ABIERTA().votacion.dialogo);
+    assert.equal(d.cuerpo.innerHTML, c.htmlDelDialogoDelVoto(ABIERTA(), []));
+    assert.equal(d.guardar.disabled, true, 'sin ninguna tocada');
+    assert.deepEqual(d.enfocados, ['button[data-tocar]'], 'el foco en la primera');
+    tocar(d, 2);
+    assert.deepEqual(tocadas(c), [2]);
+    assert.equal(d.cuerpo.innerHTML, c.htmlDelDialogoDelVoto(ABIERTA(), [2]));
+    assert.equal(d.guardar.disabled, true);
+    assert.equal(todos['dq-voto-anuncio'].textContent, 'Te falta 1.');
+    assert.equal(d.enfocados.at(-1), 'button[data-tocar="2"]', 'el foco sigue en la que se tocó');
+    tocar(d, 1);
+    assert.deepEqual(tocadas(c), [2, 1]);
+    assert.equal(d.guardar.disabled, false, 'con todas');
+    assert.equal(todos['dq-voto-anuncio'].textContent, 'Listo: ya están las 2.');
+    // Tocar una con puesto se lo saca; una que la edición no tiene no cambia nada
+    tocar(d, 2);
+    assert.deepEqual(tocadas(c), [1]);
+    assert.equal(d.guardar.disabled, true);
+    tocar(d, 9);
+    assert.deepEqual(tocadas(c), [1]);
+    // «Empezar de nuevo» saca todos; el foco, en la primera
+    d.oyentes.click({ target: botonCon('button[data-de-nuevo]', {}) });
+    assert.deepEqual(tocadas(c), []);
+    assert.equal(d.cuerpo.innerHTML, c.htmlDelDialogoDelVoto(ABIERTA(), []));
+    assert.equal(todos['dq-voto-anuncio'].textContent, 'Tocá primero la que más querés trabajar.');
+    assert.equal(d.enfocados.at(-1), 'button[data-tocar]');
+    // Escape cierra y el foco vuelve a «Votar»
+    oyentes['document:keydown']({ key: 'Escape', preventDefault() {} });
+    assert.ok(!d.modal.classList.contains('active'));
+    assert.equal(d.enfocados.at(-1), 'votar');
+    assert.equal(vm.runInContext('vistaDatoQuincena.voto', c), null);
+    // «Cancelar» y el velo (si el clic empezó en el velo) también cierran
+    c.alTocarDq({ target: votar });
+    const cancelar = falso();
+    cancelar.closest = (selector) => (selector === '[data-cerrar]' ? cancelar : null);
+    d.oyentes.click({ target: cancelar });
+    assert.ok(!d.modal.classList.contains('active'));
+    c.alTocarDq({ target: votar });
+    d.oyentes.mousedown({ target: falso() });
+    d.oyentes.click({ target: d.modal });
+    assert.ok(d.modal.classList.contains('active'), 'una selección que termina en el velo no cierra');
+    d.oyentes.mousedown({ target: d.modal });
+    d.oyentes.click({ target: d.modal });
+    assert.ok(!d.modal.classList.contains('active'));
+  });
+
+  it('con su voto, «Cambiar mi orden» abre con su orden; «Guardar mi orden»: PUT con { orden }, deshabilitado hasta la respuesta; cierra, avisa, vuelve a pedir la edición y el foco va al botón', async () => {
+    const d = dialogoFalso();
+    const cambiar = enfocable();
+    const contenido = contenidoFalso({ '#dq-panel-general button[data-votar]': cambiar });
+    let fase = 'cargar';
+    const { c, pedidos, avisos, urls } = paginaFalsa({
+      admin: false, search: '?id=12', lugares: { ...d.lugares, 'dq-contenido': contenido },
+      responder: (metodo) => {
+        if (metodo === 'PUT') {
+          assert.equal(d.guardar.disabled, true, 'deshabilitado hasta la respuesta');
+          fase = 'votado';
+          return { success: true, data: { cambio: true }, message: MENSAJE };
+        }
+        return { success: true, data: fase === 'cargar' ? CON_VOTO() : ABIERTA() };
+      }
+    });
+    c.setTimeout = (f) => f();
+    await c.iniciarDatoQuincena();
+    c.alTocarDq({ target: botonCon('button[data-votar]', {}) });
+    assert.deepEqual(tocadas(c), [2, 1], 'con su orden');
+    assert.equal(d.guardar.disabled, false);
+    d.oyentes.click({ target: botonCon('button[data-de-nuevo]', {}) });
+    tocar(d, 1);
+    tocar(d, 2);
+    const cuantos = pedidos.length;
+    const guardando = d.oyentes['guardar:click']({ currentTarget: d.guardar });
+    await d.oyentes['guardar:click']({ currentTarget: d.guardar });
+    await guardando;
+    assert.deepEqual(pedidos.slice(cuantos), [['PUT', '/dato-quincena/ediciones/12/voto', { orden: [1, 2] }], ['GET', '/dato-quincena/ediciones/12']],
       'un doble clic manda un solo pedido');
-    assert.equal(boton.disabled, false);
-    assert.deepEqual(avisos, [['Quedó la de Datito como principal del &lt;equipo&gt;.', 'success']]);
-    assert.equal(contenido.innerHTML, c.htmlDelDetalle(COINCIDE(), { admin: true, vista: 'general', propuesta: null }));
-    assert.deepEqual(plano(vm.runInContext('vistaDatoQuincena.detalle', c)), COINCIDE());
-    assert.equal(cambiar.enfocado, true, 'el foco en «Cambiar»');
-    // La caja del correo, la que ya estaba (sin volver a pedirla); la dirección, igual
-    assert.equal(lugar.innerHTML, c.htmlDeLaCajaDelCorreo(CAJA()));
+    assert.ok(!d.modal.classList.contains('active'), 'cerrado');
+    assert.equal(vm.runInContext('vistaDatoQuincena.voto', c), null);
+    assert.deepEqual(avisos, [[MENSAJE, 'success']]);
+    assert.equal(contenido.innerHTML, c.htmlDelDetalle(ABIERTA(), { admin: false, vista: 'general', propuesta: null }));
+    assert.equal(cambiar.enfocado, true, 'el foco en el botón de votar de General');
     assert.deepEqual(urls, []);
   });
 
-  it('con la misma de antes (cambio: false), el aviso del servidor como información', async () => {
-    const { c, avisos } = paginaFalsa({
-      search: '?id=12', lugares: { 'dq-contenido': contenidoFalso(), 'dq-envio-lugar': falso() },
+  it('desde Propuestas: vuelve a dibujar la misma propuesta, con el foco en su botón; sin cambios (cambio: false), el aviso como información', async () => {
+    const d = dialogoFalso();
+    const boton = enfocable();
+    const contenido = contenidoFalso({ '#dq-panel-propuestas button[data-votar]': boton });
+    const { c, pedidos, avisos, urls } = paginaFalsa({
+      admin: false, search: '?id=12&vista=propuestas&propuesta=2', lugares: { ...d.lugares, 'dq-contenido': contenido },
       responder: (metodo) => (metodo === 'PUT'
-        ? { success: true, data: { cambio: false }, message: 'La de Datito ya era la principal del equipo.' }
-        : { success: true, data: COINCIDE() })
+        ? { success: true, data: { cambio: false }, message: 'Tu orden ya era ese.' }
+        : { success: true, data: CON_VOTO() })
     });
-    conDetalle(c, COINCIDE(), { caja: CAJA() });
-    await c.guardarLaPrincipalDq(falso(), 1);
-    assert.deepEqual(avisos, [['La de Datito ya era la principal del equipo.', 'info']]);
+    c.conectarElVotoDq();
+    conDetalle(c, CON_VOTO(), { vista: 'propuestas', propuesta: 2 });
+    c.alTocarDq({ target: botonCon('button[data-votar]', {}) });
+    await d.oyentes['guardar:click']({ currentTarget: d.guardar });
+    assert.deepEqual(pedidos, [['PUT', '/dato-quincena/ediciones/12/voto', { orden: [2, 1] }], ['GET', '/dato-quincena/ediciones/12']]);
+    assert.equal(contenido.innerHTML, c.htmlDelDetalle(CON_VOTO(), { admin: false, vista: 'propuestas', propuesta: 2 }));
+    assert.equal(boton.enfocado, true);
+    assert.deepEqual(avisos, [['Tu orden ya era ese.', 'info']]);
+    assert.deepEqual(urls, []);
+  });
+
+  it('un error que no es 403 ni 409 (un 500, la red): su texto escapado, también en la región del diálogo; queda abierto con su orden y no vuelve a pedir la edición; un 401, al login', async () => {
+    const d = dialogoFalso();
+    let error = errorDelServidor(500, 'Un error <inventado>.');
+    const { c, pedidos, avisos, todos } = paginaFalsa({
+      admin: false, search: '?id=12', lugares: d.lugares,
+      responder: (metodo) => { if (metodo === 'PUT') throw error; return { success: true, data: CON_VOTO() }; }
+    });
+    c.conectarElVotoDq();
+    conDetalle(c, CON_VOTO());
+    c.alTocarDq({ target: botonCon('button[data-votar]', {}) });
+    await d.oyentes['guardar:click']({ currentTarget: d.guardar });
+    assert.deepEqual(pedidos, [['PUT', '/dato-quincena/ediciones/12/voto', { orden: [2, 1] }]]);
+    assert.deepEqual(avisos, [['Un error &lt;inventado&gt;.', 'error']]);
+    // Con el diálogo abierto (aria-modal), la región de la página no se anuncia: va también a la del diálogo, como texto
+    assert.equal(todos['dq-voto-anuncio'].textContent, 'Un error <inventado>.');
+    assert.equal(todos['dq-anuncio'].textContent, 'Un error <inventado>.');
+    assert.ok(d.modal.classList.contains('active'), 'abierto');
+    assert.deepEqual(tocadas(c), [2, 1]);
+    assert.equal(d.guardar.disabled, false, 'se puede volver a probar');
+    error = new TypeError('Failed to fetch');
+    await d.oyentes['guardar:click']({ currentTarget: d.guardar });
+    assert.deepEqual(avisos.at(-1), ['No se pudo guardar tu orden. Probá de nuevo en unos minutos.', 'error']);
+    assert.equal(todos['dq-voto-anuncio'].textContent, 'No se pudo guardar tu orden. Probá de nuevo en unos minutos.');
+    assert.ok(d.modal.classList.contains('active'), 'sigue abierto');
+    assert.deepEqual(pedidos.map(([metodo]) => metodo), ['PUT', 'PUT']);
+    error = errorDelServidor(401, 'Sesión vencida');
+    await d.oyentes['guardar:click']({ currentTarget: d.guardar });
+    assert.equal(c.window.location.href, 'login.html');
+  });
+
+  it('un 409 (ya cerró, no se vota) o un 403 (no está en la lista): el aviso, también en la región del diálogo; el diálogo se cierra y la edición se vuelve a pedir y a dibujar, sin «Votar»', async () => {
+    const SIN_VOTAR = () => ({ ...ABIERTA(), votacion: { ...ABIERTA().votacion, puede_votar: false, falta_tu_voto: false, dialogo: null } });
+    const casos = [
+      [409, 'La votación ya cerró.', PUNTOS()], [409, 'Esta edición no se vota.', OTRA()],
+      [403, 'No estás en la lista de quienes votan esta edición.', SIN_VOTAR()]
+    ];
+    for (const [status, mensaje, despues] of casos) {
+      const d = dialogoFalso();
+      const pestana = enfocable();
+      const contenido = contenidoFalso({ '#dq-tab-general': pestana });
+      const { c, pedidos, avisos, todos, urls } = paginaFalsa({
+        admin: false, search: '?id=12', lugares: { ...d.lugares, 'dq-contenido': contenido },
+        responder: (metodo) => {
+          if (metodo === 'PUT') throw errorDelServidor(status, mensaje);
+          return { success: true, data: despues };
+        }
+      });
+      c.conectarElVotoDq();
+      conDetalle(c, CON_VOTO());
+      c.alTocarDq({ target: botonCon('button[data-votar]', {}) });
+      await d.oyentes['guardar:click']({ currentTarget: d.guardar });
+      assert.deepEqual(pedidos, [['PUT', '/dato-quincena/ediciones/12/voto', { orden: [2, 1] }], ['GET', '/dato-quincena/ediciones/12']], mensaje);
+      assert.deepEqual(avisos, [[mensaje, 'error']], mensaje);
+      assert.equal(todos['dq-voto-anuncio'].textContent, mensaje);
+      assert.equal(todos['dq-anuncio'].textContent, mensaje);
+      assert.ok(!d.modal.classList.contains('active'), `cerrado: ${mensaje}`);
+      assert.equal(vm.runInContext('vistaDatoQuincena.voto', c), null);
+      assert.equal(contenido.innerHTML, c.htmlDelDetalle(despues, { admin: false, vista: 'general', propuesta: null }), mensaje);
+      assert.ok(!contenido.innerHTML.includes('data-votar'), `sin «Votar»: ${mensaje}`);
+      assert.equal(pestana.enfocado, true, `sin el botón de votar, el foco en su pestaña: ${mensaje}`);
+      assert.deepEqual(urls, []);
+    }
+  });
+
+  it('una edición de una sola propuesta (Review Focus 3): una fila; tocada, «Listo» y «Guardar mi orden» manda { orden: [1] }', async () => {
+    const d = dialogoFalso();
+    const { c, pedidos, todos } = paginaFalsa({
+      admin: false, search: '?id=12', lugares: d.lugares,
+      responder: (metodo) => (metodo === 'PUT' ? { success: true, data: { cambio: true }, message: MENSAJE } : { success: true, data: UNA() })
+    });
+    c.setTimeout = (f) => f();
+    c.conectarElVotoDq();
+    conDetalle(c, UNA());
+    c.alTocarDq({ target: botonCon('button[data-votar]', {}) });
+    assert.equal(d.cuerpo.innerHTML, c.htmlDelDialogoDelVoto(UNA(), []));
+    assert.equal(d.guardar.disabled, true);
+    tocar(d, 1);
+    assert.equal(d.guardar.disabled, false);
+    assert.equal(todos['dq-voto-anuncio'].textContent, 'Listo: ya está la única.');
+    await d.oyentes['guardar:click']({ currentTarget: d.guardar });
+    assert.deepEqual(pedidos[0], ['PUT', '/dato-quincena/ediciones/12/voto', { orden: [1] }]);
+  });
+
+  it('«Votar» no abre nada si no se puede votar (cerrada o fuera de la foto) ni sin una edición', () => {
+    const d = dialogoFalso();
+    const { c } = paginaFalsa({ admin: false, search: '?id=12', lugares: d.lugares });
+    c.conectarElVotoDq();
+    for (const detalle of [PUNTOS(), { ...ABIERTA(), votacion: { ...ABIERTA().votacion, puede_votar: false } }, OTRA(), { ...ABIERTA(), id: 0 }]) {
+      conDetalle(c, detalle);
+      c.alTocarDq({ target: botonCon('button[data-votar]', {}) });
+      assert.ok(!d.modal.classList.contains('active'), JSON.stringify(detalle.votacion));
+      assert.equal(vm.runInContext('vistaDatoQuincena.voto', c), null);
+    }
+  });
+
+  it('una por vez: mientras se guarda, tocar no cambia el orden, «Votar» no vuelve a abrir y «Reenviar…» no abre su diálogo; con la respuesta, sí', async () => {
+    const d = dialogoFalso();
+    const reenvio = falso();
+    const cambiar = botonCon('button[data-votar]', {});
+    const enfocados = [];
+    cambiar.focus = () => enfocados.push('cambiar');
+    const contenido = contenidoFalso({ '#dq-panel-general button[data-votar]': cambiar });
+    let responderElPut = null;
+    const { c, pedidos, todos } = paginaFalsa({
+      search: '?id=12', lugares: { ...d.lugares, 'dq-reenvio': reenvio, 'dq-envio-lugar': falso(), 'dq-contenido': contenido },
+      responder: (metodo) => (metodo === 'PUT'
+        ? new Promise((listo) => { responderElPut = () => listo({ success: true, data: { cambio: true }, message: MENSAJE }); })
+        : { success: true, data: CON_VOTO() })
+    });
+    c.setTimeout = (f) => f();
+    c.conectarElVotoDq();
+    conDetalle(c, CON_VOTO(), { caja: CAJA(), admin: true });
+    c.alTocarDq({ target: cambiar });
+    const guardando = d.oyentes['guardar:click']({ currentTarget: d.guardar });
+    const antes = vm.runInContext('vistaDatoQuincena.voto', c);
+    tocar(d, 1);
+    d.oyentes.click({ target: botonCon('button[data-de-nuevo]', {}) });
+    assert.deepEqual(tocadas(c), [2, 1], 'el orden no cambia mientras se guarda');
+    assert.equal(d.guardar.disabled, true);
+    c.alTocarDq({ target: cambiar });
+    assert.equal(vm.runInContext('vistaDatoQuincena.voto', c), antes, 'no vuelve a abrir');
+    const reenviar = botonCon('button[data-reenviar]', {});
+    c.alTocarDq({ target: reenviar });
+    assert.ok(!reenvio.classList.contains('active'), 'no abre mientras se guarda');
+    assert.equal(todos['dq-reenvio-cuerpo'].innerHTML, '');
+    assert.deepEqual(pedidos, [['PUT', '/dato-quincena/ediciones/12/voto', { orden: [2, 1] }]]);
+    responderElPut();
+    await guardando;
+    await despues();
+    assert.deepEqual(pedidos, [['PUT', '/dato-quincena/ediciones/12/voto', { orden: [2, 1] }], ['GET', '/dato-quincena/ediciones/12']]);
+    assert.deepEqual(enfocados, ['cambiar'], 'el foco en «Cambiar mi orden», sin un diálogo abierto encima');
+    // Con la respuesta, «Reenviar…» abre con la lista de hoy y «Cambiar mi orden» vuelve a abrir «Tu orden»
+    c.alTocarDq({ target: reenviar });
+    assert.ok(reenvio.classList.contains('active'));
+    assert.equal(todos['dq-reenvio-cuerpo'].innerHTML, c.htmlDelReenvio(CAJA().lista_de_hoy));
+    c.cerrarReenvioDq();
+    c.alTocarDq({ target: cambiar });
+    assert.ok(d.modal.classList.contains('active'));
   });
 
   it('al volver a dibujar, la infografía es la misma imagen (no se vuelve a pedir); sin la caja del correo, se pide', async () => {
@@ -3075,59 +3599,35 @@ describe('dato-quincena.js: la principal del equipo (la parte del DOM)', () => {
     const { c, pedidos } = paginaFalsa({
       search: '?id=12', lugares: { 'dq-contenido': contenido, 'dq-envio-lugar': falso() },
       responder: (metodo, ruta) => {
-        if (metodo === 'PUT') return { success: true, data: { cambio: true }, message: 'Listo.' };
-        return { success: true, data: ruta.endsWith('/correo') ? CAJA() : OTRA() };
+        if (metodo === 'PUT') return { success: true, data: { cambio: true }, message: MENSAJE };
+        return { success: true, data: ruta.endsWith('/correo') ? CAJA() : CON_VOTO() };
       }
     });
     const archivos = [];
     vm.runInContext('API', c).pedirArchivo = async (ruta) => { archivos.push(ruta); throw new Error('sin archivos'); };
-    conDetalle(c, SIN());
-    await c.guardarLaPrincipalDq(falso(), 2);
+    conDetalle(c, ABIERTA(), { admin: true });
+    await c.guardarElVotoDq(falso(), [2, 1]);
     assert.equal(puesta, copia);
     assert.equal(copia.alt, 'Infografía de la principal de Datito: Un título inventado');
     assert.deepEqual(archivos, []);
     assert.deepEqual(pedidos.map(([metodo, ruta]) => `${metodo} ${ruta}`),
-      ['PUT /dato-quincena/ediciones/12/principal-equipo', 'GET /dato-quincena/ediciones/12', 'GET /dato-quincena/ediciones/12/correo']);
+      ['PUT /dato-quincena/ediciones/12/voto', 'GET /dato-quincena/ediciones/12', 'GET /dato-quincena/ediciones/12/correo']);
   });
 
-  it('«Elegir como principal del equipo» en Propuestas guarda directo y vuelve a dibujar la misma propuesta, con el foco en su título', async () => {
-    const titulo = enfocable();
-    const contenido = contenidoFalso({ '#dq-panel-propuestas .dq-lectura .dq-prop-titulo': titulo });
-    const { c, pedidos, avisos, urls } = paginaFalsa({
-      search: '?id=12&vista=propuestas&propuesta=2', lugares: { 'dq-contenido': contenido, 'dq-envio-lugar': falso() },
-      responder: (metodo) => (metodo === 'PUT'
-        ? { success: true, data: { cambio: true }, message: 'Quedó la propuesta 2 como principal del equipo.' }
-        : { success: true, data: OTRA() })
-    });
-    conDetalle(c, SIN(), { vista: 'propuestas', propuesta: 2, caja: CAJA() });
-    c.alTocarDq({ target: botonCon('button[data-guardar-principal]', { guardarPrincipal: '2' }) });
-    await despues();
-    assert.deepEqual(pedidos, [['PUT', '/dato-quincena/ediciones/12/principal-equipo', { orden: 2 }], ['GET', '/dato-quincena/ediciones/12']]);
-    assert.equal(contenido.innerHTML, c.htmlDelDetalle(OTRA(), { admin: true, vista: 'propuestas', propuesta: 2 }));
-    assert.ok(articuloDe(contenido.innerHTML).includes('<span class="dq-es-del-equipo">Es la principal del equipo</span>'));
-    assert.equal(titulo.enfocado, true);
-    assert.deepEqual(avisos, [['Quedó la propuesta 2 como principal del equipo.', 'success']]);
-    assert.deepEqual(urls, []);
-  });
-
-  it('si mientras tanto la página mostró otra cosa, no vuelve a dibujar (el aviso sí); un 401 va al login; sin la edición de nuevo, la carga entera', async () => {
+  it('si mientras tanto la página mostró otra cosa, no vuelve a dibujar (el aviso sí); sin la edición de nuevo, la carga entera', async () => {
     const contenido = contenidoFalso();
     const otra = paginaFalsa({
       search: '?id=12', lugares: { 'dq-contenido': contenido },
       responder: (metodo) => {
         vm.runInContext('vistaDatoQuincena.pedido += 1;', otra.c);
-        return metodo === 'PUT' ? { success: true, data: { cambio: true }, message: 'Listo.' } : { success: true, data: OTRA() };
+        return metodo === 'PUT' ? { success: true, data: { cambio: true }, message: 'Listo.' } : { success: true, data: CON_VOTO() };
       }
     });
-    conDetalle(otra.c, SIN());
-    await otra.c.guardarLaPrincipalDq(falso(), 2);
+    conDetalle(otra.c, ABIERTA());
+    await otra.c.guardarElVotoDq(falso(), [2, 1]);
     assert.deepEqual(otra.pedidos.map(([metodo]) => metodo), ['PUT']);
     assert.equal(contenido.innerHTML, '');
     assert.deepEqual(otra.avisos, [['Listo.', 'success']]);
-    const vencida = paginaFalsa({ search: '?id=12', responder: () => { throw errorDelServidor(401, 'Sesión vencida'); } });
-    conDetalle(vencida.c, SIN());
-    await vencida.c.guardarLaPrincipalDq(falso(), 1);
-    assert.equal(vencida.c.window.location.href, 'login.html');
     // El PUT salió bien y la edición no llega: se carga entera, con su error
     let vez = 0;
     const sinDetalle = paginaFalsa({
@@ -3138,242 +3638,45 @@ describe('dato-quincena.js: la principal del equipo (la parte del DOM)', () => {
         throw errorDelServidor(500, 'Error al obtener la edición');
       }
     });
-    conDetalle(sinDetalle.c, SIN());
-    await sinDetalle.c.guardarLaPrincipalDq(falso(), 2);
+    conDetalle(sinDetalle.c, ABIERTA());
+    await sinDetalle.c.guardarElVotoDq(falso(), [2, 1]);
     assert.equal(vez, 2);
     assert.equal(sinDetalle.todos['dq-contenido'].innerHTML, sinDetalle.c.htmlDelEstado('error'));
   });
 
-  it('el diálogo: «Elegir otra» lo abre con la vigente marcada o ninguna («Guardar» deshabilitado); marcar una habilita «Guardar»; Escape, «Cancelar» y el velo cierran', async () => {
-    const dialogo = dialogoFalso();
-    const { c, todos, oyentes } = paginaFalsa({
-      search: '?id=12', lugares: { 'dq-principal': dialogo.modal, 'dq-principal-guardar': dialogo.guardar, 'dq-envio-lugar': falso() },
-      responder: (_m, ruta) => ({ success: true, data: ruta.endsWith('/correo') ? CAJA() : SIN() })
-    });
-    c.setTimeout = (f) => f();
-    await c.iniciarDatoQuincena();
-    const elegir = botonCon('button[data-elegir-principal]', {});
-    const enfocados = [];
-    elegir.focus = () => enfocados.push('elegir');
-    dialogo.radios[0].focus = () => enfocados.push('radio 1');
-    dialogo.radios[1].focus = () => enfocados.push('radio 2');
-    c.alTocarDq({ target: elegir });
-    assert.equal(todos['dq-principal-cuerpo'].innerHTML, c.htmlDelDialogoDeLaPrincipal(SIN()));
-    assert.ok(dialogo.modal.classList.contains('active'));
-    assert.equal(dialogo.guardar.disabled, true, 'sin ninguna marcada');
-    assert.deepEqual(enfocados, ['radio 1'], 'sin marcada, el foco en la primera');
-    dialogo.marcar(dialogo.radios[1]);
-    dialogo.oyentes.change({ target: dialogo.radios[1] });
-    assert.equal(dialogo.guardar.disabled, false);
-    // Escape cierra y el foco vuelve al botón
-    oyentes['document:keydown']({ key: 'Escape', preventDefault() {} });
-    assert.ok(!dialogo.modal.classList.contains('active'));
-    assert.deepEqual(enfocados.at(-1), 'elegir');
-    // Con una marcada (la vigente), «Guardar» habilitado y el foco en ella
-    c.alTocarDq({ target: elegir });
-    assert.equal(dialogo.guardar.disabled, false);
-    assert.deepEqual(enfocados.at(-1), 'radio 2');
-    // «Cancelar» (data-cerrar) cierra
-    const cancelar = falso();
-    cancelar.closest = (selector) => (selector === '[data-cerrar]' ? cancelar : null);
-    dialogo.oyentes.click({ target: cancelar });
-    assert.ok(!dialogo.modal.classList.contains('active'));
-    // El velo, solo si el clic empezó en el velo
-    c.alTocarDq({ target: elegir });
-    dialogo.oyentes.mousedown({ target: falso() });
-    dialogo.oyentes.click({ target: dialogo.modal });
-    assert.ok(dialogo.modal.classList.contains('active'), 'una selección que termina en el velo no cierra');
-    dialogo.oyentes.mousedown({ target: dialogo.modal });
-    dialogo.oyentes.click({ target: dialogo.modal });
-    assert.ok(!dialogo.modal.classList.contains('active'));
-  });
-
-  it('«Guardar» del diálogo: PUT con la marcada, deshabilitado hasta la respuesta; cierra, avisa, vuelve a pedir la edición y el foco va a «Cambiar»', async () => {
-    const dialogo = dialogoFalso();
-    const cambiar = enfocable();
-    const contenido = contenidoFalso({ '#dq-panel-general button[data-elegir-principal]': cambiar });
-    let fase = 'cargar';
-    const { c, pedidos, avisos } = paginaFalsa({
-      search: '?id=12', lugares: { 'dq-principal': dialogo.modal, 'dq-principal-guardar': dialogo.guardar, 'dq-envio-lugar': falso(), 'dq-contenido': contenido },
-      responder: (metodo, ruta) => {
-        if (metodo === 'PUT') {
-          assert.equal(dialogo.guardar.disabled, true, 'deshabilitado hasta la respuesta');
-          fase = 'elegida';
-          return { success: true, data: { cambio: true }, message: 'Quedó la propuesta 2 como principal del equipo.' };
-        }
-        return { success: true, data: ruta.endsWith('/correo') ? CAJA() : (fase === 'cargar' ? SIN() : OTRA()) };
-      }
-    });
-    c.setTimeout = (f) => f();
-    await c.iniciarDatoQuincena();
-    c.alTocarDq({ target: botonCon('button[data-elegir-principal]', {}) });
-    dialogo.marcar(dialogo.radios[1]);
-    dialogo.oyentes.change({ target: dialogo.radios[1] });
-    const cuantos = pedidos.length;
-    await dialogo.oyentes['guardar:click']({ currentTarget: dialogo.guardar });
-    assert.deepEqual(pedidos.slice(cuantos), [['PUT', '/dato-quincena/ediciones/12/principal-equipo', { orden: 2 }], ['GET', '/dato-quincena/ediciones/12']]);
-    assert.ok(!dialogo.modal.classList.contains('active'), 'cerrado');
-    assert.deepEqual(avisos, [['Quedó la propuesta 2 como principal del equipo.', 'success']]);
-    assert.equal(contenido.innerHTML, c.htmlDelDetalle(OTRA(), { admin: true, vista: 'general', propuesta: null }));
-    assert.equal(cambiar.enfocado, true, 'el foco en «Cambiar»');
-  });
-
-  it('«Guardar» con un error del servidor (400): el error escapado, el diálogo queda abierto y no vuelve a pedir la edición; sin respuesta, un texto fijo', async () => {
-    const dialogo = dialogoFalso();
-    let error = errorDelServidor(400, 'Elegí una de las <propuestas> de la edición.');
-    const { c, pedidos, avisos } = paginaFalsa({
-      search: '?id=12', lugares: { 'dq-principal': dialogo.modal, 'dq-principal-guardar': dialogo.guardar, 'dq-envio-lugar': falso() },
-      responder: (metodo, ruta) => {
-        if (metodo === 'PUT') throw error;
-        return { success: true, data: ruta.endsWith('/correo') ? CAJA() : SIN() };
-      }
-    });
-    c.setTimeout = (f) => f();
-    await c.iniciarDatoQuincena();
-    c.alTocarDq({ target: botonCon('button[data-elegir-principal]', {}) });
-    dialogo.marcar(dialogo.radios[0]);
-    dialogo.oyentes.change({ target: dialogo.radios[0] });
-    const cuantos = pedidos.length;
-    await dialogo.oyentes['guardar:click']({ currentTarget: dialogo.guardar });
-    assert.deepEqual(pedidos.slice(cuantos), [['PUT', '/dato-quincena/ediciones/12/principal-equipo', { orden: 1 }]]);
-    assert.deepEqual(avisos, [['Elegí una de las &lt;propuestas&gt; de la edición.', 'error']]);
-    assert.ok(dialogo.modal.classList.contains('active'), 'abierto');
-    assert.equal(dialogo.guardar.disabled, false);
-    error = new TypeError('Failed to fetch');
-    await dialogo.oyentes['guardar:click']({ currentTarget: dialogo.guardar });
-    assert.deepEqual(avisos.at(-1), ['No se pudo guardar la principal del equipo. Probá de nuevo en unos minutos.', 'error']);
-  });
-
-  it('mientras se guarda una elección, «Elegir otra» no abre el diálogo ni empieza otra elección; con la respuesta, «Cambiar» lo abre con la vigente marcada', async () => {
-    const dialogo = dialogoFalso();
-    const enfocados = [];
-    const cambiar = botonCon('button[data-elegir-principal]', {});
-    cambiar.focus = () => enfocados.push('cambiar');
-    const contenido = contenidoFalso({ '#dq-panel-general button[data-elegir-principal]': cambiar });
-    let responderElPut = null;
-    const { c, pedidos, todos } = paginaFalsa({
-      search: '?id=12', lugares: { 'dq-principal': dialogo.modal, 'dq-principal-guardar': dialogo.guardar, 'dq-envio-lugar': falso(), 'dq-contenido': contenido },
-      responder: (metodo) => (metodo === 'PUT'
-        ? new Promise((listo) => { responderElPut = () => listo({ success: true, data: { cambio: true }, message: 'Listo.' }); })
-        : { success: true, data: COINCIDE() })
-    });
-    c.setTimeout = (f) => f();
-    conDetalle(c, SIN(), { caja: CAJA() });
-    dialogo.radios[0].focus = () => enfocados.push('radio 1');
-    // «Validar la de Datito», y antes de la respuesta, «Elegir otra» y «Elegir como principal del equipo»
-    c.alTocarDq({ target: botonCon('button[data-guardar-principal]', { guardarPrincipal: '1' }) });
-    const elegirOtra = botonCon('button[data-elegir-principal]', {});
-    elegirOtra.focus = () => enfocados.push('elegir otra');
-    c.alTocarDq({ target: elegirOtra });
-    assert.ok(!dialogo.modal.classList.contains('active'), 'no abre mientras se guarda');
-    assert.equal(todos['dq-principal-cuerpo'].innerHTML, '');
-    assert.equal(vm.runInContext('vistaDatoQuincena.principal', c), null);
-    c.alTocarDq({ target: botonCon('button[data-guardar-principal]', { guardarPrincipal: '2' }) });
-    assert.deepEqual(pedidos, [['PUT', '/dato-quincena/ediciones/12/principal-equipo', { orden: 1 }]], 'una elección por vez');
-    responderElPut();
-    await despues();
-    assert.deepEqual(pedidos, [['PUT', '/dato-quincena/ediciones/12/principal-equipo', { orden: 1 }], ['GET', '/dato-quincena/ediciones/12']]);
-    assert.deepEqual(enfocados, ['cambiar'], 'el foco en «Cambiar», no en el diálogo');
-    // Con la respuesta, «Cambiar» lo abre con las opciones de la edición nueva, la vigente marcada y «Guardar» habilitado
-    dialogo.marcar(dialogo.radios[0]);
-    c.alTocarDq({ target: cambiar });
-    assert.ok(dialogo.modal.classList.contains('active'));
-    assert.equal(todos['dq-principal-cuerpo'].innerHTML, c.htmlDelDialogoDeLaPrincipal(COINCIDE()));
-    assert.ok(todos['dq-principal-cuerpo'].innerHTML.includes('value="1" checked'));
-    assert.equal(dialogo.guardar.disabled, false);
-    assert.deepEqual(enfocados.at(-1), 'radio 1');
-  });
-
-  it('mientras se guarda una elección, «Reenviar…» no abre su diálogo (el redibujo llevaría el foco a «Cambiar», detrás del velo); con la respuesta, sí', async () => {
-    const reenvio = falso();
-    const enfocados = [];
-    const cambiar = botonCon('button[data-elegir-principal]', {});
-    cambiar.focus = () => enfocados.push('cambiar');
-    const contenido = contenidoFalso({ '#dq-panel-general button[data-elegir-principal]': cambiar });
-    let responderElPut = null;
-    const { c, pedidos, todos } = paginaFalsa({
-      search: '?id=12', lugares: { 'dq-reenvio': reenvio, 'dq-envio-lugar': falso(), 'dq-contenido': contenido },
-      responder: (metodo) => (metodo === 'PUT'
-        ? new Promise((listo) => { responderElPut = () => listo({ success: true, data: { cambio: true }, message: 'Listo.' }); })
-        : { success: true, data: COINCIDE() })
-    });
-    c.setTimeout = (f) => f();
-    conDetalle(c, SIN(), { caja: CAJA() });
-    // «Validar la de Datito», y antes de la respuesta, «Reenviar…»
-    c.alTocarDq({ target: botonCon('button[data-guardar-principal]', { guardarPrincipal: '1' }) });
-    const reenviar = botonCon('button[data-reenviar]', {});
-    c.alTocarDq({ target: reenviar });
-    assert.ok(!reenvio.classList.contains('active'), 'no abre mientras se guarda');
-    assert.equal(todos['dq-reenvio-cuerpo'].innerHTML, '');
-    assert.equal(vm.runInContext('vistaDatoQuincena.reenvio', c), null);
-    responderElPut();
-    await despues();
-    assert.deepEqual(pedidos, [['PUT', '/dato-quincena/ediciones/12/principal-equipo', { orden: 1 }], ['GET', '/dato-quincena/ediciones/12']]);
-    assert.deepEqual(enfocados, ['cambiar'], 'el foco en «Cambiar», sin un diálogo abierto encima');
-    // Con la respuesta, «Reenviar…» abre con la lista de hoy
-    c.alTocarDq({ target: reenviar });
-    assert.ok(reenvio.classList.contains('active'));
-    assert.equal(todos['dq-reenvio-cuerpo'].innerHTML, c.htmlDelReenvio(CAJA().lista_de_hoy));
-  });
-
-  it('Tab y Mayúscula+Tab no salen de los diálogos «La principal del equipo» y «Reenviar» (aria-modal): del último al primero y del primero al último', async () => {
-    const dialogo = dialogoFalso();
-    const reenvio = falso();
-    const confirmar = falso();
-    const { c, oyentes } = paginaFalsa({
-      search: '?id=12',
-      lugares: { 'dq-principal': dialogo.modal, 'dq-principal-guardar': dialogo.guardar, 'dq-reenvio': reenvio, 'dq-reenvio-confirmar': confirmar,
-        'dq-envio-lugar': falso() },
-      responder: (_m, ruta) => ({ success: true, data: ruta.endsWith('/correo') ? CAJA() : SIN() })
-    });
+  it('Tab y Mayúscula+Tab no salen de «Tu orden» (aria-modal): del último al primero y del primero al último; cerrado, Tab es del navegador', async () => {
+    const d = dialogoFalso();
+    const { c, oyentes } = paginaFalsa({ admin: false, search: '?id=12', lugares: d.lugares });
     c.setTimeout = () => {};
-    await c.iniciarDatoQuincena();
-    conDetalle(c, SIN(), { caja: CAJA() });
-    // Los controles de un diálogo, en el orden de la página; enfocar uno lo deja como document.activeElement
-    const conControles = (modal, controles) => {
-      for (const control of controles) {
-        control.getClientRects = () => [{}];
-        control.focus = () => { c.document.activeElement = control; };
-      }
-      modal.querySelectorAll = () => controles;
-      modal.contains = (elemento) => controles.includes(elemento);
-      return controles;
-    };
+    c.conectarElVotoDq();
+    conDetalle(c, ABIERTA());
+    const controles = [falso(), falso(), falso(), falso(), d.guardar];
+    for (const control of controles) {
+      control.getClientRects = () => [{}];
+      control.focus = () => { c.document.activeElement = control; };
+    }
+    d.modal.querySelectorAll = () => controles;
+    d.modal.contains = (elemento) => controles.includes(elemento);
+    // La ×, las dos propuestas, «Cancelar» y «Guardar mi orden» (deshabilitado sin todas: el último es «Cancelar»)
+    const [cerrar, propuesta, , cancelar] = controles;
     const afuera = falso();
-    const tab = (shiftKey = false) => {
-      let prevenido = false;
-      oyentes['document:keydown']({ key: 'Tab', shiftKey, preventDefault: () => { prevenido = true; } });
-      return prevenido;
-    };
     const desde = (control, shiftKey) => {
       c.document.activeElement = control;
-      return { prevenido: tab(shiftKey), enfocado: c.document.activeElement };
+      let prevenido = false;
+      oyentes['document:keydown']({ key: 'Tab', shiftKey, preventDefault: () => { prevenido = true; } });
+      return { prevenido, enfocado: c.document.activeElement };
     };
-    // «La principal del equipo»: la ×, las opciones, «Cancelar» y «Guardar» (deshabilitado sin una marcada: el último es «Cancelar»)
-    const [cerrar, opcion, , cancelar] = conControles(dialogo.modal, [falso(), ...dialogo.radios, falso(), dialogo.guardar]);
     assert.deepEqual(desde(afuera, false), { prevenido: false, enfocado: afuera }, 'cerrado, Tab es del navegador');
-    c.alTocarDq({ target: botonCon('button[data-elegir-principal]', {}) });
-    assert.equal(dialogo.guardar.disabled, true);
+    c.alTocarDq({ target: botonCon('button[data-votar]', {}) });
+    assert.equal(d.guardar.disabled, true);
     assert.deepEqual(desde(cancelar, false), { prevenido: true, enfocado: cerrar });
     assert.deepEqual(desde(cerrar, true), { prevenido: true, enfocado: cancelar });
-    dialogo.marcar(dialogo.radios[1]);
-    dialogo.oyentes.change({ target: dialogo.radios[1] });
-    assert.deepEqual(desde(dialogo.guardar, false), { prevenido: true, enfocado: cerrar });
-    assert.deepEqual(desde(cerrar, true), { prevenido: true, enfocado: dialogo.guardar });
-    assert.deepEqual(desde(opcion, false), { prevenido: false, enfocado: opcion }, 'entre los controles, el navegador');
+    tocar(d, 1);
+    tocar(d, 2);
+    assert.deepEqual(desde(d.guardar, false), { prevenido: true, enfocado: cerrar });
+    assert.deepEqual(desde(cerrar, true), { prevenido: true, enfocado: d.guardar });
+    assert.deepEqual(desde(propuesta, false), { prevenido: false, enfocado: propuesta }, 'entre los controles, el navegador');
     assert.deepEqual(desde(afuera, false), { prevenido: true, enfocado: cerrar }, 'con el foco afuera, vuelve al diálogo');
-    assert.deepEqual(desde(afuera, true), { prevenido: true, enfocado: dialogo.guardar });
-    oyentes['document:keydown']({ key: 'Escape', preventDefault() {} });
-    assert.ok(!dialogo.modal.classList.contains('active'));
-    // «Reenviar»: la ×, las dos opciones, la lista, «Cancelar» y «Reenviar»
-    const [cerrarReenvio, todas] = conControles(reenvio, [falso(), falso(), falso(), falso(), falso(), confirmar]);
-    assert.deepEqual(desde(confirmar, false), { prevenido: false, enfocado: confirmar }, 'cerrado, Tab es del navegador');
-    c.alTocarDq({ target: botonCon('button[data-reenviar]', {}) });
-    assert.ok(reenvio.classList.contains('active'));
-    assert.deepEqual(desde(confirmar, false), { prevenido: true, enfocado: cerrarReenvio });
-    assert.deepEqual(desde(cerrarReenvio, true), { prevenido: true, enfocado: confirmar });
-    assert.deepEqual(desde(todas, true), { prevenido: false, enfocado: todas });
-    assert.deepEqual(desde(afuera, false), { prevenido: true, enfocado: cerrarReenvio });
   });
 
   it('«Ver la propuesta» muestra la del equipo en Propuestas sin recargar (con &propuesta=2 en la dirección); con Ctrl, Meta, Mayúscula, Alt o la rueda, el navegador sigue el enlace', () => {
@@ -3417,15 +3720,15 @@ describe('dato-quincena.js: la principal del equipo (la parte del DOM)', () => {
     assert.deepEqual(hoja.actuales(), ['2']);
   });
 
-  it('la propuesta que se vuelve a dibujar en Propuestas lleva los botones de la administración (y no los de un lector)', () => {
+  it('la propuesta que se vuelve a dibujar en Propuestas lleva «Votar» para cualquier rol que puede votar', () => {
     for (const admin of [true, false]) {
-      const detalle = SIN();
+      const detalle = ABIERTA();
       const hoja = propuestasFalsas(detalle, 1);
       const { c } = paginaFalsa({ admin, search: '?id=12&vista=propuestas', lugares: { 'dq-contenido': hoja.contenido } });
       vm.runInContext(`vistaDatoQuincena.admin = ${admin}; vistaDatoQuincena.detalle = ${JSON.stringify(detalle)}; vistaDatoQuincena.vista = 'propuestas';`, c);
       c.alTocarDq({ target: botonDePropuesta(2) });
-      assert.equal(hoja.lectura.innerHTML, c.htmlDeLaPropuestaElegida(detalle, 2, { admin }));
-      assert.equal(hoja.lectura.innerHTML.includes('data-guardar-principal="2"'), admin, String(admin));
+      assert.equal(hoja.lectura.innerHTML, c.htmlDeLaPropuestaElegida(detalle, 2));
+      assert.ok(hoja.lectura.innerHTML.includes('data-votar aria-haspopup="dialog">Votar</button>'), String(admin));
     }
   });
 });

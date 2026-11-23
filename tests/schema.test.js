@@ -102,6 +102,12 @@ const esDelCorreoDelDatoQuincena = (c) => TABLAS_DATO_QUINCENA_CORREO.some(tabla
 const TABLAS_DATO_QUINCENA_PRINCIPAL_EQUIPO = ['dato_quincena_principal_equipo'];
 const esDeLaPrincipalDelEquipo = (c) => TABLAS_DATO_QUINCENA_PRINCIPAL_EQUIPO.some(tabla => c.startsWith(`${tabla}.`));
 
+// Las cuatro tablas de la votación de la principal del equipo (spec 2026-11-23-dato-quincena-principal-votacion, 1), en el orden de su
+// migración, cada una apuntando a la anterior o a las ediciones y a usuarios: quiénes pueden votar, una fila por edición que se vota,
+// las personas de esa votación y sus votos. Al borrarlas en el orden inverso salen primero, antes que las ediciones
+const TABLAS_DATO_QUINCENA_VOTACION = ['dato_quincena_votantes', 'dato_quincena_votaciones', 'dato_quincena_votacion_personas', 'dato_quincena_votos'];
+const esDeLaVotacion = (c) => TABLAS_DATO_QUINCENA_VOTACION.some(tabla => c.startsWith(`${tabla}.`));
+
 // El campo de un adjunto del dato de la quincena: desde el correo, con 'infografia_svg' al final (cuatro valores); antes, tres
 const CAMPO_DEL_ADJUNTO_ANTES = "dato_quincena_adjuntos.campo enum('infografia_png','correo_texto','calculos') null=NO default=null key=";
 const CAMPO_DEL_ADJUNTO = "dato_quincena_adjuntos.campo enum('infografia_png','correo_texto','calculos','infografia_svg') null=NO default=null key=";
@@ -122,8 +128,8 @@ const sinLosDiasRestituidos = (lista) => lista
 
 // Las tablas que crea schema.sql: 41 hasta la agenda de Mi espacio, 42 con la planilla de contrato, 43 con el evento Personal
 // (Público), 45 con los días restituidos, 47 con el aviso diario de la agenda, 50 con el dato de la quincena, 54 con su correo y
-// 55 con la principal del equipo
-const TOTAL_DE_TABLAS = 55;
+// 55 con la principal del equipo y 59 con su votación
+const TOTAL_DE_TABLAS = 59;
 
 // Las columnas generadas de unas tablas, con cómo se guardan y su expresión: `columnas` no lee EXTRA
 const generadasDe = async (conexion, base, tablas) => {
@@ -905,6 +911,61 @@ describe('database/schema.sql', () => {
     assert.deepEqual(await motoresDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA_PRINCIPAL_EQUIPO),
       ['dato_quincena_principal_equipo InnoDB utf8mb4_unicode_ci']);
     assert.deepEqual(await generadasDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA_PRINCIPAL_EQUIPO), []);
+  });
+
+  // Una fila de dato_quincena_votaciones por edición que se vota: su existencia es lo que dice que la edición se vota. Las personas se
+  // congelan al crearla, y el RPAD nunca hace un UPDATE ni un DELETE de los votos
+  it('La votación de la principal del equipo: cuatro tablas con sus columnas, claves y FK (spec 2026-11-23-dato-quincena-principal-votacion, 1)', async () => {
+    const lista = (await columnas(root, BASE_TEMPORAL)).filter(esDeLaVotacion);
+    assert.deepEqual(lista, [
+      'dato_quincena_votaciones.edicion_id int(11) null=NO default=null key=PRI',
+      'dato_quincena_votaciones.creada_at datetime null=NO default=null key=',
+      'dato_quincena_votaciones.cierre_at datetime null=YES default=NULL key=',
+      'dato_quincena_votaciones.sellada_at datetime null=YES default=NULL key=',
+      "dato_quincena_votaciones.aviso enum('enviado','parcial','fallido','apagado','no_corresponde') null=YES default=NULL key=",
+      'dato_quincena_votaciones.aviso_at datetime null=YES default=NULL key=',
+      'dato_quincena_votacion_personas.id int(11) null=NO default=null key=PRI',
+      // Primer campo del UNIQUE (edicion_id, usuario_id): una persona, una sola vez por votación
+      'dato_quincena_votacion_personas.edicion_id int(11) null=NO default=null key=MUL',
+      // NULL si la cuenta se borró
+      'dato_quincena_votacion_personas.usuario_id int(11) null=YES default=NULL key=MUL',
+      'dato_quincena_votantes.usuario_id int(11) null=NO default=null key=PRI',
+      'dato_quincena_votantes.agregado_por int(11) null=YES default=NULL key=MUL',
+      'dato_quincena_votantes.agregado_at datetime null=NO default=null key=',
+      'dato_quincena_votos.id int(11) null=NO default=null key=PRI',
+      'dato_quincena_votos.persona_id int(11) null=NO default=null key=MUL',
+      'dato_quincena_votos.orden varchar(40) null=NO default=null key=',
+      'dato_quincena_votos.votado_at datetime null=NO default=null key='
+    ]);
+    // Solo el enum de aviso y el orden llevan colación: el orden es ascii_bin
+    assert.deepEqual(await collationsDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA_VOTACION), [
+      'dato_quincena_votaciones.aviso utf8mb4 utf8mb4_unicode_ci',
+      'dato_quincena_votos.orden ascii ascii_bin'
+    ]);
+    assert.deepEqual((await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA_VOTACION)).sort(), [
+      'dato_quincena_votacion_personas.edicion_id -> dato_quincena_votaciones.edicion_id (fk_dato_quincena_votacion_personas_votacion) borrado=CASCADE',
+      'dato_quincena_votacion_personas.usuario_id -> usuarios.id (fk_dato_quincena_votacion_personas_usuario) borrado=SET NULL',
+      'dato_quincena_votaciones.edicion_id -> dato_quincena_ediciones.id (fk_dato_quincena_votaciones_edicion) borrado=CASCADE',
+      'dato_quincena_votantes.agregado_por -> usuarios.id (fk_dato_quincena_votantes_agregado_por) borrado=SET NULL',
+      'dato_quincena_votantes.usuario_id -> usuarios.id (fk_dato_quincena_votantes_usuario) borrado=CASCADE',
+      'dato_quincena_votos.persona_id -> dato_quincena_votacion_personas.id (fk_dato_quincena_votos_persona) borrado=CASCADE'
+    ].sort());
+    assert.deepEqual(await indicesDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA_VOTACION), [
+      'dato_quincena_votaciones.PRIMARY (edicion_id) repetible=0',
+      'dato_quincena_votacion_personas.fk_dato_quincena_votacion_personas_usuario (usuario_id) repetible=1',
+      'dato_quincena_votacion_personas.PRIMARY (id) repetible=0',
+      'dato_quincena_votacion_personas.uq_dato_quincena_votacion_persona (edicion_id,usuario_id) repetible=0',
+      'dato_quincena_votantes.fk_dato_quincena_votantes_agregado_por (agregado_por) repetible=1',
+      'dato_quincena_votantes.PRIMARY (usuario_id) repetible=0',
+      'dato_quincena_votos.fk_dato_quincena_votos_persona (persona_id) repetible=1',
+      'dato_quincena_votos.PRIMARY (id) repetible=0'
+    ]);
+    // information_schema ordena sin distinguir mayúsculas: dato_quincena_votaciones va antes que dato_quincena_votacion_personas
+    // ('S' antes que '_')
+    assert.deepEqual(await motoresDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA_VOTACION),
+      ['dato_quincena_votaciones', 'dato_quincena_votacion_personas', 'dato_quincena_votantes', 'dato_quincena_votos']
+        .map(tabla => `${tabla} InnoDB utf8mb4_unicode_ci`));
+    assert.deepEqual(await generadasDe(root, BASE_TEMPORAL, TABLAS_DATO_QUINCENA_VOTACION), []);
   });
 
   it('el tipo de una licencia de Mi espacio: el enum de schema.sql es TIPOS_LICENCIA de services/miEspacioReglas.js, en su orden', () => {
@@ -3814,6 +3875,9 @@ describe('migracion-dato-quincena.sql', () => {
   // Y la principal del equipo, que apunta a las propuestas: su migración va después de la del correo, y su vuelta atrás, primero
   const MIGRACION_PRINCIPAL_EQUIPO = 'migracion-dato-quincena-principal-equipo.sql';
   const ROLLBACK_PRINCIPAL_EQUIPO = 'rollback-dato-quincena-principal-equipo.sql';
+  // Y la votación, que apunta a las ediciones: su migración va después de la de la principal del equipo, y su vuelta atrás, primero
+  const MIGRACION_VOTACION = 'migracion-dato-quincena-votacion.sql';
+  const ROLLBACK_VOTACION = 'rollback-dato-quincena-votacion.sql';
   // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
   const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
   // Sin los comentarios: lo que de verdad se ejecuta
@@ -3829,8 +3893,8 @@ describe('migracion-dato-quincena.sql', () => {
     await root.query(`USE \`${BASE_DATO_QUINCENA}\``);
     await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
     if (!conLoNuevo) {
-      await root.query([...TABLAS_DATO_QUINCENA, ...TABLAS_DATO_QUINCENA_CORREO, ...TABLAS_DATO_QUINCENA_PRINCIPAL_EQUIPO].reverse()
-        .map(tabla => `DROP TABLE ${tabla};`).join('\n'));
+      await root.query([...TABLAS_DATO_QUINCENA, ...TABLAS_DATO_QUINCENA_CORREO, ...TABLAS_DATO_QUINCENA_PRINCIPAL_EQUIPO,
+        ...TABLAS_DATO_QUINCENA_VOTACION].reverse().map(tabla => `DROP TABLE ${tabla};`).join('\n'));
     }
   };
   // Un área y un dataset (inventados) y un piloto con dos propuestas, una de ese dataset y otra de uno que no existe, y su infografía
@@ -3911,6 +3975,9 @@ describe('migracion-dato-quincena.sql', () => {
     assert.match(cabecera(ROLLBACK),
       /Mientras esté migracion-dato-quincena-principal-equipo\.sql, correr primero rollback-dato-quincena-principal-equipo\.sql/);
     assert.match(cabecera(ROLLBACK), /falla en las propuestas/);
+    // Y, mientras esté la votación, la suya, antes de las otras (apunta a las ediciones)
+    assert.match(cabecera(ROLLBACK),
+      /Mientras esté migracion-dato-quincena-votacion\.sql, correr primero rollback-dato-quincena-votacion\.sql/);
   });
 
   it('el rollback solo borra las tres tablas, de los adjuntos a las ediciones: no toca datasets ni ninguna otra', () => {
@@ -3924,9 +3991,10 @@ describe('migracion-dato-quincena.sql', () => {
     assert.ok(!(await columnas(root, BASE_DATO_QUINCENA)).some(esDeLasTablas), 'la base de partida ya tiene las tablas');
     await root.query(sql(MIGRACION));
     await root.query(sql(MIGRACION));
-    // Y lo que se le sumó después: el correo que manda el RPAD y la principal del equipo
+    // Y lo que se le sumó después: el correo que manda el RPAD, la principal del equipo y su votación
     await root.query(sql(MIGRACION_CORREO));
     await root.query(sql(MIGRACION_PRINCIPAL_EQUIPO));
+    await root.query(sql(MIGRACION_VOTACION));
     await comoSchema();
   });
 
@@ -3934,21 +4002,23 @@ describe('migracion-dato-quincena.sql', () => {
     await crearBase({ conLoNuevo: true });
     await cargarDatos();
     assert.deepEqual(await Promise.all(TABLAS_DATO_QUINCENA.map(contarEn)), [1, 2, 1]);
-    // Primero las vueltas atrás de la principal del equipo y del correo, como en el despliegue: con sus tablas puestas, la base no deja
-    // borrar las propuestas ni las ediciones
+    // Primero las vueltas atrás de la votación, la principal del equipo y el correo, como en el despliegue: con sus tablas puestas, la
+    // base no deja borrar las propuestas ni las ediciones
+    await root.query(sql(ROLLBACK_VOTACION));
     await root.query(sql(ROLLBACK_PRINCIPAL_EQUIPO));
     await root.query(sql(ROLLBACK_CORREO));
     await root.query(sql(ROLLBACK));
     await root.query(sql(ROLLBACK));
-    // La estructura de main: la de schema.sql sin las tres tablas (ni las del correo ni la de la principal del equipo)
+    // La estructura de main: la de schema.sql sin las tres tablas (ni las del correo, ni la de la principal del equipo, ni las de la votación)
     const deMain = (await columnas(root, BASE_TEMPORAL))
-      .filter(c => !esDeLasTablas(c) && !esDelCorreoDelDatoQuincena(c) && !esDeLaPrincipalDelEquipo(c));
+      .filter(c => !esDeLasTablas(c) && !esDelCorreoDelDatoQuincena(c) && !esDeLaPrincipalDelEquipo(c) && !esDeLaVotacion(c));
     assert.deepEqual(await columnas(root, BASE_DATO_QUINCENA), deMain);
     assert.equal(await contarEn('datasets'), 1);
-    // Las tres migraciones vuelven a dejar exactamente la estructura de schema.sql
+    // Las cuatro migraciones vuelven a dejar exactamente la estructura de schema.sql
     await root.query(sql(MIGRACION));
     await root.query(sql(MIGRACION_CORREO));
     await root.query(sql(MIGRACION_PRINCIPAL_EQUIPO));
+    await root.query(sql(MIGRACION_VOTACION));
     await comoSchema();
   });
 
@@ -3997,7 +4067,7 @@ describe('migracion-dato-quincena-correo.sql', () => {
   const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
   const sentencias = (archivo) => codigo(archivo).split(';').map(s => s.trim()).filter(Boolean);
   const enLaBase = (tabla) => `\`${BASE_CORREO}\`.\`${tabla}\``;
-  const TODAS = [...TABLAS_DATO_QUINCENA, ...TABLAS_DATO_QUINCENA_CORREO];
+  const TODAS = [...TABLAS_DATO_QUINCENA, ...TABLAS_DATO_QUINCENA_CORREO, ...TABLAS_DATO_QUINCENA_VOTACION];
   // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega (la de main): sin las cuatro tablas y con el
   // campo de los adjuntos de tres valores
   const crearBase = async ({ conLoNuevo }) => {
@@ -4112,6 +4182,8 @@ describe('migracion-dato-quincena-correo.sql', () => {
     assert.match(cabecera(ROLLBACK),
       /Mientras esté migracion-dato-quincena-principal-equipo\.sql, primero va rollback-dato-quincena-principal-equipo\.sql/);
     assert.match(cabecera(ROLLBACK), /falla en el DROP de dato_quincena_propuestas/);
+    assert.match(cabecera(ROLLBACK),
+      /Mientras esté migracion-dato-quincena-votacion\.sql, primero va rollback-dato-quincena-votacion\.sql/);
     // Y si ya se corrió ese solo y quedó a medias: esto borra las cuatro tablas, frena en el DELETE, y se vuelve a correr el otro
     assert.match(cabecera(ROLLBACK), /Si antes se corrió rollback-dato-quincena\.sql solo/);
     assert.match(cabecera(ROLLBACK), /volver a correr rollback-dato-quincena\.sql/);
@@ -4170,6 +4242,7 @@ describe('migracion-dato-quincena-correo.sql', () => {
   it('si rollback-dato-quincena.sql quedó a medias, esto borra igual las cuatro tablas y la otra se puede terminar', async () => {
     await crearBase({ conLoNuevo: true });
     await cargarDatos();
+    await root.query(sql('rollback-dato-quincena-votacion.sql'));
     await root.query(sql('rollback-dato-quincena-principal-equipo.sql'));
     await assert.rejects(root.query(sql('rollback-dato-quincena.sql')), { code: 'ER_ROW_IS_REFERENCED_2' });
     const tablasDelDato = async () => (await root.query(
@@ -4180,7 +4253,7 @@ describe('migracion-dato-quincena-correo.sql', () => {
     assert.deepEqual(await tablasDelDato(), ['dato_quincena_ediciones']);
     await root.query(sql('rollback-dato-quincena.sql'));
     // La estructura de antes del dato de la quincena: la de schema.sql sin las ocho tablas, sin tocar a las personas
-    const sinElDato = (await columnas(root, BASE_TEMPORAL)).filter(c => !esDelCorreoDelDatoQuincena(c) && !esDeLaPrincipalDelEquipo(c)
+    const sinElDato = (await columnas(root, BASE_TEMPORAL)).filter(c => !esDelCorreoDelDatoQuincena(c) && !esDeLaPrincipalDelEquipo(c) && !esDeLaVotacion(c)
       && !TABLAS_DATO_QUINCENA.some(tabla => c.startsWith(`${tabla}.`)));
     assert.deepEqual(await columnas(root, BASE_CORREO), sinElDato);
     assert.equal(await contarEn('usuarios'), 2);
@@ -4252,7 +4325,7 @@ describe('migracion-dato-quincena-principal-equipo.sql', () => {
   const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
   const sentencias = (archivo) => codigo(archivo).split(';').map(s => s.trim()).filter(Boolean);
   const enLaBase = (tabla) => `\`${BASE_PRINCIPAL}\`.\`${tabla}\``;
-  const TODAS = [...TABLAS_DATO_QUINCENA, ...TABLAS_DATO_QUINCENA_CORREO, ...TABLAS_DATO_QUINCENA_PRINCIPAL_EQUIPO];
+  const TODAS = [...TABLAS_DATO_QUINCENA, ...TABLAS_DATO_QUINCENA_CORREO, ...TABLAS_DATO_QUINCENA_PRINCIPAL_EQUIPO, ...TABLAS_DATO_QUINCENA_VOTACION];
   // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega (la de main): con las tablas del dato de la
   // quincena y las del correo, sin la de la principal del equipo
   const crearBase = async ({ conLoNuevo }) => {
@@ -4366,7 +4439,7 @@ describe('migracion-dato-quincena-principal-equipo.sql', () => {
   it('sobre una base con las tablas del dato de la quincena y del correo (la de main) deja la de schema.sql y se puede repetir', async () => {
     await crearBase({ conLoNuevo: false });
     assert.ok(!(await columnas(root, BASE_PRINCIPAL)).some(esDeLaPrincipalDelEquipo), 'la base de partida ya tiene la tabla');
-    assert.deepEqual((await tablasDelDato()).sort(), [...TABLAS_DATO_QUINCENA, ...TABLAS_DATO_QUINCENA_CORREO].sort());
+    assert.deepEqual((await tablasDelDato()).sort(), [...TABLAS_DATO_QUINCENA, ...TABLAS_DATO_QUINCENA_CORREO, ...TABLAS_DATO_QUINCENA_VOTACION].sort());
     await root.query(sql(MIGRACION));
     await comoSchema();
     // Otra vez, con elecciones guardadas: no las toca
@@ -4398,6 +4471,7 @@ describe('migracion-dato-quincena-principal-equipo.sql', () => {
   it('si rollback-dato-quincena.sql frenó en las propuestas, esto borra la tabla y la otra se puede terminar', async () => {
     await crearBase({ conLoNuevo: true });
     await cargarDatos();
+    await root.query(sql('rollback-dato-quincena-votacion.sql'));
     await root.query(sql('rollback-dato-quincena-correo.sql'));
     await assert.rejects(root.query(sql('rollback-dato-quincena.sql')), { code: 'ER_ROW_IS_REFERENCED_2' });
     assert.deepEqual(await tablasDelDato(), ['dato_quincena_ediciones', TABLA, 'dato_quincena_propuestas']);
@@ -4438,6 +4512,200 @@ describe('migracion-dato-quincena-principal-equipo.sql', () => {
         { edicion_id: segunda, orden: 1, elegida_por: null, elegida_at: '2026-12-07 09:00:00' }
       ]);
       assert.equal(await contarEn('dato_quincena_propuestas'), 2);
+    });
+  }
+});
+
+// La votación de la principal del equipo (spec 2026-11-23-dato-quincena-principal-votacion, 1): cuatro tablas nuevas. La migración y su
+// vuelta atrás, sobre una base descartable creada con schema.sql
+describe('migracion-dato-quincena-votacion.sql', () => {
+  const BASE_VOTACION = 'rpad_schema_dato_quincena_votacion_test';
+  const MIGRACION = 'migracion-dato-quincena-votacion.sql';
+  const ROLLBACK = 'rollback-dato-quincena-votacion.sql';
+  // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
+  const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
+  // Sin los comentarios: lo que de verdad se ejecuta
+  const codigo = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('--')).join('\n');
+  const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
+  const sentencias = (archivo) => codigo(archivo).split(';').map(s => s.trim()).filter(Boolean);
+  const enLaBase = (tabla) => `\`${BASE_VOTACION}\`.\`${tabla}\``;
+  const TODAS = [...TABLAS_DATO_QUINCENA, ...TABLAS_DATO_QUINCENA_CORREO, ...TABLAS_DATO_QUINCENA_PRINCIPAL_EQUIPO, ...TABLAS_DATO_QUINCENA_VOTACION];
+  // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega (la de main): con las tablas del dato de la
+  // quincena, las del correo y la de la principal del equipo, sin las cuatro de la votación
+  const crearBase = async ({ conLoNuevo }) => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_VOTACION}\``);
+    await root.query(`CREATE DATABASE \`${BASE_VOTACION}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_VOTACION}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    if (!conLoNuevo) await root.query([...TABLAS_DATO_QUINCENA_VOTACION].reverse().map(tabla => `DROP TABLE ${tabla};`).join('\n'));
+  };
+  const persona = async (nombre) => {
+    const [{ insertId }] = await root.query(
+      `INSERT INTO ${enLaBase('usuarios')} (username, password_hash, nombre_completo, email, rol) VALUES (?, 'x', 'Persona Inventada', ?, 'admin')`,
+      [nombre, `${nombre}@rpad.test`]);
+    return insertId;
+  };
+  const edicion = async (fecha) => {
+    const [{ insertId }] = await root.query(
+      `INSERT INTO ${enLaBase('dato_quincena_ediciones')} (clave, tipo, fecha_edicion, titulo, metadata, huella)
+       VALUES (?, 'regular', ?, 'Edición inventada', '{}', ?)`, [`dq:regular:${fecha}`, fecha, 'a'.repeat(64)]);
+    return insertId;
+  };
+  // Dos personas (inventadas) y dos ediciones inventadas, las dos con votación: en la primera votan las dos y una vota dos propuestas;
+  // en la segunda, una sola. Una de ellas es votante
+  const cargarDatos = async () => {
+    const una = await persona('t_una_votacion');
+    const otra = await persona('t_otra_votacion');
+    const primera = await edicion('2026-11-23');
+    const segunda = await edicion('2026-12-07');
+    await root.query(`INSERT INTO ${enLaBase('dato_quincena_votantes')} (usuario_id, agregado_por, agregado_at) VALUES (?, ?, '2026-11-20 10:00:00'), (?, ?, '2026-11-20 10:00:00')`,
+      [una, una, otra, una]);
+    await root.query(`INSERT INTO ${enLaBase('dato_quincena_votaciones')} (edicion_id, creada_at, cierre_at) VALUES (?, '2026-11-23 08:05:00', '2026-11-24 12:00:00'), (?, '2026-12-07 08:05:00', NULL)`,
+      [primera, segunda]);
+    const ids = [];
+    for (const [ed, us] of [[primera, una], [primera, otra], [segunda, una]]) {
+      const [{ insertId }] = await root.query(`INSERT INTO ${enLaBase('dato_quincena_votacion_personas')} (edicion_id, usuario_id) VALUES (?, ?)`, [ed, us]);
+      ids.push(insertId);
+    }
+    for (const [pid, orden] of [[ids[0], '1'], [ids[0], '2'], [ids[1], '2'], [ids[2], '1']]) {
+      await root.query(`INSERT INTO ${enLaBase('dato_quincena_votos')} (persona_id, orden, votado_at) VALUES (?, ?, '2026-11-23 10:00:00')`, [pid, orden]);
+    }
+    return { una, otra, primera, segunda, ids };
+  };
+  const contarEn = async (tabla) => {
+    const [[{ total }]] = await root.query(`SELECT COUNT(*) AS total FROM ${enLaBase(tabla)}`);
+    return Number(total);
+  };
+  const contarTodas = () => Promise.all(TABLAS_DATO_QUINCENA_VOTACION.map(contarEn));
+  // La misma estructura que schema.sql: las columnas y también las claves foráneas, los índices, el motor y las colaciones, que las
+  // columnas no muestran
+  const comoSchema = async () => {
+    assert.deepEqual(await columnas(root, BASE_VOTACION), await columnas(root, BASE_TEMPORAL));
+    assert.deepEqual(await clavesAjenasDe(root, BASE_VOTACION, TODAS), await clavesAjenasDe(root, BASE_TEMPORAL, TODAS));
+    assert.deepEqual(await indicesDe(root, BASE_VOTACION, TODAS), await indicesDe(root, BASE_TEMPORAL, TODAS));
+    assert.deepEqual(await motoresDe(root, BASE_VOTACION, TODAS), await motoresDe(root, BASE_TEMPORAL, TODAS));
+    assert.deepEqual(await collationsDe(root, BASE_VOTACION, TODAS), await collationsDe(root, BASE_TEMPORAL, TODAS));
+    assert.deepEqual(await generadasDe(root, BASE_VOTACION, TODAS), await generadasDe(root, BASE_TEMPORAL, TODAS));
+  };
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_VOTACION}\``);
+  });
+
+  it('se pega tal cual en phpMyAdmin: sin DELIMITER, USE, DROP, RENAME ni CHECK, y solo crea las cuatro tablas en su orden', () => {
+    assert.doesNotMatch(codigo(MIGRACION), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELIMITER|USE)\b/i);
+    // Los acentos de los comentarios llegan bien desde phpMyAdmin
+    assert.match(codigo(MIGRACION), /^SET NAMES utf8mb4;/);
+    assert.match(codigo(ROLLBACK), /^SET NAMES utf8mb4;/);
+    // Lo único que se ejecuta, además de SET NAMES: las cuatro tablas, si todavía no están
+    const lista = sentencias(MIGRACION);
+    assert.equal(lista.length, 5, lista.join('\n---\n'));
+    assert.deepEqual(lista.slice(1).map(s => s.match(/^CREATE TABLE IF NOT EXISTS `(\w+)`/)?.[1]), TABLAS_DATO_QUINCENA_VOTACION);
+  });
+
+  it('las cabeceras dicen la spec, qué crea, el orden, que es obligatoria, que se puede repetir y cómo se deshace; el rollback, qué se pierde', () => {
+    assert.match(cabecera(MIGRACION), /docs\/superpowers\/specs\/2026-11-23-dato-quincena-principal-votacion-design\.md/);
+    assert.match(cabecera(MIGRACION), /Solo agrega/);
+    for (const tabla of TABLAS_DATO_QUINCENA_VOTACION) assert.match(cabecera(MIGRACION), new RegExp(`${tabla}:`), tabla);
+    // La existencia de la fila de la votación es lo que dice que la edición se vota
+    assert.match(cabecera(MIGRACION), /la existencia de la fila es lo que dice que la\s*-*\s*edición se vota/);
+    assert.match(cabecera(MIGRACION), /El código anterior no la lee/);
+    assert.match(cabecera(MIGRACION), /ORDEN: correr ANTES de subir el código nuevo, después de migracion-dato-quincena-principal-equipo\.sql/);
+    assert.match(cabecera(MIGRACION), /Es obligatoria/);
+    assert.match(cabecera(MIGRACION), /Se puede volver a correr/);
+    assert.match(cabecera(MIGRACION), /Para deshacer: rollback-dato-quincena-votacion\.sql/);
+    // Termina con la verificación, comentada: la migración se sigue pegando tal cual
+    assert.match(sql(MIGRACION), /\n-- Para verificar, en la misma pestaña SQL: tiene que dar 12 filas[^\n]*\n--   SHOW TABLES LIKE 'dato_quincena%';\s*$/);
+    assert.match(cabecera(ROLLBACK), /migracion-dato-quincena-votacion\.sql/);
+    assert.match(cabecera(ROLLBACK), /ORDEN: primero volver a subir los archivos anteriores y hacer Restart; después correr esto/);
+    // Lo que se pierde, dicho con su nombre, y cómo conservarlo
+    assert.match(cabecera(ROLLBACK), /se pierden los votantes, las votaciones de cada edición, sus personas y los votos/);
+    assert.match(cabecera(ROLLBACK), /exportar las cuatro tablas antes/);
+    assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);
+    // Va antes que la vuelta atrás de la principal del equipo, si también se deshace
+    assert.match(cabecera(ROLLBACK), /Va antes que rollback-dato-quincena-principal-equipo\.sql/);
+    assert.match(cabecera('rollback-dato-quincena-principal-equipo.sql'), /Si también se deshace la votación, esa va primero/);
+  });
+
+  it('el rollback solo borra las cuatro tablas, de los votos a los votantes: no toca las ediciones, las propuestas ni a las personas', () => {
+    assert.deepEqual(sentencias(ROLLBACK), [
+      'SET NAMES utf8mb4',
+      ...[...TABLAS_DATO_QUINCENA_VOTACION].reverse().map(tabla => `DROP TABLE IF EXISTS \`${tabla}\``)
+    ]);
+  });
+
+  it('sobre una base con todo lo anterior (la de main) deja la de schema.sql y se puede repetir sin perder nada', async () => {
+    await crearBase({ conLoNuevo: false });
+    assert.ok(!(await columnas(root, BASE_VOTACION)).some(esDeLaVotacion), 'la base de partida ya tiene las tablas');
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+    // Otra vez, con datos guardados: no los toca
+    await cargarDatos();
+    assert.deepEqual(await contarTodas(), [2, 2, 3, 4]);
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+    assert.deepEqual(await contarTodas(), [2, 2, 3, 4]);
+  });
+
+  it('el rollback se puede repetir: deja la estructura de main con las ediciones y las personas; la migración la recupera', async () => {
+    await crearBase({ conLoNuevo: true });
+    await cargarDatos();
+    await root.query(sql(ROLLBACK));
+    await root.query(sql(ROLLBACK));
+    // La estructura de main: la de schema.sql sin las cuatro tablas
+    assert.deepEqual(await columnas(root, BASE_VOTACION), (await columnas(root, BASE_TEMPORAL)).filter(c => !esDeLaVotacion(c)));
+    assert.equal(await contarEn('dato_quincena_ediciones'), 2);
+    assert.equal(await contarEn('usuarios'), 2);
+    // La migración vuelve a dejar exactamente la estructura de schema.sql, sin datos
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+    assert.deepEqual(await contarTodas(), [0, 0, 0, 0]);
+  });
+
+  // Una persona, una sola vez por votación (el UNIQUE), pero la cuenta borrada deja NULL y los NULL se repiten; borrar a una persona la
+  // saca de los votantes y deja sin cuenta a la suya de cada votación (sus votos quedan); borrar una edición (SQL a mano) borra su
+  // votación, sus personas y, en cascada, sus votos, y no los de otra; una persona o un voto sin su padre no entran. Con la estructura
+  // de schema.sql y con la de la migración
+  for (const origen of ['schema.sql', 'la migración']) {
+    it(`las votaciones: una persona por votación, los borrados de las FK y lo que no entra (${origen})`, async () => {
+      await crearBase({ conLoNuevo: origen === 'schema.sql' });
+      if (origen === 'la migración') await root.query(sql(MIGRACION));
+      const { una, otra, primera, segunda, ids } = await cargarDatos();
+      // La misma persona dos veces en la misma votación
+      await assert.rejects(root.query(`INSERT INTO ${enLaBase('dato_quincena_votacion_personas')} (edicion_id, usuario_id) VALUES (?, ?)`, [primera, una]),
+        { code: 'ER_DUP_ENTRY' });
+      // Un votante dos veces, una votación de una edición que no existe, una persona de una votación que no existe y un voto de una persona que no existe
+      await assert.rejects(root.query(`INSERT INTO ${enLaBase('dato_quincena_votantes')} (usuario_id, agregado_at) VALUES (?, '2026-11-20 10:00:00')`, [una]),
+        { code: 'ER_DUP_ENTRY' });
+      await assert.rejects(root.query(`INSERT INTO ${enLaBase('dato_quincena_votaciones')} (edicion_id, creada_at) VALUES (?, '2026-11-23 08:05:00')`, [segunda + 1000]),
+        { code: 'ER_NO_REFERENCED_ROW_2' });
+      await assert.rejects(root.query(`INSERT INTO ${enLaBase('dato_quincena_votacion_personas')} (edicion_id, usuario_id) VALUES (?, ?)`, [segunda + 1000, una]),
+        { code: 'ER_NO_REFERENCED_ROW_2' });
+      await assert.rejects(root.query(`INSERT INTO ${enLaBase('dato_quincena_votos')} (persona_id, orden, votado_at) VALUES (?, '1', '2026-11-23 10:00:00')`, [ids[2] + 1000]),
+        { code: 'ER_NO_REFERENCED_ROW_2' });
+      // Un valor válido del aviso
+      await root.query(`UPDATE ${enLaBase('dato_quincena_votaciones')} SET aviso = 'no_corresponde', aviso_at = '2026-11-24 12:05:00', sellada_at = '2026-11-24 12:00:00' WHERE edicion_id = ?`, [primera]);
+      // El orden distingue mayúsculas (ascii_bin) y lleva hasta 40 caracteres
+      await root.query(`INSERT INTO ${enLaBase('dato_quincena_votos')} (persona_id, orden, votado_at) VALUES (?, 'a', '2026-11-23 10:00:00'), (?, 'A', '2026-11-23 10:00:00'), (?, ?, '2026-11-23 10:00:00')`,
+        [ids[1], ids[1], ids[1], 'x'.repeat(40)]);
+      assert.equal(await contarEn('dato_quincena_votos'), 7);
+
+      // Borrar a una persona: sale de los votantes y de las personas de cada votación queda la fila sin cuenta, con sus votos
+      await root.query(`DELETE FROM ${enLaBase('usuarios')} WHERE id = ?`, [una]);
+      assert.deepEqual(await contarTodas(), [1, 2, 3, 7]);
+      const [personas] = await root.query(`SELECT id, usuario_id FROM ${enLaBase('dato_quincena_votacion_personas')} ORDER BY id`);
+      assert.deepEqual(personas.map(f => ({ ...f })), [
+        { id: ids[0], usuario_id: null }, { id: ids[1], usuario_id: otra }, { id: ids[2], usuario_id: null }
+      ]);
+      const [votante] = await root.query(`SELECT usuario_id, agregado_por FROM ${enLaBase('dato_quincena_votantes')}`);
+      assert.deepEqual(votante.map(f => ({ ...f })), [{ usuario_id: otra, agregado_por: null }]);
+
+      // Borrar una edición: su votación, sus personas y sus votos; la otra no se toca
+      await root.query(`DELETE FROM ${enLaBase('dato_quincena_ediciones')} WHERE id = ?`, [primera]);
+      assert.deepEqual(await contarTodas(), [1, 1, 1, 1]);
+      const [[resto]] = await root.query(`SELECT edicion_id FROM ${enLaBase('dato_quincena_votaciones')}`);
+      assert.equal(resto.edicion_id, segunda);
     });
   }
 });

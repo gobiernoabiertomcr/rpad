@@ -20,9 +20,13 @@
  * repiten las propuestas (edicionesPreviasSinFallar de fechasPrevias), para los avisos de la repetición y el enlace a la edición
  * previa. Esa lectura nunca da un 500: si falla, el recibo sale sin los avisos de la repetición y el detalle, sin el enlace.
  *
- * La principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo, 2 y 3): `elegirPrincipalDelEquipo`, el PUT de
- * administración (authMiddleware y adminOnly), guarda la elección en su tabla, sin tocar lo archivado ni mandar ningún mail; `ver`
- * lee la vigente y el detalle la muestra, y la lista suma el orden vigente de cada edición.
+ * La principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo, 3): `ver` lee la elección a mano vigente y el detalle la
+ * muestra, y la lista suma el orden vigente de cada edición; las ediciones de antes de la votación conservan lo que se eligió.
+ * La votación (spec 2026-11-23-dato-quincena-principal-votacion, 3): `ver` y `listar` leen la de cada edición (leerVotaciones) y, con
+ * el calendario del pedido y quien pide, la pasan armada (datoQuincenaVotacionReglas.js): el detalle deja de ser igual para todos
+ * los roles, porque lo de quien mira (si puede votar, si le falta, su orden) es de cada uno. `elegirPrincipalDelEquipo`, el PUT de
+ * administración (authMiddleware y adminOnly) de la elección a mano, queda para una pestaña con la página anterior: después del 404,
+ * contesta siempre 409 sin escribir.
  */
 import { ahoraArgentina } from '../services/notasDigitalesCalendario.js';
 import { leerCalendario } from '../services/feriadosDatos.js';
@@ -32,14 +36,15 @@ import { idPositivo } from '../services/proyectosReglas.js';
 import { disposicionDeAdjunto } from '../services/seguimientoReglas.js';
 import {
   textoDeMetadata, erroresDeLaEdicion, claveDeEdicion, huellaDelPaquete, filasDeLaEdicion, avisosDeLaEdicion, reciboDe, sha256,
-  anioDeLaLista, itemDeLaLista, detalleDeLaEdicion, fechasPrevias, MENSAJES_PRINCIPAL_EQUIPO, mensajeDeLaEleccion, ordenDeLaEleccion
+  anioDeLaLista, itemDeLaLista, detalleDeLaEdicion, fechasPrevias, MENSAJES_PRINCIPAL_EQUIPO
 } from '../services/datoQuincenaReglas.js';
 import {
-  guardarEdicion, leerRecibo, listarEdiciones, leerEdicion, leerArchivo, edicionesPreviasSinFallar, leerPrincipalDelEquipo,
-  guardarPrincipalDelEquipo
+  guardarEdicion, leerRecibo, listarEdiciones, leerEdicion, leerArchivo, edicionesPreviasSinFallar, leerPrincipalDelEquipo
 } from '../services/datoQuincenaDatos.js';
 import { envioDelRecibo, lineaDelCorreo, pastillaDelEnvio } from '../services/datoQuincenaCorreoReglas.js';
-import { leerConfig, correosDeLasEdiciones, listaDeHoy } from '../services/datoQuincenaCorreoDatos.js';
+import { leerConfig, correosDeLasEdiciones, listaDeHoy, edicionDelCorreo } from '../services/datoQuincenaCorreoDatos.js';
+import { MENSAJES_VOTACION, votacionParaElDetalle, votacionParaLaLista } from '../services/datoQuincenaVotacionReglas.js';
+import { leerVotaciones } from '../services/datoQuincenaVotacionDatos.js';
 
 const MENSAJE_JSON_INVALIDO = 'No se pudo leer la edición: metadata no es un JSON válido.';
 const MENSAJE_CON_ERRORES = 'La edición tiene errores.';
@@ -163,7 +168,9 @@ const errorDeLectura = (res, mensaje, error) => {
 /**
  * GET /api/dato-quincena/ediciones?anio=AAAA: las ediciones de un año (sin anio, el más reciente con ediciones), con los años
  * que tienen y su cantidad. Un anio que no es un entero de 2000 a 2100, 400. Cada edición con la pastilla de su envío: la de
- * administración (esAdmin de quien pide) dice además si a alguien no le llegó.
+ * administración (esAdmin de quien pide) dice además si a alguien no le llegó. Y con su votación (la que lee listarEdiciones), armada
+ * con el calendario y la hora del envío (una lectura por pedido) y quien pide: abierta, hasta cuándo y si le falta votar; cerrada, la
+ * ganadora como principal.
  */
 export const listar = async (req, res) => {
   const pedido = anioDeLaLista(req.query.anio);
@@ -172,7 +179,13 @@ export const listar = async (req, res) => {
     const { anios, anio, filas } = await listarEdiciones(pedido.anio);
     const lectura = filas.length === 0 ? null : await leerElEnvio(filas.map((fila) => fila.id));
     const admin = esAdmin(req.user?.rol);
-    const ediciones = filas.map((fila) => itemDeLaLista(fila, pastillaDelEnvio({
+    const quienMira = req.user?.userId ?? null;
+    const ediciones = filas.map((fila) => itemDeLaLista({
+      ...fila,
+      votacion: votacionParaLaLista({
+        votacion: fila.votacion, propuestas: fila.propuestas, quienMira, ahora: lectura.ahora, calendario: lectura.calendario
+      })
+    }, pastillaDelEnvio({
       ...parametrosDelEnvio(lectura, fila, fila.correo_del_bot), admin
     })));
     res.json({ success: true, data: { anios, anio, ediciones } });
@@ -182,8 +195,9 @@ export const listar = async (req, res) => {
 };
 
 // GET /api/dato-quincena/ediciones/:id: el detalle de una edición, con los textos ya armados. La línea del correo es la misma
-// para todos los roles; las ediciones previas dan el enlace de cada repetición; la principal del equipo vigente, la del equipo
-// (la misma para todos los roles, también quién la eligió)
+// para todos los roles; las ediciones previas dan el enlace de cada repetición. La principal del equipo: en una edición que se vota,
+// la de la votación, armada con el calendario y la hora del envío (una lectura por pedido) y lo de quien pide; en una de antes, la
+// elección a mano vigente (la misma para todos los roles, también quién la eligió)
 export const ver = async (req, res) => {
   const id = idPositivo(req.params.id);
   if (id === null) return noExiste(res);
@@ -191,35 +205,37 @@ export const ver = async (req, res) => {
     const leida = await leerEdicion(id);
     if (leida === null) return noExiste(res);
     const edicion = JSON.parse(leida.fila.metadata);
-    const [envio, previas, eleccion] = await Promise.all([
-      leerElEnvio([leida.fila.id]), edicionesPreviasSinFallar(fechasPrevias(edicion)), leerPrincipalDelEquipo(leida.fila.id)
+    const [envio, previas, eleccion, votaciones] = await Promise.all([
+      leerElEnvio([leida.fila.id]), edicionesPreviasSinFallar(fechasPrevias(edicion)), leerPrincipalDelEquipo(leida.fila.id),
+      leerVotaciones([leida.fila.id])
     ]);
     const linea = lineaDelCorreo(parametrosDelEnvio(envio, leida.fila, edicion.correo));
-    res.json({ success: true, data: detalleDeLaEdicion({ ...leida, edicion, lineaDelCorreo: linea, previas, eleccion }) });
+    const votacion = votacionParaElDetalle({
+      votacion: votaciones.get(leida.fila.id),
+      edicion,
+      quienMira: req.user?.userId ?? null,
+      ahora: envio.ahora,
+      calendario: envio.calendario
+    });
+    res.json({ success: true, data: detalleDeLaEdicion({ ...leida, edicion, lineaDelCorreo: linea, previas, eleccion, votacion }) });
   } catch (error) {
     errorDeLectura(res, MENSAJE_AL_VER, error);
   }
 };
 
 /**
- * PUT /api/dato-quincena/ediciones/:id/principal-equipo (`{ orden: N }`), solo administración (spec
- * 2026-11-21-dato-quincena-principal-equipo, 2): elige la principal del equipo de cualquier edición, regular o piloto. Como en
- * «Reenviar», primero la edición: un id que no pasa idPositivo o que no existe, 404 «No existe esa edición.», sin mirar el cuerpo;
- * después el orden: uno que no es un número entero de 1 a 255 (ordenDeLaEleccion) o que no es el de una propuesta de la edición,
- * 400. Si ya es el de la vigente no escribe nada (`cambio` false); si no, guarda la elección con quien la pide y la hora argentina.
- * 200 con `{ cambio }` y el texto de mensajeDeLaEleccion. No manda ningún mail. Un error de la base, 500 con su mensaje fijo.
+ * PUT /api/dato-quincena/ediciones/:id/principal-equipo, solo administración: la elección a mano (spec
+ * 2026-11-21-dato-quincena-principal-equipo, 2) desaparece, porque la principal del equipo ahora se vota (spec
+ * 2026-11-23-dato-quincena-principal-votacion, 3). La ruta queda para una pestaña abierta con la página anterior: primero la edición,
+ * como antes (un id que no pasa idPositivo o que no existe, 404 «No existe esa edición.», sin mirar el cuerpo); después, siempre 409
+ * «La principal del equipo ahora se vota: volvé a cargar la página.», sin escribir nada. Un error de la base, 500 con su mensaje fijo.
  */
 export const elegirPrincipalDelEquipo = async (req, res) => {
   const id = idPositivo(req.params.id);
   if (id === null) return noExiste(res);
   try {
-    const orden = ordenDeLaEleccion(req.body?.orden);
-    const { existe, valida, cambio, coincide } = await guardarPrincipalDelEquipo({
-      edicionId: id, orden, usuarioId: req.user.userId, ahora: ahoraArgentina()
-    });
-    if (!existe) return noExiste(res);
-    if (!valida) return res.status(400).json({ success: false, error: MENSAJES_PRINCIPAL_EQUIPO.orden });
-    res.json({ success: true, data: { cambio }, message: mensajeDeLaEleccion({ orden, coincide, cambio }) });
+    if (await edicionDelCorreo(id) === null) return noExiste(res);
+    res.status(409).json({ success: false, error: MENSAJES_VOTACION.ahoraSeVota });
   } catch (error) {
     errorDeLectura(res, MENSAJES_PRINCIPAL_EQUIPO.alGuardar, error);
   }

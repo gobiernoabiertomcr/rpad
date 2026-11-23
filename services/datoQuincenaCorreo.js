@@ -27,7 +27,7 @@ import { conBloqueo } from './notasDigitales.js';
 import { sendEmail, remitente } from './emailService.js';
 import { datoQuincenaTemplate, CID_INFOGRAFIA } from './emailTemplates.js';
 import { emailValido } from './usuariosReglas.js';
-import { ahoraArgentina } from './notasDigitalesCalendario.js';
+import { ahoraArgentina, sumarDias } from './notasDigitalesCalendario.js';
 import { deLicenciaOficial } from './miEspacioEventosDiarioDatos.js';
 import { leerEdicion, leerArchivo, edicionesPreviasSinFallar } from './datoQuincenaDatos.js';
 import { detalleDeLaEdicion, fechasPrevias } from './datoQuincenaReglas.js';
@@ -40,6 +40,7 @@ import {
   personasPorMandar, reservarEnvio, terminarEnvio, apartarEnvio, guardarElEstado, anotarInicioDeLaCorrida, anotarFinDeLaCorrida,
   leerLaCorrida, ultimaEdicionQueSalio, listaDeHoy, contactosDe, anotarEnvioAMano
 } from './datoQuincenaCorreoDatos.js';
+import { ultimaVotacionSellada } from './datoQuincenaVotacionDatos.js';
 
 export const BLOQUEO_DATO_QUINCENA = 'rpad_dato_quincena_correo';
 
@@ -280,20 +281,43 @@ export const correoDelDatoQuincenaAislado = async (calendario, { ahora = ahoraAr
   }
 };
 
+// Cuántos días mira Correos → Estado para el mail de la votación de la principal del equipo
+const DIAS_DEL_AVISO_DE_LA_VOTACION = 14;
+
+// A quién no le llegó, según cómo salió el mail de la votación
+const NO_LE_LLEGO = { parcial: 'no le llegó a todas las personas de administración.', fallido: 'no le llegó a nadie de administración.' };
+
+// La alerta del mail de la votación de la principal del equipo (spec 2026-11-23-dato-quincena-principal-votacion, 6): si a alguien de
+// administración no le llegó el de la última regular sellada (no se reintenta: el resultado está siempre en la página), o null. El aviso
+// guarda solo cómo salió, no a cuántas personas: por eso no las cuenta, y solo distingue «a todas no» (parcial) de «a nadie» (fallido)
+const alertaDeLaVotacion = (ultima) => (ultima === null || !Object.hasOwn(NO_LE_LLEGO, ultima.aviso ?? '') ? null : {
+  tipo: 'dato-quincena-votacion-no-llego', nivel: 'error',
+  mensaje: `El mail de la votación del ${ultima.fecha_edicion.slice(8, 10)}/${ultima.fecha_edicion.slice(5, 7)} ${NO_LE_LLEGO[ultima.aviso]}`
+});
+
 /**
  * Lo que muestra Correos → Estado (spec, 13), en el momento `ahora`: `{ texto, alertas }`, la línea de la última corrida y sus
  * avisos (una corrida con errores y la última edición que salió sola que no le llegó a alguien: después de los 3 intentos o,
- * si ya no está vigente, con los que tuvo). Tira si la base falla: el controlador de Correos lo convierte en una advertencia.
+ * si ya no está vigente, con los que tuvo), y al final, la del mail de la votación de la principal del equipo, si la última regular
+ * sellada en los últimos 14 días no le llegó a todas las personas de administración. Tira si la base falla: el controlador de Correos
+ * lo convierte en una advertencia.
  */
 export const estadoDelCorreoDelDatoQuincena = async ({ ahora = ahoraArgentina() } = {}) => {
-  const [corrida, ultima] = await Promise.all([leerLaCorrida(BLOQUEO_DATO_QUINCENA), ultimaEdicionQueSalio()]);
+  const desde = `${sumarDias(ahora.slice(0, 10), -DIAS_DEL_AVISO_DE_LA_VOTACION)} ${ahora.slice(11, 19)}`;
+  const [corrida, ultima, votacion] = await Promise.all([
+    leerLaCorrida(BLOQUEO_DATO_QUINCENA), ultimaEdicionQueSalio(), ultimaVotacionSellada({ desde })
+  ]);
   const sinLlegar = ultima === null ? null : {
     fecha_edicion: ultima.fecha_edicion,
     personas: personasSinLlegar({
       fecha_edicion: ultima.fecha_edicion, envios: await enviosDe(ultima.id), hoy: ahora.slice(0, 10)
     })
   };
-  return { texto: textoDeLaCorridaDelCorreo(corrida), alertas: alertasDelCorreo({ corrida, sinLlegar }) };
+  const deLaVotacion = alertaDeLaVotacion(votacion);
+  return {
+    texto: textoDeLaCorridaDelCorreo(corrida),
+    alertas: [...alertasDelCorreo({ corrida, sinLlegar }), ...(deLaVotacion === null ? [] : [deLaVotacion])]
+  };
 };
 
 // «Reenviar» y «Enviarme una prueba» (spec, 9)

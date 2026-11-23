@@ -2332,6 +2332,10 @@ const eventosEnOrden = (eventos) => listaDe(eventos).filter((evento) => esFechaD
 // Las fechas del dato de la quincena que manda el servidor (`dato_quincena`: `{ fecha, hora, texto, nombre, titulo, detalle }`, ya
 // armadas y filtradas al rango; las que no son un objeto con una fecha, no van). El navegador no decide nada: las imprime
 const datosDelDato = (fuente) => listaDe(fuente.dato_quincena).filter((dato) => esObjeto(dato) && esFechaDeTexto(dato.fecha));
+// Votar la principal del dato de la quincena (spec 2026-11-23-dato-quincena-principal-votacion, 5; `dato_quincena_votacion`: `{ fecha, hora, texto, nombre, titulo, detalle,
+// enlace }`, ya armado por el servidor; solo el día del cierre, a quien está en la lista y todavía no votó). El navegador lo imprime
+const datosDelVoto = (fuente) => listaDe(fuente.dato_quincena_votacion)
+  .filter((voto) => esObjeto(voto) && esFechaDeTexto(voto.fecha) && conTexto(voto.enlace));
 // Los días en que se pinta una licencia o un compañero: los hábiles dentro del rango (`dias`, del servidor)
 const diasPintados = (fila) => (Array.isArray(fila.dias) ? fila.dias.filter(esFechaDeTexto) : []);
 
@@ -2354,6 +2358,10 @@ function cosasPorDia(datos) {
   };
   for (const feriado of listaDe(fuente.feriados)) sumar(feriado.fecha, { clase: 'feriado', texto: comoTexto(feriado.texto) });
   for (const dato of datosDelDato(fuente)) sumar(dato.fecha, { clase: 'dato', texto: comoTexto(dato.texto), titulo: comoTexto(dato.titulo) });
+  // Votar la principal, después del dato y antes de los eventos; es un enlace (lleva `enlace`)
+  for (const voto of datosDelVoto(fuente)) {
+    sumar(voto.fecha, { clase: 'voto', hora: comoTexto(voto.hora), texto: comoTexto(voto.texto), titulo: comoTexto(voto.titulo), enlace: voto.enlace });
+  }
   for (const evento of eventosEnOrden(fuente.eventos)) {
     const texto = [horaDelEvento(evento), comoTexto(evento.titulo)].filter(conTexto).join(' ');
     sumar(evento.fecha, { clase: claseDelEvento(evento), ...iconoDelEvento(evento), texto, evento_id: evento.id ?? null });
@@ -2588,6 +2596,8 @@ const ICONOS_DEL_MES = Object.freeze({
     + '<path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2"/>'
     + '<rect width="8" height="4" x="10" y="6" rx="1"/>'),
   'publico-otro': ICONO_DEL_OJO,
+  // Votar la principal del dato de la quincena (Lucide «vote»), decorativo
+  voto: iconoDelMes('<path d="m9 12 2 2 4-4"/><path d="M5 7c0-1.1.9-2 2-2h10a2 2 0 0 1 2 2v12H5V7Z"/><path d="M22 19H2"/>'),
   propio: ''
 });
 // El ícono de una cosa: el que pide (`icono`, si es uno del mes: el ojo de un Público tuyo) o, si no, el de su clase ('' si no
@@ -2628,6 +2638,11 @@ const htmlDeCosa = (cosa, lineas) => {
   const comun = `class="me-ev ${cosa.clase}" data-lineas="${String(lineas)}"`;
   const icono = iconoDe(cosa.clase, cosa.icono);
   const titulo = conTexto(cosa.titulo) ? cosa.titulo : cosa.texto;
+  // Votar la principal, un enlace a la edición (el clic no abre «Nuevo evento»: alTocarEventos lo deja pasar)
+  if (cosa.clase === 'voto' && conTexto(cosa.enlace)) {
+    const hora = conTexto(cosa.hora) ? `<b>${esc(cosa.hora)}</b> ` : '';
+    return `<a ${comun} href="${esc(cosa.enlace)}" title="${esc(titulo)}">${icono}${hora}${esc(cosa.texto)}</a>`;
+  }
   return esEvento
     ? `<button type="button" ${comun} data-evento="${esc(cosa.evento_id)}" title="${esc(cosa.texto)}">${icono}${texto}</button>`
     : `<span ${comun} title="${esc(titulo)}">${icono}${texto}</span>`;
@@ -2701,13 +2716,18 @@ function htmlDelMes(mes, datos, hoy, opciones) {
 // «miércoles 28 de octubre» (el día elegido, sin el año)
 const diaConElMes = (fecha) => `${NOMBRES_DE_LOS_DIAS[lugarEnLaSemana(fecha)]} ${String(Number(fecha.slice(8, 10)))} de ${nombreDelMes(fecha)}`;
 
+// El enlace «Votar» (con forma de botón) del día elegido y de «Próximos»; su nombre empieza con lo que se ve
+const enlaceVotar = (enlace) => `<a class="sg-btn me-votar" href="${esc(enlace)}" aria-label="Votar la principal del dato de la quincena">Votar</a>`;
+
 // Una fila del día elegido: el ícono (lo que es solo tuyo, un punto; un Público, el ojo), la hora (o «Todo el día»), el texto y, en
 // un evento, quién está (en un Público tuyo, a quiénes se lo mostrás y cómo: «Lo ven todos como «Turno médico»»); un evento es un
 // botón (lo abre, como en la grilla)
 const htmlDeFilaDelDia = (fila) => {
   const quien = conTexto(fila.quien) ? ` <small>${esc(fila.quien)}</small>` : '';
+  // Votar la principal lleva su enlace «Votar»
+  const votar = conTexto(fila.enlace) ? enlaceVotar(fila.enlace) : '';
   const cuerpo = `<span class="me-elegido-icono" aria-hidden="true">${iconoOPunto(fila.clase, fila.icono)}</span>`
-    + `<span class="me-elegido-hora">${esc(fila.hora)}</span> <span class="me-elegido-texto">${esc(fila.texto)}${quien}</span>`;
+    + `<span class="me-elegido-hora">${esc(fila.hora)}</span> <span class="me-elegido-texto">${esc(fila.texto)}${quien}${votar}</span>`;
   return `<li class="me-fila-del-dia ${fila.clase}">${Object.hasOwn(fila, 'evento_id')
     ? `<button type="button" class="me-elegido-cosa" data-evento="${esc(fila.evento_id)}">${cuerpo}</button>`
     : `<div class="me-elegido-cosa">${cuerpo}</div>`}</li>`;
@@ -2740,6 +2760,12 @@ function htmlDelDiaElegido(fecha, datos, hoy) {
   if (companeros !== undefined) deTodoElDia('ausente', companeros.texto);
   for (const dato of datosDelDato(fuente)) {
     if (dato.fecha === fecha) filas.push({ clase: 'dato', hora: comoTexto(dato.hora), texto: comoTexto(dato.nombre), quien: comoTexto(dato.detalle) });
+  }
+  // Votar la principal, después del dato y antes de los eventos
+  for (const voto of datosDelVoto(fuente)) {
+    if (voto.fecha === fecha) {
+      filas.push({ clase: 'voto', hora: comoTexto(voto.hora), texto: comoTexto(voto.nombre), quien: comoTexto(voto.detalle), enlace: voto.enlace });
+    }
   }
   for (const evento of eventosEnOrden(fuente.eventos)) {
     if (evento.fecha !== fecha) continue;
@@ -2788,6 +2814,15 @@ function gruposDeProximos(datos, hoy) {
       });
     }
   }
+  // Votar la principal, después del dato y antes de los eventos, con su enlace
+  for (const voto of datosDelVoto(fuente)) {
+    if (enRango(voto.fecha)) {
+      cosas.push({
+        fecha: voto.fecha, clase: 'voto', hora: comoTexto(voto.hora), texto: comoTexto(voto.nombre), detalle: comoTexto(voto.detalle),
+        conHora: true, enlace: voto.enlace
+      });
+    }
+  }
   for (const evento of eventosEnOrden(fuente.eventos)) {
     if (!enRango(evento.fecha)) continue;
     cosas.push({
@@ -2817,6 +2852,7 @@ function gruposDeProximos(datos, hoy) {
       : { hora: grupo.dia(cosa.fecha), titulo: conHora && cosa.hora ? `${cosa.hora} ${cosa.texto}` : cosa.texto };
     Object.assign(item, { detalle: cosa.detalle, clase: cosa.clase });
     if (Object.hasOwn(cosa, 'icono')) item.icono = cosa.icono;
+    if (Object.hasOwn(cosa, 'enlace')) item.enlace = cosa.enlace;
     if (esEvento) Object.assign(item, { quien: cosa.quien, evento_id: cosa.evento_id });
     grupo.items.push(item);
   }
@@ -2837,7 +2873,10 @@ const htmlDeProximo = (item) => {
     quien = item.icono === 'ojo' ? `<span class="me-lo-ven">${ICONO_DEL_OJO}${esc(item.quien)}</span>`
       : `<span class="me-insignia ${item.clase === 'propio' ? 'azul' : 'violeta'}">${esc(item.quien)}</span>`;
   }
-  const detalle = quien !== '' || conTexto(item.detalle) ? `<span class="me-prox-detalle">${quien}${esc(item.detalle)}</span>` : '';
+  // Votar la principal suma su enlace «Votar» al detalle
+  const votar = conTexto(item.enlace) ? enlaceVotar(item.enlace) : '';
+  const detalle = quien !== '' || conTexto(item.detalle) || votar !== ''
+    ? `<span class="me-prox-detalle">${quien}${esc(item.detalle)}${votar}</span>` : '';
   return `<li class="me-prox ${esc(item.clase)}"><span class="me-prox-hora">${esc(item.hora)}</span>${titulo}${detalle}</li>`;
 };
 
@@ -4091,6 +4130,7 @@ function pintarMesDeEventos() {
   if (esObjeto(delMes)) {
     porId('ag-leyenda-ausentes').hidden = delMes.ve_companeros !== true;
     porId('ag-leyenda-dato').hidden = delMes.dato_quincena_activo !== true;
+    porId('ag-leyenda-voto').hidden = datosDelVoto(delMes).length === 0;
     pintarLaCasilla(delMes);
   }
   if (conFoco) numeroDelDia(semana.foco)?.focus?.();
@@ -4242,6 +4282,8 @@ function eventoDelBoton(boton) {
 // otro lugar de un día: su número, su espacio libre, un feriado o el pedazo de una barra (tocarUnDia)
 function alTocarEventos(evento) {
   const objetivo = evento.target;
+  // Un enlace (votar la principal) se sigue: no es un clic en el día
+  if (objetivo?.closest?.('a[href]')) return;
   const nuevo = objetivo?.closest?.('#ag-nuevo-evento');
   if (nuevo) {
     abrirEvento({ volverA: nuevo });

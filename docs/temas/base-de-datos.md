@@ -18,10 +18,11 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-07-dato-quincena-design.md`
 - `docs/superpowers/specs/2026-11-12-dato-quincena-correo-design.md`
 - `docs/superpowers/specs/2026-11-21-dato-quincena-principal-equipo-design.md`
+- `docs/superpowers/specs/2026-11-23-dato-quincena-principal-votacion-design.md`
 
 ## Base de datos
 
-- 55 tablas (ver `database/schema.sql`).
+- 59 tablas (ver `database/schema.sql`).
   Usuarios:
   `usuarios` (rol, cargo, vínculo, `sesion_version`), `usuarios_tokens` (links de acceso, solo el hash), `usuarios_auditoria` (historial del panel), `usuarios_licencias` (licencias; nunca se borran, se anulan) y `usuarios_firmas` (firma de cada usuario para las notas).
   Notas de auditoría:
@@ -37,7 +38,7 @@ Historia y motivos, en las specs:
   `mi_espacio_eventos`, `mi_espacio_evento_personas`, `mi_espacio_evento_vistas` (a quién se le muestra un Personal (Público)), `mi_espacio_evento_informados`, `mi_espacio_evento_envios`, `mi_espacio_eventos_corridas` y `mi_espacio_diario_envios` (ver abajo)
   El dato de la quincena:
   `dato_quincena_ediciones`, `dato_quincena_propuestas` y `dato_quincena_adjuntos`, y su correo:
-  `dato_quincena_correo_config`, `dato_quincena_destinatarios`, `dato_quincena_correos` y `dato_quincena_envios`, y la principal que elige el equipo: `dato_quincena_principal_equipo` (ver abajo).
+  `dato_quincena_correo_config`, `dato_quincena_destinatarios`, `dato_quincena_correos` y `dato_quincena_envios`, la principal que elige el equipo, `dato_quincena_principal_equipo`, y su votación: `dato_quincena_votantes`, `dato_quincena_votaciones`, `dato_quincena_votacion_personas` y `dato_quincena_votos` (ver abajo).
 - Campos JSON validados en `cambios_pendientes` (datos_nuevos, datos_anteriores)
 - Foreign keys con CASCADE en deletes relevantes
 
@@ -358,6 +359,20 @@ Historia y motivos, en las specs:
   El código anterior anda con ella (no la lee).
   `tests/schema.test.js` (compara `schema.sql` con la base del `.env`) y `tests/permisos.test.js` la necesitan: la base local también necesita la migración antes de correr la suite.
   `rollback-dato-quincena-principal-equipo.sql` va después de volver a los archivos anteriores y **antes** de `rollback-dato-quincena-correo.sql` y de `rollback-dato-quincena.sql`: borra la tabla y se pierde quién eligió la principal de cada edición (si ya hay, exportarla antes).
+- La votación de la principal del equipo (spec 2026-11-23-dato-quincena-principal-votacion, 1): cuatro tablas, sin `CHECK` (valida la API).
+  `dato_quincena_votantes`, quiénes pueden votar (`usuario_id` PK y FK `usuarios` ON DELETE CASCADE; `agregado_por` FK `usuarios` ON DELETE SET NULL; `agregado_at` DATETIME).
+  `dato_quincena_votaciones`, una fila por edición que se vota (`edicion_id` PK y FK `dato_quincena_ediciones` ON DELETE CASCADE): la existencia de la fila es lo que dice que la edición se vota.
+  Trae `creada_at`, `cierre_at` y `sellada_at` (DATETIME, los dos últimos NULL hasta que se fijan), `aviso` (ENUM `enviado`, `parcial`, `fallido`, `apagado`, `no_corresponde`, NULL) y `aviso_at`.
+  `dato_quincena_votacion_personas`, quiénes votaban en esa edición, congelado al crearla (`id`; `edicion_id` FK `dato_quincena_votaciones` ON DELETE CASCADE; `usuario_id` FK `usuarios` ON DELETE SET NULL; `UNIQUE` `uq_dato_quincena_votacion_persona` `(edicion_id, usuario_id)`).
+  `dato_quincena_votos`, un renglón por voto (`id`; `persona_id` FK `dato_quincena_votacion_personas` ON DELETE CASCADE; `orden` varchar(40) ascii_bin; `votado_at` DATETIME).
+  El RPAD nunca hace un UPDATE ni un DELETE de los votos.
+  Borrar una edición (SQL a mano) borra su votación, sus personas y sus votos; borrar una cuenta la saca de los votantes y deja en NULL el `usuario_id` de sus personas.
+  Todas son `utf8mb4_unicode_ci` salvo `orden`; el índice de cada FK se llama como su constraint.
+  Va también en `schema.sql`.
+  `migracion-dato-quincena-votacion.sql` (aditiva y repetible: cuatro `CREATE TABLE IF NOT EXISTS`) va después de `migracion-dato-quincena-principal-equipo.sql` y **antes** del código, obligatoria: sin las tablas, la lista y el detalle de las ediciones dan error.
+  El código anterior anda con ellas (no las lee).
+  `tests/schema.test.js` y `tests/permisos.test.js` las necesitan: la base local también necesita la migración antes de correr la suite.
+  `rollback-dato-quincena-votacion.sql` va después de volver a los archivos anteriores y **antes** de `rollback-dato-quincena-principal-equipo.sql`: borra las cuatro tablas, de los votos a los votantes, y se pierden votantes, votaciones y votos (si ya hay, exportarlos antes).
 
 ## Archivos de tests
 

@@ -931,6 +931,31 @@
             .me-finde-llave { border: 1px solid CanvasText; }
             .me-acciones-del-mes .me-finde[aria-pressed] .me-finde-llave::after { forced-color-adjust: none; background: CanvasText; }
         }
+        /* ===== Votar la principal del dato de la quincena (spec 2026-11-23-dato-quincena-principal-votacion, 5) =====
+           Cobre, para que no se confunda con el turquesa del dato: el texto, #8A3F14, da 6,12:1 sobre su fondo (#FBE4D5) y 7,50:1
+           sobre blanco; el borde, el ícono de «Próximos» y el punto del teléfono, #A14E1F, 4,85:1 contra el cielo de hoy y más contra
+           blanco. Nunca solo el color: lleva su ícono (Lucide «vote»), su texto y, en el teléfono, un punto cuadrado (los demás son
+           redondos). «Votar» es un enlace con forma de botón; el foco es el de toda la página (.me-pagina a:focus-visible). No se mueve
+           nada, así que prefers-reduced-motion no tiene nada que frenar */
+        :root { --voto-cobre: #8A3F14; --voto-cobre-borde: #A14E1F; --voto-cobre-fondo: #FBE4D5; }
+        .me-ev.voto, .me-leyenda .voto { background: var(--voto-cobre-fondo); border-color: var(--voto-cobre-borde); color: var(--voto-cobre); }
+        a.me-ev.voto { text-decoration: none; cursor: pointer; }
+        a.me-ev.voto:hover { text-decoration: underline; text-underline-offset: 2px; }
+        .me-fila-del-dia.voto .me-elegido-cosa { background: var(--voto-cobre-fondo); border-color: var(--voto-cobre-borde); color: var(--voto-cobre); }
+        .me-prox-icono.voto { color: var(--voto-cobre-borde); }
+        .me-votar.sg-btn { height: 30px; padding: 0 14px; margin-top: 6px; font-size: 0.84rem; background: var(--voto-cobre); color: #fff; text-decoration: none; }
+        .me-votar.sg-btn:hover { background: #6E3210; }
+        .me-prox.voto .me-prox-detalle { flex-direction: column; align-items: flex-start; gap: 4px; }
+        .me-prox.voto .me-prox-hora { grid-row: span 2; }
+        .me-prox-detalle .me-votar.sg-btn { margin-top: 2px; }
+        .me-elegido-texto .me-votar { display: inline-flex; }
+        @media (max-width: 640px) {
+            .me-puntos .voto { background: var(--voto-cobre-borde); border-radius: 1px; }
+            .me-votar.sg-btn { height: 44px; padding: 0 18px; }
+        }
+        @media (forced-colors: active) {
+            .me-votar.sg-btn { border: 1px solid ButtonText; }
+        }
     </style>
 </head>
 <body>
@@ -1071,6 +1096,8 @@
                                 <li><span class="me-color licencia" aria-hidden="true"><svg class="me-icono" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></span>Tus licencias y francos</li>
                                 <li><span class="me-color feriado" aria-hidden="true"><svg class="me-icono" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg></span>Feriados</li>
                                 <li id="ag-leyenda-dato" hidden><span class="me-color dato" aria-hidden="true"><svg class="me-icono" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18h-5"/><path d="M18 14h-8"/><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2"/><rect width="8" height="4" x="10" y="6" rx="1"/></svg></span>El dato de la quincena</li>
+                                <!-- Votar la principal (Lucide «vote»), solo si el mes trae el ítem de la votación -->
+                                <li id="ag-leyenda-voto" hidden><span class="me-color voto" aria-hidden="true"><svg class="me-icono" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 12 2 2 4-4"/><path d="M5 7c0-1.1.9-2 2-2h10a2 2 0 0 1 2 2v12H5V7Z"/><path d="M22 19H2"/></svg></span>Votar la principal</li>
                                 <li id="ag-leyenda-ausentes" hidden><span class="me-color ausente" aria-hidden="true"><svg class="me-icono" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Compañeros que no están</li>
                             </ul>
                             <!-- El día elegido del teléfono (spec 3.8): su fecha, «Nuevo evento» y lo de ese día. Lo dibuja mi-espacio.js -->
@@ -1579,6 +1606,6 @@
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/mi-espacio.js?v=20261233"></script>
+    <script src="js/mi-espacio.js?v=20261234"></script>
 </body>
 </html>

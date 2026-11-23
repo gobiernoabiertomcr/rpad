@@ -7,7 +7,7 @@
 // tipo), los eventos de «Hoy y mañana» del Resumen y los emails que salen al guardar (la invitación, el cambio y la
 // cancelación, en Mailpit, después de responder) y, en Correos → Estado, la línea de la última corrida de los recordatorios con
 // sus alertas. La API usa la fecha real: las fechas de los tests se arman desde hoy. Las personas son «Test <clave>».
-import { describe, it, before, after, beforeEach, mock } from 'node:test';
+import { describe, it, before, after, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'crypto';
 import {
@@ -15,6 +15,7 @@ import {
   paraCasilla
 } from './helpers.js';
 import { asegurarBaseDePrueba } from './notas-fixtures.js';
+import { diaDeLaSemana } from '../services/feriadosReglas.js';
 import { textoVisible } from './emails-fixtures.js';
 import { hoyArgentina, ahoraArgentina, sumarDias, esDiaHabil } from '../services/notasDigitalesCalendario.js';
 import { MENSAJES_EVENTO, textoRangoEvento, fechaMaximaEvento, BLOQUEO_EVENTOS } from '../services/miEspacioEventosReglas.js';
@@ -167,7 +168,7 @@ describe('un evento personal', () => {
 
     const data = await listado('adminA');
     assert.deepEqual(Object.keys(data), ['desde', 'hasta', 'hoy', 've_companeros', 'eventos_por_mail', 'alguien_depende', 'mi_nombre_corto', 'eventos', 'licencias',
-      'feriados', 'ausentes', 'companeros_por_dia', 'frase_del_mes', 'dato_quincena', 'dato_quincena_activo']);
+      'feriados', 'ausentes', 'companeros_por_dia', 'frase_del_mes', 'dato_quincena', 'dato_quincena_activo', 'dato_quincena_votacion']);
     // El nombre de quien pide como lo ven los demás (el de la vista previa de un Personal (Público)): adminA y adminB empiezan
     // con «Test» y comparten la inicial del último apellido, así que va completo
     assert.equal(data.mi_nombre_corto, 'Test adminA');
@@ -177,6 +178,7 @@ describe('un evento personal', () => {
     // La base de prueba nace con el envío automático del dato de la quincena apagado: ninguna fecha
     assert.deepEqual(data.dato_quincena, []);
     assert.equal(data.dato_quincena_activo, false);
+    assert.deepEqual(data.dato_quincena_votacion, []);
     assert.equal(data.desde, q(0));
     assert.equal(data.hasta, q(20));
     assert.equal(data.hoy, hoyArgentina());
@@ -2306,7 +2308,7 @@ describe('el dato de la quincena en la agenda (spec 2026-11-14-dato-quincena-en-
     async () => {
       await crear('lector', { titulo: 'Turno inventado' });
       await conFeriado(q(2), 'Feriado inventado');
-      const sinElDato = ({ dato_quincena: _fechas, dato_quincena_activo: _activo, ...resto }) => resto;
+      const sinElDato = ({ dato_quincena: _fechas, dato_quincena_activo: _activo, dato_quincena_votacion: _voto, ...resto }) => resto;
       for (const tabla of ['dato_quincena_correo_config', 'dato_quincena_ediciones']) {
         const antes = await listado('lector');
         assert.ok(antes.dato_quincena.length >= 1, JSON.stringify(antes.dato_quincena));
@@ -2325,4 +2327,80 @@ describe('el dato de la quincena en la agenda (spec 2026-11-14-dato-quincena-en-
         assert.deepEqual(sinElDato(durante), sinElDato(antes), tabla);
       }
     });
+});
+
+// Votar la principal del dato de la quincena, en la agenda (spec 2026-11-23-dato-quincena-principal-votacion, 5): el día del cierre, a
+// quien está en la foto de una votación abierta y todavía no votó. Las reglas se prueban en tests/dato-quincena-votacion-reglas.test.js:
+// acá, que la API lee la base, corta al rango y aísla la falla
+describe('votar la principal del dato de la quincena en la agenda (spec 2026-11-23-dato-quincena-principal-votacion, 5)', () => {
+  // Una edición futura que cae en un día hábil (la base de prueba no tiene feriados: un día hábil es uno de los 9 fijos), llegada
+  // ahora: su votación cierra a las 12:00 de ese mismo día
+  let fechaEdicion = dia(2);
+  while (!esDiaHabil(fechaEdicion)) fechaEdicion = sumarDias(fechaEdicion, 1);
+  const edicionesCreadas = [];
+  const crearEdicion = async ({ fecha = fechaEdicion, sellada = false, enLaFoto = ['lector', 'colab'], voto = [] } = {}) => {
+    const { insertId: id } = await query(
+      `INSERT INTO dato_quincena_ediciones (clave, tipo, fecha_edicion, referencia_piloto, titulo, metadata, huella)
+       VALUES (?, 'regular', ?, NULL, 'Una edición inventada', '{}', ?)`,
+      [`dq:regular:${fecha}:${edicionesCreadas.length}`, fecha, 'b'.repeat(64)]
+    );
+    edicionesCreadas.push(id);
+    for (const orden of [1, 2]) {
+      await query('INSERT INTO dato_quincena_propuestas (edicion_id, orden, titulo, cifra_clave, principal, dataset_nombre) VALUES (?, ?, ?, ?, ?, ?)',
+        [id, orden, `Propuesta ${orden}`, 'Una cifra', orden === 1 ? 1 : 0, 'Un dataset']);
+    }
+    await query('INSERT INTO dato_quincena_votaciones (edicion_id, creada_at, cierre_at, sellada_at) VALUES (?, ?, ?, ?)',
+      [id, ahoraArgentina(), sellada ? `${fecha} 12:00:00` : null, sellada ? ahoraArgentina() : null]);
+    for (const clave of enLaFoto) {
+      await query('INSERT INTO dato_quincena_votacion_personas (edicion_id, usuario_id) VALUES (?, ?)', [id, idDe(clave)]);
+    }
+    for (const clave of voto) {
+      const [persona] = await query('SELECT id FROM dato_quincena_votacion_personas WHERE edicion_id = ? AND usuario_id = ?', [id, idDe(clave)]);
+      await query("INSERT INTO dato_quincena_votos (persona_id, orden, votado_at) VALUES (?, '2,1', ?)", [persona.id, ahoraArgentina()]);
+    }
+    return id;
+  };
+  afterEach(async () => {
+    for (const id of edicionesCreadas.splice(0)) await query('DELETE FROM dato_quincena_ediciones WHERE id = ?', [id]);
+  });
+
+  it('le aparece a quien está en la foto y todavía no votó, el día del cierre y con el enlace a la edición', async () => {
+    const id = await crearEdicion();
+    const { dato_quincena_votacion: items } = await listado('lector', hoy, dia(20));
+    assert.deepEqual(items, [{
+      fecha: fechaEdicion,
+      hora: 'Hasta 12:00',
+      texto: 'Votá la principal del dato de la quincena',
+      nombre: 'Votá la principal del dato de la quincena',
+      titulo: `Votá la principal del dato de la quincena. Edición del ${diaDeLaSemana(fechaEdicion)} ${ddmm(fechaEdicion)}. Cierra a las 12:00.`,
+      detalle: `Edición del ${diaDeLaSemana(fechaEdicion)} ${ddmm(fechaEdicion)}.`,
+      enlace: `dato-quincena.html?id=${id}`
+    }]);
+  });
+
+  it('no le aparece a quien ya votó, a quien no está en la foto, ni con la votación sellada o fuera del rango', async () => {
+    await crearEdicion({ voto: ['colab'] });
+    assert.deepEqual((await listado('colab', hoy, dia(20))).dato_quincena_votacion, []);
+    assert.deepEqual((await listado('adminB', hoy, dia(20))).dato_quincena_votacion, []);
+    assert.equal((await listado('lector', hoy, dia(20))).dato_quincena_votacion.length, 1);
+    // El rango no incluye el día del cierre
+    assert.deepEqual((await listado('lector', sumarDias(fechaEdicion, 1), dia(30))).dato_quincena_votacion, []);
+    // Sellada: ya no se vota
+    await crearEdicion({ sellada: true, fecha: sumarDias(fechaEdicion, 7) });
+    assert.deepEqual((await listado('lector', sumarDias(fechaEdicion, 1), dia(30))).dato_quincena_votacion, []);
+  });
+
+  it('si no se puede leer la votación, la agenda responde igual: sin el ítem y con lo demás', async () => {
+    await crearEdicion();
+    await crear('lector', { titulo: 'Turno inventado', fecha: fechaEdicion });
+    await query('RENAME TABLE dato_quincena_votacion_personas TO dato_quincena_votacion_personas_fuera');
+    let durante;
+    try {
+      durante = await listado('lector', hoy, dia(20));
+    } finally {
+      await query('RENAME TABLE dato_quincena_votacion_personas_fuera TO dato_quincena_votacion_personas');
+    }
+    assert.deepEqual(durante.dato_quincena_votacion, []);
+    assert.equal(durante.eventos.length, 1);
+  });
 });

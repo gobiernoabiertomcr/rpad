@@ -1,6 +1,7 @@
 # El dato de la quincena: el correo
 
-El mail «Dato de la Quincena» lo manda el RPAD, no el bot, siguiendo sus días hábiles: cuándo sale, a quién, con qué estados y textos, la corrida, Reenviar y la prueba, las fechas en la agenda de Mi espacio, el mail, la pestaña Correo y la transición.
+El mail «Dato de la Quincena» lo manda el RPAD, no el bot, siguiendo sus días hábiles: cuándo sale, a quién, con qué estados y textos, la corrida, Reenviar y la prueba, las fechas en la agenda de Mi espacio, el mail, la pestaña Envío y votación y la transición.
+La pestaña Envío y votación se abre con `#correo` en la dirección: así siguen sirviendo los enlaces guardados.
 El archivo de las ediciones (las lecturas y la página) está en `docs/temas/dato-quincena.md`, y el POST de Datito, la clave, la huella y el recibo, en `docs/temas/dato-quincena-contrato.md`.
 
 Historia y motivos, en las specs:
@@ -10,6 +11,7 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-14-dato-quincena-en-mi-espacio-design.md` (las fechas en la agenda de Mi espacio)
 - `docs/superpowers/specs/2026-11-18-dato-quincena-propuestas-datasets-design.md` (las propuestas de datasets nuevos)
 - `docs/superpowers/specs/2026-11-21-dato-quincena-principal-equipo-design.md` (la frase y el recuadro del mail)
+- `docs/superpowers/specs/2026-11-23-dato-quincena-principal-votacion-design.md` (la pestaña Envío y votación y la lista de quienes votan)
 
 ## Archivos
 
@@ -27,7 +29,7 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
   El bot no conoce los días hábiles: un lunes feriado el mail igual saldría.
   Su propio mail es una copia para el usuario, «[Copia] …»: no es del RPAD y no se lee.
   Hasta el lunes de la transición el bot sigue mandando a todos (abajo, «La transición»).
-- El mail va a personas con cuenta, elegidas por administración en la pestaña Correo, sin roles nuevos ni casillas sueltas.
+- El mail va a personas con cuenta, elegidas por administración en la pestaña Envío y votación, sin roles nuevos ni casillas sueltas.
 - Todo texto del envío lo arma el servidor; la página y el mail lo imprimen.
 - El nombre del bot es `NOMBRE_DEL_BOT = 'Datito'` en `datoQuincenaReglas.js` y una constante de `dato-quincena.js`, porque es provisorio.
   Los textos de las ediciones ya archivadas también dicen Datito: el nombre no se guarda.
@@ -46,7 +48,7 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
 - Una edición que llega después de las 8:05 de un día hábil sale a las 14:00 de ese día; después de las 14:00, a las 8:05 del siguiente día hábil.
 - Un día no hábil la corrida no manda nada.
   El calendario es el de siempre, una lectura por corrida; si la tabla de feriados no se pudo leer (`calendario.error !== null`), no manda y lo deja para la corrida siguiente.
-- Quién la recibe: la lista de la pestaña Correo **en la primera corrida que la manda**, que arma una fila por persona.
+- Quién la recibe: la lista de la pestaña Envío y votación **en la primera corrida que la manda**, que arma una fila por persona.
   Quien se suma después no la recibe sola (se le puede reenviar).
   Al armarla se salta a quien está inactivo o sin un email válido (`omitido`); a quien está de licencia oficial ese día (`usuarios_licencias` sin anular) se le anota `licencia` y no se le reintenta.
   Con la lista vacía, la edición queda `no_enviada` con `sin_lista`.
@@ -94,6 +96,7 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
 - Los errores: a las 8:05 suman a `resultados.errores` con `tipo: 'dato-quincena'`; a las 14:00 quedan en `data.dato_quincena.errores` y dan 207 (como el aviso diario, y `ocupada` no es un error).
   Lo que ve Correos → Estado lo escribe en su propio registro (`dato_quincena_correo_config`, las columnas `corrida_*`), no en la última corrida de las Notas.
 - `/api/notificaciones/ejecutar` y `/api/notificaciones/cambios-pendientes`, las rutas manuales de administración, corren también este paso a la hora que sea: un día hábil manda lo que ya correspondía (es la acción de una persona), y con la reserva no repiten lo que salió.
+- El sellado de la votación de la principal es otro paso, aparte y con su candado: `docs/temas/dato-quincena-principal-equipo.md` y `docs/temas/calendario-y-corridas.md`.
 - Correos → Estado suma una línea del dato de la quincena (`dato_quincena.texto`, «El dato de la quincena: la última corrida fue el …») y dos alertas de nivel error:
   `dato-quincena-con-errores`, si la última corrida terminada falló en algo;
   y `dato-quincena-no-llego` («El dato de la quincena del 23/11/2026 no le llegó a 1 persona: se le puede reenviar desde la edición.»; con más, «no les llegó a 2 personas: se les puede reenviar…»), que no depende de la última corrida y sigue mientras la última edición que salió sola tenga una persona que no la recibió después de sus intentos, hasta que un reenvío le llegue o salga una más nueva.
@@ -115,9 +118,9 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
 - Una persona a la que no se le pudo armar el mail o anotar su fila cuenta entre las que no lo recibieron, y el reenvío sigue con las demás (en la consola, solo el código del error).
   Decisión: un 500 a mitad de camino, al repetirlo, les mandaría dos veces a las que ya lo recibieron.
 - Las rutas, todas con `authMiddleware` y `adminOnly` (sin sesión 401, lector y colaborador 403; `tests/permisos.test.js`):
-  `GET /api/dato-quincena/correo` (el envío, las próximas ediciones y las personas activas con su email, si lo reciben y, de licencia, hasta cuándo);
+  `GET /api/dato-quincena/correo` (el envío, las próximas ediciones y las personas activas con su email, si lo reciben, si votan (`vota`), `votan_texto` y, de licencia, hasta cuándo);
   `PUT /api/dato-quincena/correo/envio` (`{ activo }`; solo el `true` literal prende y algo que no es un booleano da 400);
-  `PUT /api/dato-quincena/correo/destinatarios` (`{ usuarios: [ids] }`; solo usuarios activos, uno inexistente o inactivo da 400; guardar conserva `agregado_at` de quienes siguen);
+  `PUT /api/dato-quincena/correo/destinatarios` (`{ usuarios: [ids], votantes: [ids] }`; reemplaza las dos listas en una sola transacción; solo usuarios activos, uno inexistente, inactivo o repetido da 400 en cualquiera de las dos; guardar conserva `agregado_at` de quienes siguen; sin `votantes`, una pestaña con la página anterior, la lista de quienes votan no cambia y el mensaje es el de antes);
   `GET /api/dato-quincena/ediciones/:id/correo` (el resumen, cada persona con su estado, los reenvíos y las pruebas, y la lista de hoy para el diálogo);
   `POST /api/dato-quincena/ediciones/:id/reenvios` (`{ a: 'todas' }` o `{ a: <id de una persona de la lista> }`);
   `POST /api/dato-quincena/ediciones/:id/prueba`.
@@ -128,17 +131,17 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
 
 - La agenda de Mi espacio muestra cuándo sale el mail, para todos los roles, con la misma serie: `proximasEdiciones({ …, desdeLaSalida: true })` salta las ediciones cuyo día de salida (`sale`) es anterior a hoy, no las de fecha anterior a hoy.
   Decisión: el martes 24/11 la edición del lunes 23/11 feriado sale ese día aunque todavía no haya llegado, y sin la opción la serie ya la saltaría.
-  La pestaña Correo la llama sin la opción y no cambia.
+  La pestaña Envío y votación la llama sin la opción y no cambia.
 - `datoQuincenaEnMiEspacio({ envioActivo, ultima, ahora, calendario, filasDeFeriados })` arma las fechas, las mismas para todos: hasta 5 (`CUANTAS_EN_MI_ESPACIO`), por fecha, y ninguna con el envío automático apagado o la tabla de feriados caída.
   `ultima` es la última regular con su correo y sus filas automáticas (`ultimaRegularConSuCorreo`, con la fecha como texto 'AAAA-MM-DD'), o null (la serie arranca en `PRIMERA_EDICION`).
 - Si la última ya llegó, va según su situación, la misma de la pastilla (`situacionDelEnvio`): programada, el día y la hora de la corrida que la manda (08:05 o 14:00), si ese día todavía está vigente; enviada, solo el día de su primer envío, con esa hora y «Salió el dato de la quincena»; las demás no van.
   Decisión: la vigencia de una programada se mira con `estaVigente` contra el día de su salida, no contra hoy, porque con las corridas paradas la corrida de ese día la da por vieja y no sale (el día 13 después de las 14:00, la salida ya cae fuera).
   Después, las de la serie, a las 08:05 del día en que salen.
 - Cada fecha es `{ fecha, hora, texto, nombre, titulo, detalle }`: «Dato de la quincena» para la casilla, «Sale el dato de la quincena» (o «Salió…»), el detalle «Edición del lunes 23/11: no es hábil el lunes 23/11, Día de la Soberanía Nacional.» y el `title`, «Sale el dato de la quincena, a las 08:05. » con el detalle.
-  El día de la edición va sin el año, y la hora con dos cifras, como los eventos de la agenda (la pestaña Correo dice «8:05»).
+  El día de la edición va sin el año, y la hora con dos cifras, como los eventos de la agenda (la pestaña Envío y votación dice «8:05»).
 - El motivo es el de la serie y va solo si la fecha es el día en que la serie la hace salir.
   Decisión: una edición que ya llegó y sale otro día (en reintento, o porque llegó después de las 14:00) dice solo «Edición del lunes 23/11.»: la agenda no sabe la causa y no dice nada falso.
-- No se copia ninguna regla: la serie, la salida y el motivo son los de la pestaña Correo.
+- No se copia ninguna regla: la serie, la salida y el motivo son los de la pestaña Envío y votación.
   Lo que dibuja la agenda está en `docs/temas/mi-espacio-agenda-mes.md`.
 
 ## El mail
@@ -180,7 +183,7 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
   Un dataset relacionado es enlace a su `url` y una fuente, a sí misma, solo si la dirección es `https://`; si no, el texto solo.
   Los campos sugeridos y las listas de enlaces llevan `word-break: break-word` y `overflow-wrap: anywhere`: un campo de 64 caracteres, un slug de 100 o una fuente larga sin espacios no ensanchan el mail.
 - La frase y el recuadro de la principal (`aclaracion` y `recuadro` del modelo; la regla y el motivo, en `docs/temas/dato-quincena-principal-equipo.md`):
-  la frase, «La principal de este correo es la que marcó Datito: la del equipo se elige y se ve en el RPAD.», es la misma antes y después de que el equipo elija, en cualquier envío;
+  la frase, «La principal de este correo es la que marcó Datito: la del equipo se elige y se ve en el RPAD.», es la misma con la votación abierta o cerrada, en cualquier envío;
   va en un párrafo como el de la bajada, en `COLORES.subtitulo` (el gris de la bajada no llega a 4,5:1);
   el recuadro, en celeste, lleva «Esta edición se lee mejor en el RPAD», qué hay en el RPAD y el mismo botón «Ver la edición en el RPAD»;
   la plantilla dibuja cada uno solo si el modelo lo trae.
@@ -198,10 +201,13 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
 
 ## La página
 
-- Pestañas «Ediciones» y «Correo» para administración (`tablist`, flechas, Home y End; `#correo` en la dirección, junto a `?id`, `&vista`, `&propuesta`, `?anio` y `&pagina`); los demás roles ven la página sin ellas.
+- Pestañas «Ediciones» y «Envío y votación» para administración (`tablist`, flechas, Home y End; `#correo` en la dirección, junto a `?id`, `&vista`, `&propuesta`, `?anio` y `&pagina`); los demás roles ven la página sin ellas.
   La lista en tarjetas «tipo diario» y sus páginas de a 18 están en `docs/temas/dato-quincena.md`; la pastilla la ven todos y administración ve además si a alguien no le llegó.
-- Correo: «Envío por correo», con el interruptor «Envío automático» (se guarda al cambiarlo; al prenderlo, una confirmación que dice qué va a pasar), la regla en dos oraciones y «Las próximas ediciones»;
-  y «Quién lo recibe», con la tabla de personas activas (persona y cargo, rol, correo, «Lo recibe»), «Lo reciben N personas.» (`textoDeLosQueReciben`, con una copia en la página atada por un test de paridad para el conteo en vivo) y «Guardar».
+- Envío y votación: «Envío por correo», con el interruptor «Envío automático» (se guarda al cambiarlo; al prenderlo, una confirmación que dice qué va a pasar), la regla en dos oraciones y «Las próximas ediciones»;
+  «La votación de la principal del equipo», con la regla en dos párrafos (el cierre; los puntos y el desempate; lo que se ve; el mail de las 14:00 y los pilotos);
+  y «Las personas», con «Recibe el mail: …» y «Vota: …» arriba y la tabla de personas activas (persona y cargo, rol, correo, «Recibe el mail» y «Vota», una casilla en cada una), `reciben_texto` y `votan_texto` al pie (`textoDeLosQueReciben` y `textoDeLosQueVotan`, con copias en la página atadas por un test de paridad para el conteo en vivo) y un solo «Guardar».
+  El mensaje al guardar: «Guardamos la lista: lo reciben 4 personas y votan 3.».
+  Cambiar la lista no cambia las votaciones abiertas: cada edición vota con su foto (`docs/temas/dato-quincena-principal-equipo.md`).
 - El detalle: el N.º en la cabecera, la línea del correo y, en «Archivos», la infografía editable.
   Para administración, al final de la pestaña General de la edición, la caja «Correo» con el resumen, una fila por persona, «Reenviar…» (un diálogo: a todas o a una persona de la lista, con el aviso de que sale en el momento) y «Enviarme una prueba».
   Cualquier respuesta de Reenviar cierra el diálogo y vuelve a leer la caja.
@@ -212,7 +218,7 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
 - La migración va antes del código; el envío nace apagado y la lista, vacía.
 - El orden, el mismo que sigue el kit:
   1. Desplegar con el envío automático apagado.
-  2. Tildar a las personas en la pestaña Correo y guardar.
+  2. Tildar a las personas en la pestaña Envío y votación y guardar.
   3. «Enviarme una prueba» sobre la edición del 09/11 y mirar el mail.
   4. El piloto 7 en producción: Datito manda un piloto con la forma nueva (con el envío apagado), se miran el recibo y la tarjeta, y se usa «Enviarme una prueba» sobre él.
   5. Elegir el lunes de la transición.

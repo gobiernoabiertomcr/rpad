@@ -1090,6 +1090,14 @@ const numeroDe = ({ tipo, numero }) => (tipo === 'regular' ? textoDelNumero(nume
 const PRINCIPAL_DEL_EQUIPO = 'Principal del equipo';
 const PRINCIPAL_DE_DATITO = `Principal de ${NOMBRE_DEL_BOT}`;
 
+// La principal de Datito de las propuestas guardadas (las de listarEdiciones, con `principal` booleano de dato_quincena_propuestas): la
+// marcada o, si ninguna (el POST no lo deja pasar), la de orden más bajo; sin propuestas, null. La misma regla que principalDeDatito,
+// sobre las filas: la usan la lista y el controlador para la votación de la lista (su `deDatito`)
+export const principalGuardadaDeDatito = (propuestas) => {
+  const enOrden = [...propuestas].sort((a, b) => a.orden - b.orden);
+  return enOrden.find((propuesta) => propuesta.principal) ?? enOrden[0] ?? null;
+};
+
 /**
  * Una edición de la lista, de una fila de listarEdiciones: la fecha larga, la marca del piloto, el título y la cifra de la
  * principal, y el resto de las propuestas por el nombre de su dataset, en su orden. Sin ninguna marcada como principal (el POST
@@ -1100,12 +1108,16 @@ const PRINCIPAL_DE_DATITO = `Principal de ${NOMBRE_DEL_BOT}`;
  * La principal que cuenta (spec 2026-11-21-dato-quincena-principal-equipo, 3): la del equipo, si eligió (`orden_del_equipo` de la
  * fila, el orden de la elección vigente; null o sin la clave, no eligió), y si no, la de Datito, con su `rotulo`. Un orden que la
  * edición no tiene (solo con un SQL a mano: la FK no lo deja) cuenta como sin elegir. El resto, sin la que se muestra.
+ * Con `fila.votacion` (`{ abierta, orden_ganadora, de_la_lista }`, spec 2026-11-23-dato-quincena-principal-votacion, 3) manda la
+ * votación: abierta, la de Datito; cerrada, la ganadora. `votacion` va al final: `de_la_lista` o null.
  */
 export const itemDeLaLista = (fila, envio = null) => {
   const { id, tipo, fecha_edicion, referencia_piloto, propuestas } = fila;
   const enOrden = [...propuestas].sort((a, b) => a.orden - b.orden);
-  const delEquipo = enOrden.find((propuesta) => propuesta.orden === fila.orden_del_equipo) ?? null;
-  const principal = delEquipo ?? enOrden.find((propuesta) => propuesta.principal) ?? enOrden[0] ?? null;
+  // La votación (spec 2026-11-23-dato-quincena-principal-votacion, 3): abierta, la de Datito; cerrada, la ganadora
+  const ordenDelEquipo = fila.votacion ? (fila.votacion.abierta ? null : fila.votacion.orden_ganadora) : fila.orden_del_equipo;
+  const delEquipo = enOrden.find((propuesta) => propuesta.orden === ordenDelEquipo) ?? null;
+  const principal = delEquipo ?? principalGuardadaDeDatito(enOrden);
   return {
     id,
     fecha_texto: fechaLarga(fecha_edicion),
@@ -1119,7 +1131,8 @@ export const itemDeLaLista = (fila, envio = null) => {
     numero: numeroDe(fila),
     fecha_partes: partesDeLaFecha(fecha_edicion),
     cantidad: textoDeCantidad(propuestas.length),
-    envio: envio ?? null
+    envio: envio ?? null,
+    votacion: fila.votacion?.de_la_lista ?? null
   };
 };
 
@@ -1301,8 +1314,9 @@ const textoDeVerDatasetsNuevos = (n) => {
 };
 
 // La principal de Datito de una edición ya validada (spec 2026-11-21-dato-quincena-principal-equipo, 3): la que lleva la etiqueta
-// Principal en el JSON (el POST deja una sola) o, si ninguna, la primera; sin propuestas (solo con un SQL a mano), null
-const principalDeDatito = (propuestas) => propuestas.find((propuesta) => propuesta.etiquetas.includes('Principal'))
+// Principal en el JSON (el POST deja una sola) o, si ninguna, la primera; sin propuestas (solo con un SQL a mano), null. La usa también
+// el controlador para la votación del detalle (su `deDatito`)
+export const principalDeDatito = (propuestas) => propuestas.find((propuesta) => propuesta.etiquetas.includes('Principal'))
   ?? propuestas[0] ?? null;
 
 // Lo de la principal de Datito en el detalle: su orden y sus textos (el rótulo de la portada, la pastilla de la propuesta, la marca del
@@ -1324,6 +1338,23 @@ const quienEligio = ({ nombre, elegida_at }) => {
   return `La eligió ${quien} el ${formatoCorto(elegida_at.slice(0, 10))} a las ${elegida_at.slice(11, 16)}.`;
 };
 
+const ROTULOS_DEL_EQUIPO = Object.freeze({ rotulo: PRINCIPAL_DEL_EQUIPO, pastilla: PRINCIPAL_DEL_EQUIPO, marca: 'Equipo' });
+
+// La principal del equipo ya elegida (por la elección a mano o por la votación): los textos de siempre, con `quien` según de dónde sale
+const principalElegida = (elegida, deDatito, quien) => {
+  const coincide = elegida === deDatito;
+  return {
+    orden: elegida.orden,
+    coincide,
+    ...ROTULOS_DEL_EQUIPO,
+    resumen: coincide
+      ? `la misma de ${NOMBRE_DEL_BOT} (propuesta ${elegida.orden}).`
+      : `Propuesta ${elegida.orden} · ${elegida.titulo}`,
+    cifra_clave: coincide ? null : elegida.cifra_clave,
+    quien
+  };
+};
+
 /**
  * Lo de la principal del equipo en el detalle (spec 2026-11-21-dato-quincena-principal-equipo, 3), de la elección vigente
  * (`eleccion`, `{ orden, nombre, elegida_at }` de leerPrincipalDelEquipo, o null) y de la principal de Datito: el orden elegido, si
@@ -1334,45 +1365,30 @@ const principalEquipoDelDetalle = (propuestas, deDatito, eleccion) => {
   const elegida = eleccion === null || eleccion === undefined
     ? null
     : propuestas.find((propuesta) => propuesta.orden === eleccion.orden) ?? null;
-  const rotulos = { rotulo: PRINCIPAL_DEL_EQUIPO, pastilla: PRINCIPAL_DEL_EQUIPO, marca: 'Equipo' };
   if (elegida === null) {
-    return { orden: null, coincide: false, ...rotulos, resumen: 'todavía no la eligió.', cifra_clave: null, quien: null };
+    return { orden: null, coincide: false, ...ROTULOS_DEL_EQUIPO, resumen: 'todavía no la eligió.', cifra_clave: null, quien: null };
   }
-  const coincide = elegida === deDatito;
-  return {
-    orden: elegida.orden,
-    coincide,
-    ...rotulos,
-    resumen: coincide
-      ? `la misma de ${NOMBRE_DEL_BOT} (propuesta ${elegida.orden}).`
-      : `Propuesta ${elegida.orden} · ${elegida.titulo}`,
-    cifra_clave: coincide ? null : elegida.cifra_clave,
-    quien: quienEligio(eleccion)
-  };
+  return principalElegida(elegida, deDatito, quienEligio(eleccion));
 };
 
-// Los textos fijos del PUT de la principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo, 2): un orden que no es el de
-// una propuesta de la edición (400) y el 500. El 404 es el de las lecturas, «No existe esa edición.»
+// Lo de la principal del equipo cuando la edición se vota (spec 2026-11-23-dato-quincena-principal-votacion, 3), de la `votacion` ya
+// armada (este archivo no importa datoQuincenaVotacionReglas.js: ese importa de acá). Abierta: sin principal todavía y el resumen
+// de la votación; cerrada, la ganadora con los textos de siempre y sin quién
+const principalEquipoDeLaVotacion = (propuestas, deDatito, votacion) => {
+  const ganadora = votacion.estado === 'cerrada' && votacion.resultado
+    ? propuestas.find((propuesta) => propuesta.orden === votacion.resultado.orden) ?? null
+    : null;
+  if (ganadora === null) {
+    return { orden: null, coincide: false, ...ROTULOS_DEL_EQUIPO, resumen: votacion.resumen, cifra_clave: null, quien: null };
+  }
+  return principalElegida(ganadora, deDatito, null);
+};
+
+// El 500 del PUT de la principal del equipo, que ahora siempre contesta 409 salvo un error al leer la edición. El 404 es el de las
+// lecturas, «No existe esa edición.»
 export const MENSAJES_PRINCIPAL_EQUIPO = Object.freeze({
-  orden: 'Elegí una de las propuestas de la edición.',
   alGuardar: 'Error al guardar la principal del equipo'
 });
-
-/**
- * El mensaje de la elección guardada (spec 2026-11-21-dato-quincena-principal-equipo, 2): «Quedó…» si cambió y «… ya era…» si no;
- * «la de Datito» si el orden es el de la principal de Datito (`coincide`) y si no, «la propuesta N».
- */
-export const mensajeDeLaEleccion = ({ orden, coincide, cambio }) => {
-  const cual = coincide ? `de ${NOMBRE_DEL_BOT}` : `propuesta ${orden}`;
-  return cambio ? `Quedó la ${cual} como principal del equipo.` : `La ${cual} ya era la principal del equipo.`;
-};
-
-// El orden más alto que puede tener una propuesta guardada: dato_quincena_propuestas.orden es un tinyint unsigned
-const ORDEN_MAXIMO = 255;
-
-// El `orden` del cuerpo del PUT: un número entero de 1 a ORDEN_MAXIMO, tal cual; otra cosa (un texto como '2', un 0, un decimal,
-// null o nada), null. Si es el de una propuesta de la edición lo mira la base
-export const ordenDeLaEleccion = (valor) => (Number.isSafeInteger(valor) && valor >= 1 && valor <= ORDEN_MAXIMO ? valor : null);
 
 /**
  * El detalle de una edición (sección 9), de leerEdicion: `fila` (con `metadata`, el texto guardado, `recibida_ts`, los
@@ -1394,8 +1410,10 @@ export const ordenDeLaEleccion = (valor) => (Number.isSafeInteger(valor) && valo
  * `principal_equipo` (principalEquipoDelDetalle), con `eleccion`, la elección vigente de leerPrincipalDelEquipo, que lee y pasa solo
  * el controlador `ver`: el mail no la pasa, y sin ella la del equipo sale sin elegir. `propuestas` no cambia: cada una sigue con la
  * principal de Datito.
+ * `votacion` (spec 2026-11-23-dato-quincena-principal-votacion, 3) es la salida de votacionDelDetalle, ya armada, o null (una edición
+ * de antes): con ella, `principal_equipo` sale de la votación y no de `eleccion`; la clave `votacion` va al final.
  */
-export const detalleDeLaEdicion = ({ fila, edicion, guardadas, adjuntos, lineaDelCorreo, previas, eleccion = null }) => {
+export const detalleDeLaEdicion = ({ fila, edicion, guardadas, adjuntos, lineaDelCorreo, previas, eleccion = null, votacion = null }) => {
   const lasPrevias = previas ?? new Map();
   const deDatito = principalDeDatito(edicion.propuestas);
   const enlaces = new Map(guardadas
@@ -1434,6 +1452,9 @@ export const detalleDeLaEdicion = ({ fila, edicion, guardadas, adjuntos, lineaDe
       archivoDelDetalle('metadata', nombreDeLaEdicion(fila.clave), bytesDeMetadata(fila.metadata))
     ],
     principal_datito: principalDatitoDelDetalle(deDatito),
-    principal_equipo: principalEquipoDelDetalle(edicion.propuestas, deDatito, eleccion)
+    principal_equipo: votacion === null
+      ? principalEquipoDelDetalle(edicion.propuestas, deDatito, eleccion)
+      : principalEquipoDeLaVotacion(edicion.propuestas, deDatito, votacion),
+    votacion
   };
 };

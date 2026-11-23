@@ -37,7 +37,7 @@ Un subagente con `isolation: worktree` no recibe esas reglas: pasale los documen
 - Nunca `docker compose` desde un worktree: recrea `rpad-db` y corta lo que esté corriendo. Nunca `down -v`: el único volumen tiene todas las bases.
 - Un worktree no trae lo que está en `.gitignore`: hay que copiar el `.env`, con `RPAD_TESTS_DB_LOCAL=1`.
 - `tests/schema.test.js` y `tests/permisos.test.js` leen la base del `.env`: una migración nueva también tiene que correr en la base local antes de la suite.
-- Un test nuevo llama al servicio con un hoy fijo, no a `/api/cron/*`: la corrida real escribe en la base del `.env` (`tests/notificaciones.test.js` y `tests/permisos.test.js` son las excepciones que quedan, con el candado del aviso diario de la agenda y el del correo del dato de la quincena, `rpad_dato_quincena_correo`, tomados en otra conexión).
+- Un test nuevo llama al servicio con un hoy fijo, no a `/api/cron/*`: la corrida real escribe en la base del `.env` (`tests/notificaciones.test.js` y `tests/permisos.test.js` son las excepciones que quedan, con el candado del aviso diario de la agenda, el del correo del dato de la quincena (`rpad_dato_quincena_correo`) y el del sellado de su votación (`rpad_dato_quincena_votacion`), tomados en otra conexión).
 
 ## Estructura
 
@@ -86,8 +86,8 @@ Si tocás esto, leé este documento de `docs/temas/`:
 | Proyectos | `proyectos.md` |
 | El dato de la quincena: el archivo de Datito, las lecturas y su página | `dato-quincena.md` |
 | El dato de la quincena: el POST de Datito, la edición, la clave y el token | `dato-quincena-contrato.md` |
-| El dato de la quincena: la principal del equipo | `dato-quincena-principal-equipo.md` |
-| El dato de la quincena: el correo, quién lo recibe, Reenviar, la prueba | `dato-quincena-correo.md` |
+| El dato de la quincena: la principal del equipo se vota (reglas, API, página, sellado y mail del resultado) | `dato-quincena-principal-equipo.md` |
+| El dato de la quincena: el correo, quién lo recibe y quién vota (pestaña Envío y votación), Reenviar, la prueba | `dato-quincena-correo.md` |
 | Carga de páginas, versiones, CSS, carcasa, sitio público | `frontend.md` |
 | Una tabla, una columna, una migración | `base-de-datos.md` |
 | Producción, kits, orden de migraciones y vueltas atrás, pendientes con fecha | `despliegue.md` |
@@ -242,6 +242,7 @@ Todo cambio a datasets pasa por doble verificación:
 - **Mi espacio:** todos los roles con sesión usan su propio panel de licencias y horas extras, que no ve nadie más (ni administración, ni el superadmin).
   «Los compañeros» son administración (`esAdmin`: superadmin, admin y editor): solo ellos tienen la casilla «Mostrar a mis compañeros» y ven «Hoy no están», y solo se muestran sus ausencias.
   Cualquier rol crea un evento Laboral, con cualquier usuario activo, y carga un Personal (Público).
+- **El dato de la quincena:** la principal del equipo la vota la lista de la pestaña Envío y votación, de cualquier rol: el permiso es estar en la foto de la edición, no el rol (la ruta del voto lleva `authMiddleware` sin `adminOnly`, a propósito; `docs/temas/dato-quincena-principal-equipo.md`).
 - El rol y el estado activo se leen de la base en cada pedido (`authMiddleware`, y `sesionOpcional` en las rutas públicas que muestran más con una sesión; las dos sobre `verificarSesion`): desactivar o cambiar un rol tiene efecto inmediato.
 - `esAdmin(rol)` (services/usuariosReglas.js) y `Auth.isAdmin()` incluyen al superadmin y al editor (acceso a la administración);
   `esAuditor(rol)` y `Auth.isAuditor()` (superadmin o admin) deciden quién audita y quién cuenta para el mínimo;

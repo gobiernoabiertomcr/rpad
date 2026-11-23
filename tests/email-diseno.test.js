@@ -7,8 +7,46 @@ import { readFileSync } from 'fs';
 import * as plantillas from '../services/emailTemplates.js';
 import { remitente } from '../services/emailService.js';
 import { casosDeEmail, textoVisible, AVISO_DE_RESTITUCION, modeloDelDatoQuincena } from './emails-fixtures.js';
+import { votacionDelDetalle, modeloDelMailDeLaVotacion } from '../services/datoQuincenaVotacionReglas.js';
+import { NOMBRE_DEL_BOT } from '../services/datoQuincenaReglas.js';
 
-const casos = casosDeEmail(plantillas);
+// El mail del resultado de la votación (spec 2026-11-23-dato-quincena-principal-votacion, 6), con el modelo de las reglas y el nombre del
+// bot que le suma el servicio: cuatro propuestas inventadas (la 1, la de Datito) y tres personas inventadas que votan. Con los votos de la
+// maqueta gana la 2 por puntos, 10 contra 7; sin votos, queda la de Datito y no va la tabla
+const PROPUESTAS_DE_LA_VOTACION = [
+  { orden: 1, titulo: 'Un título inventado', cifra_clave: '1.234 casos · septiembre de 2026' },
+  { orden: 2, titulo: 'Otro título inventado', cifra_clave: '56 casos · septiembre de 2026' },
+  { orden: 3, titulo: 'Un tercer título inventado', cifra_clave: '7 casos · septiembre de 2026' },
+  { orden: 4, titulo: 'Un cuarto título inventado', cifra_clave: '89 casos · septiembre de 2026' }
+];
+const VOTOS_DE_LA_MAQUETA = [
+  { id: 1, persona_id: 1, orden: '2,1,4,3', votado_at: '2026-11-23 10:00:00' },
+  { id: 2, persona_id: 2, orden: '3,2,1,4', votado_at: '2026-11-23 11:00:00' },
+  { id: 3, persona_id: 3, orden: '4,2,1,3', votado_at: '2026-11-24 09:00:00' }
+];
+const modeloDeLaVotacion = ({ votos = VOTOS_DE_LA_MAQUETA, propuestas = PROPUESTAS_DE_LA_VOTACION, deDatito = 1, nombres = ['Persona Uno', 'Persona Dos', 'Persona Tres'] } = {}) => {
+  const votacion = votacionDelDetalle({
+    propuestas: propuestas.map(({ orden, titulo }) => ({ orden, titulo })),
+    deDatito,
+    estado: { abierta: false, cierre: '2026-11-24 12:00', sin_calendario: false },
+    personas: nombres.map((nombre, i) => ({ persona_id: i + 1, usuario_id: i + 11, nombre })),
+    votos,
+    quienMira: null
+  });
+  return {
+    ...modeloDelMailDeLaVotacion({
+      edicion: { id: 25, fecha_edicion: '2026-11-23' }, propuestas, deDatito, votacion, nombreCompleto: 'Persona Ejemplo',
+      url: 'https://rpad.test/dato-quincena.html?id=25'
+    }),
+    nombreDelBot: NOMBRE_DEL_BOT
+  };
+};
+
+const casos = [
+  ...casosDeEmail(plantillas),
+  { nombre: 'resultado de la votación', email: plantillas.votacionResultadoTemplate(modeloDeLaVotacion()), boton: true },
+  { nombre: 'resultado de la votación (nadie votó)', email: plantillas.votacionResultadoTemplate(modeloDeLaVotacion({ votos: [] })), boton: true }
+];
 const fuente = (archivo) => readFileSync(new URL(`../services/${archivo}`, import.meta.url), 'utf8');
 
 // Rangos Unicode de emojis y pictogramas (incluye el selector de variación y el unión de ancho cero)
@@ -331,7 +369,10 @@ describe('Diseño de los emails: asuntos y contenido sin cambios', () => {
     'evento: cancelación': 'RPAD: se canceló un evento',
     'evento: recordatorio': 'RPAD: Reunión de equipo, hoy a las 10:00',
     // Nuevo con el correo del dato de la quincena (spec 2026-11-12-dato-quincena-correo, 10): la fecha de la edición
-    'dato de la quincena': 'Dato de la Quincena - 09/11/2026'
+    'dato de la quincena': 'Dato de la Quincena - 09/11/2026',
+    // Nuevos con la votación de la principal del equipo (spec 2026-11-23-dato-quincena-principal-votacion, 6): la fecha de la edición
+    'resultado de la votación': 'La principal del equipo del lunes 23/11/2026',
+    'resultado de la votación (nadie votó)': 'La principal del equipo del lunes 23/11/2026'
   };
 
   it('el asunto de cada plantilla es el de antes', () => {
@@ -371,7 +412,11 @@ describe('Diseño de los emails: asuntos y contenido sin cambios', () => {
     // Nuevo con el correo del dato de la quincena (spec 2026-11-12-dato-quincena-correo, 10): el de la maqueta, con datos
     // inventados. La infografía es una imagen: su texto alternativo no es texto visible. La frase de la principal y el recuadro
     // al RPAD, de la spec 2026-11-21-dato-quincena-principal-equipo, 5
-    'dato de la quincena': `${RPAD} Dato de la Quincena - 09/11/2026 Edición N.º 1 2 propuestas de comunicación que armó Datito. Son internas: todavía no están aprobadas ni publicadas. La principal de este correo es la que marcó Datito: la del equipo se elige y se ve en el RPAD. Buen día, Persona. Esta edición se lee mejor en el RPAD Las propuestas de a una, la agenda y los datasets nuevos, con todo listo para copiar. Ver la edición en el RPAD La infografía de la propuesta principal. Va adjunta en PNG y en SVG (para editarla). Agenda de la quincena Lo que pasó 05/11/2026 Feria inventada Un evento que ya pasó. Ver Lo que viene 12/11/2026 Jornada inventada Un evento inventado para las pruebas. Ver Efemérides 20/11/2026 Efeméride inventada Una fecha inventada. Con un segundo renglón. Ver Propuesta 1 de 2 Principal Validar Un título inventado 1.234 casos · octubre de 2026 Dataset: Dataset de prueba A En el RPAD ese día: Actualizado. Datos al 31/10/2026. Última actualización 05/11/2026. Próxima en 25 días. Para validar antes de publicar • Confirmar la cifra con el área. • Revisar la fuente. Por qué es noticia Una razón inventada. Ángulo Un ángulo inventado. Idea de placa Una placa inventada. Texto para redes Un texto para redes inventado. Con un segundo renglón. Puntos centrales Primer punto. Segundo punto. Tercer punto. Borrador de nota Un borrador inventado Primer párrafo. Segundo párrafo. Fuentes https://datos.ejemplo.test/a.csv https://datos.ejemplo.test/b.csv Propuesta 2 de 2 Agenda Otro título inventado 56 casos · octubre de 2026 Dataset: Dataset de prueba B En el RPAD ese día: Vencido. Datos al —. Última actualización 03/06/2026. Venció hace 4 días. Por qué es noticia Otra razón inventada. Ángulo Otro ángulo inventado. Idea de placa Otra placa inventada. Texto para redes Otro texto para redes inventado. Puntos centrales Un punto. Otro punto. Un tercer punto. Borrador de nota Otro borrador inventado Un párrafo. Otro párrafo. Un tercer párrafo. Fuentes https://datos.ejemplo.test/c.csv Ver la edición en el RPAD En el RPAD también están el texto del correo de Datito, los cálculos y la edición completa. Te llega porque estás en la lista del dato de la quincena; para dejar de recibirlo, avisale a la Dirección. ${PIE}`
+    'dato de la quincena': `${RPAD} Dato de la Quincena - 09/11/2026 Edición N.º 1 2 propuestas de comunicación que armó Datito. Son internas: todavía no están aprobadas ni publicadas. La principal de este correo es la que marcó Datito: la del equipo se elige y se ve en el RPAD. Buen día, Persona. Esta edición se lee mejor en el RPAD Las propuestas de a una, la agenda y los datasets nuevos, con todo listo para copiar. Ver la edición en el RPAD La infografía de la propuesta principal. Va adjunta en PNG y en SVG (para editarla). Agenda de la quincena Lo que pasó 05/11/2026 Feria inventada Un evento que ya pasó. Ver Lo que viene 12/11/2026 Jornada inventada Un evento inventado para las pruebas. Ver Efemérides 20/11/2026 Efeméride inventada Una fecha inventada. Con un segundo renglón. Ver Propuesta 1 de 2 Principal Validar Un título inventado 1.234 casos · octubre de 2026 Dataset: Dataset de prueba A En el RPAD ese día: Actualizado. Datos al 31/10/2026. Última actualización 05/11/2026. Próxima en 25 días. Para validar antes de publicar • Confirmar la cifra con el área. • Revisar la fuente. Por qué es noticia Una razón inventada. Ángulo Un ángulo inventado. Idea de placa Una placa inventada. Texto para redes Un texto para redes inventado. Con un segundo renglón. Puntos centrales Primer punto. Segundo punto. Tercer punto. Borrador de nota Un borrador inventado Primer párrafo. Segundo párrafo. Fuentes https://datos.ejemplo.test/a.csv https://datos.ejemplo.test/b.csv Propuesta 2 de 2 Agenda Otro título inventado 56 casos · octubre de 2026 Dataset: Dataset de prueba B En el RPAD ese día: Vencido. Datos al —. Última actualización 03/06/2026. Venció hace 4 días. Por qué es noticia Otra razón inventada. Ángulo Otro ángulo inventado. Idea de placa Otra placa inventada. Texto para redes Otro texto para redes inventado. Puntos centrales Un punto. Otro punto. Un tercer punto. Borrador de nota Otro borrador inventado Un párrafo. Otro párrafo. Un tercer párrafo. Fuentes https://datos.ejemplo.test/c.csv Ver la edición en el RPAD En el RPAD también están el texto del correo de Datito, los cálculos y la edición completa. Te llega porque estás en la lista del dato de la quincena; para dejar de recibirlo, avisale a la Dirección. ${PIE}`,
+    // Nuevos con la votación de la principal del equipo (spec 2026-11-23-dato-quincena-principal-votacion, 6), los de la maqueta con
+    // personas inventadas: el recuadro de la ganadora, el resultado, la tabla de los votos y la regla; sin votos, sin la tabla ni la regla
+    'resultado de la votación': `${RPAD} La principal del equipo del lunes 23/11 Hola, Persona: Cerró la votación de El dato de la quincena del lunes 23/11/2026. La principal del equipo es esta: PROPUESTA 2 Otro título inventado 56 casos · septiembre de 2026 Ganó por puntos: 10, contra 7 de la que siguió. Votaron 3 de 3. La votación cerró el martes 24/11/2026 a las 12:00. Propuesta Persona Uno Persona Dos Persona Tres Puntos Propuesta 2 1.º 2.º 2.º 10 Propuesta 1 (la de Datito) 2.º 3.º 3.º 7 Propuesta 4 3.º 4.º 1.º 7 Propuesta 3 4.º 1.º 4.º 6 Cada puesto da puntos: con 4 propuestas, el 1.º da 4 y el último, 1. Si empatan, gana la de Datito; si no está entre las empatadas, la de número más bajo. Ver la edición en el RPAD Te llega porque sos de administración del RPAD. Votan las personas con «Vota» tildado en la pestaña Envío y votación. ${PIE}`,
+    'resultado de la votación (nadie votó)': `${RPAD} La principal del equipo del lunes 23/11 Hola, Persona: Cerró la votación de El dato de la quincena del lunes 23/11/2026. La principal del equipo es esta: PROPUESTA 1 · LA MISMA DE DATITO Un título inventado 1.234 casos · septiembre de 2026 Nadie votó: quedó la de Datito. No votó nadie de 3. La votación cerró el martes 24/11/2026 a las 12:00. Ver la edición en el RPAD Te llega porque sos de administración del RPAD. Votan las personas con «Vota» tildado en la pestaña Envío y votación. ${PIE}`
   };
 
   for (const { nombre, email } of casos) {
@@ -1081,6 +1126,114 @@ describe('El mail del dato de la quincena: la frase de la principal y el recuadr
     const antes = mail((m) => { delete m.aclaracion; delete m.recuadro; }).text;
     assert.equal(text, antes.replace('ni publicadas.\n', `ni publicadas.\n${FRASE}\n`)
       .replace('\n\nLa infografía', '\n\nEsta edición se lee mejor en el RPAD: https://rpad.test/dato-quincena.html?id=12\n\nLa infografía'));
+  });
+});
+
+// El mail del resultado de la votación (spec 2026-11-23-dato-quincena-principal-votacion, 6), como la maqueta: el recuadro celeste de la
+// ganadora, el resultado en negrita, la tabla de los votos (solo con votos) y la regla en chico, el botón a la edición y la nota
+describe('El mail del resultado de la votación', () => {
+  const { email: { html, text } } = casos.find(c => c.nombre === 'resultado de la votación');
+  const { email: sinVotos } = casos.find(c => c.nombre === 'resultado de la votación (nadie votó)');
+  const ESCAPADO = '&lt;b&gt;x&lt;/b&gt;';
+
+  it('el título del cuerpo (y el de la página) es el asunto sin el año, y el saludo y la frase van en sus párrafos', () => {
+    assert.ok(html.includes('<title>La principal del equipo del lunes 23/11</title>'));
+    assert.match(html, /<h2 style="[^"]*color: #1F3A5F; font-size: 18px;[^"]*">La principal del equipo del lunes 23\/11<\/h2><p [^>]*>Hola, Persona:<\/p><p [^>]*>Cerró la votación de <strong>El dato de la quincena del lunes 23\/11\/2026<\/strong>\. La principal del equipo es esta:<\/p>/);
+  });
+
+  it('la ganadora va en un recuadro en el celeste del encabezado, fuera de un <p>, con «PROPUESTA N», su título y su cifra clave', () => {
+    const recuadro = html.indexOf('background-color: #E3EEF8; border: 1px solid #CFE0F0; border-radius: 6px');
+    assert.ok(recuadro > html.indexOf('</h2>'), 'el del cuerpo, no el encabezado');
+    assert.ok(html.includes('>PROPUESTA 2</p>'));
+    assert.match(html, /<p style="margin: 4px 0 0 0; color: #1F3A5F; font-size: 16px; font-weight: 600;[^"]*">Otro título inventado<\/p>/);
+    assert.ok(html.includes('>56 casos · septiembre de 2026</p>'));
+    assert.ok(!/<p [^>]*>\s*<table/.test(html), 'ninguna tabla dentro de un párrafo');
+    // La de Datito: el rótulo lo dice, con el nombre que trae el modelo
+    assert.ok(sinVotos.html.includes('>PROPUESTA 1 · LA MISMA DE DATITO</p>'));
+    assert.ok(!html.includes('LA MISMA'));
+  });
+
+  it('el resultado en negrita, seguido de la participación y del cierre', () => {
+    assert.ok(html.includes('<strong>Ganó por puntos: 10, contra 7 de la que siguió.</strong> Votaron 3 de 3. La votación cerró el martes 24/11/2026 a las 12:00.'));
+    assert.ok(sinVotos.html.includes('<strong>Nadie votó: quedó la de Datito.</strong> No votó nadie de 3.'));
+  });
+
+  it('la tabla de los votos: una columna por persona, la ganadora resaltada y en negrita, la de Datito con su marca; sin votos no va, ni la regla', () => {
+    assert.match(html, /<th scope="col" [^>]*>Propuesta<\/th><th scope="col" [^>]*>Persona Uno<\/th><th scope="col" [^>]*>Persona Dos<\/th><th scope="col" [^>]*>Persona Tres<\/th><th scope="col" [^>]*>Puntos<\/th>/);
+    assert.match(html, /<tr style="background-color: #F4F8FC;"><td [^>]*><strong>Propuesta 2<\/strong><\/td>/);
+    assert.equal(html.split('background-color: #F4F8FC;').length - 1, 1, 'solo la fila de la ganadora');
+    assert.ok(html.includes('>Propuesta 1 (la de Datito)</td>'));
+    assert.ok(html.includes('<span style="color: #6B7A8C; font-size: 13px;">Cada puesto da puntos: con 4 propuestas'));
+    assert.ok(!sinVotos.html.includes('<th '));
+    assert.ok(!sinVotos.html.includes('Cada puesto da puntos'));
+  });
+
+  it('el botón «Ver la edición en el RPAD» abre la edición y la nota del pie dice por qué llega', () => {
+    assert.ok(html.includes('<a href="https://rpad.test/dato-quincena.html?id=25" style="display: inline-block; color: #FFFFFF;'));
+    assert.ok(html.includes('>Ver la edición en el RPAD</a>'));
+    assert.match(html, /<p style="margin: 0 0 0 0; color: #6B7A8C; font-size: 12px; line-height: 1\.5;">Te llega porque sos de administración del RPAD\. Votan las personas con «Vota» tildado en la pestaña Envío y votación\.<\/p>/);
+  });
+
+  it('el texto plano dice lo mismo, en bloques: la ganadora, el resultado, los votos de cada propuesta, la regla, el botón y la nota', () => {
+    assert.equal(text, [
+      'Hola, Persona:',
+      'Cerró la votación de El dato de la quincena del lunes 23/11/2026. La principal del equipo es esta:',
+      'Propuesta 2\nOtro título inventado\n56 casos · septiembre de 2026',
+      'Ganó por puntos: 10, contra 7 de la que siguió. Votaron 3 de 3. La votación cerró el martes 24/11/2026 a las 12:00.',
+      [
+        'Propuesta 2: Persona Uno, 1.º; Persona Dos, 2.º; Persona Tres, 2.º. 10 puntos.',
+        'Propuesta 1 (la de Datito): Persona Uno, 2.º; Persona Dos, 3.º; Persona Tres, 3.º. 7 puntos.',
+        'Propuesta 4: Persona Uno, 3.º; Persona Dos, 4.º; Persona Tres, 1.º. 7 puntos.',
+        'Propuesta 3: Persona Uno, 4.º; Persona Dos, 1.º; Persona Tres, 4.º. 6 puntos.'
+      ].join('\n'),
+      'Cada puesto da puntos: con 4 propuestas, el 1.º da 4 y el último, 1. Si empatan, gana la de Datito; si no está entre las empatadas, la de número más bajo.',
+      'Ver la edición en el RPAD: https://rpad.test/dato-quincena.html?id=25',
+      'Te llega porque sos de administración del RPAD. Votan las personas con «Vota» tildado en la pestaña Envío y votación.'
+    ].join('\n\n'));
+    assert.ok(sinVotos.text.includes('\n\nPropuesta 1 · La misma de Datito\nUn título inventado\n1.234 casos · septiembre de 2026\n\n'));
+    assert.ok(!sinVotos.text.includes('Cada puesto da puntos'));
+  });
+
+  it('con una sola persona y una sola propuesta, «1 punto»', () => {
+    const modelo = modeloDeLaVotacion({
+      propuestas: PROPUESTAS_DE_LA_VOTACION.slice(0, 1), nombres: ['Persona Uno'],
+      votos: [{ id: 1, persona_id: 1, orden: '1', votado_at: '2026-11-23 10:00:00' }]
+    });
+    assert.ok(plantillas.votacionResultadoTemplate(modelo).text.includes('Propuesta 1 (la de Datito): Persona Uno, 1.º. 1 punto.'));
+  });
+
+  it('todo texto del modelo va escapado (también los nombres de quienes votaron), y tal cual en el texto plano', () => {
+    const modelo = modeloDeLaVotacion({
+      propuestas: PROPUESTAS_DE_LA_VOTACION.map((p) => ({ ...p, titulo: `${p.titulo} <b>x</b>`, cifra_clave: '<b>x</b>' })),
+      nombres: ['<b>x</b>', 'Persona Dos', 'Persona Tres']
+    });
+    for (const clave of ['titulo', 'saludo', 'intro', 'resultado', 'participacion', 'cierre', 'regla', 'nota']) modelo[clave] = `${modelo[clave]} <b>x</b>`;
+    const { html: escapado, text: plano } = plantillas.votacionResultadoTemplate(modelo);
+    assert.ok(!escapado.includes('<b>x</b>'));
+    // El título va dos veces: en <title> y en el <h2>
+    assert.equal(escapado.split(ESCAPADO).length - 1, 12);
+    assert.ok(plano.includes('Hola, Persona: <b>x</b>'));
+    assert.ok(plano.includes('<b>x</b>, 1.º;'));
+  });
+
+  it('la edición va en negrita dentro de la intro en el HTML, y el texto plano queda igual', () => {
+    const modelo = modeloDeLaVotacion();
+    const { html, text } = plantillas.votacionResultadoTemplate(modelo);
+    assert.ok(html.includes(`Cerró la votación de <strong>${modelo.edicion}</strong>. La principal del equipo es esta:`));
+    assert.ok(text.includes(modelo.intro));
+    assert.ok(!text.includes('<strong>'));
+  });
+
+  it('la plantilla no nombra al bot: sin nombre en el modelo, «del bot»', () => {
+    assert.ok(!fuente('emailTemplates.js').includes('Datito'));
+    for (const nombreDelBot of [null, '', '   ', 7]) {
+      const conVotos = plantillas.votacionResultadoTemplate({ ...modeloDeLaVotacion(), nombreDelBot });
+      assert.ok(conVotos.html.includes('>Propuesta 1 (la del bot)</td>'), String(nombreDelBot));
+      assert.ok(conVotos.text.includes('Propuesta 1 (la del bot):'), String(nombreDelBot));
+      const nadie = plantillas.votacionResultadoTemplate({ ...modeloDeLaVotacion({ votos: [] }), nombreDelBot });
+      assert.ok(nadie.html.includes('>PROPUESTA 1 · LA MISMA DEL BOT</p>'), String(nombreDelBot));
+      assert.ok(nadie.text.includes('\nPropuesta 1 · La misma del bot\n'), String(nombreDelBot));
+    }
   });
 });
 

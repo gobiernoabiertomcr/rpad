@@ -3,7 +3,7 @@
 El archivo interno y de solo lectura de las ediciones que manda Datito cada dos lunes: qué es y quién lo ve, las lecturas (la lista, el detalle y las descargas) y la página.
 El POST de Datito con su token, la validación de la edición, la clave, la huella y el guardado están en `docs/temas/dato-quincena-contrato.md`.
 El correo que el RPAD manda con cada edición, su lista, Reenviar y la prueba están en `docs/temas/dato-quincena-correo.md`.
-La principal que elige el equipo, en `docs/temas/dato-quincena-principal-equipo.md`.
+La principal que vota el equipo (las reglas, la API, el sellado y el mail del resultado), en `docs/temas/dato-quincena-principal-equipo.md`.
 
 Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-07-dato-quincena-design.md`
@@ -12,14 +12,15 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-14-dato-quincena-agenda-grupos-design.md` (la agenda en tres grupos)
 - `docs/superpowers/specs/2026-11-18-dato-quincena-propuestas-datasets-design.md` (el contrato v1.4: las propuestas de datasets nuevos)
 - `docs/superpowers/specs/2026-11-18-dato-quincena-detalle-pestanas-design.md` (el detalle en tres pestañas)
-- `docs/superpowers/specs/2026-11-21-dato-quincena-principal-equipo-design.md` (la principal del equipo)
+- `docs/superpowers/specs/2026-11-21-dato-quincena-principal-equipo-design.md` (la principal del equipo elegida a mano)
+- `docs/superpowers/specs/2026-11-23-dato-quincena-principal-votacion-design.md` (la principal del equipo se vota)
 
 ## Archivos
 
 datoQuincenaController: las lecturas (`listar`, `ver` y `descargar`); el POST de Datito (`recibirEdicion`) está en `docs/temas/dato-quincena-contrato.md`;
 datoQuincenaReglas (puro: `NOMBRE_DEL_BOT`, los textos de la lista y del detalle, los grupos de la agenda (`gruposDeLaAgenda`), la prioridad, la matriz y los textos de las propuestas de datasets (`prioridadDeDataset`, `matrizDePrioridad` y `propuestasDatasetsDelDetalle`), la foto del RPAD y lo que se copia; la validación, la clave, la huella, el token y el recibo, en el contrato);
 datoQuincenaDatos (las consultas y `leerEdicionesPrevias`; el guardado, en el contrato);
-dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el detalle ?id=N en tres pestañas y la pestaña Correo (dato-quincena.js)
+dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el detalle ?id=N en tres pestañas y la pestaña Envío y votación (dato-quincena.js)
 
 ## El archivo
 
@@ -35,7 +36,7 @@ dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el
   La edición no cambia nunca; el estado de su envío y la principal del equipo viven en otras tablas.
 - Quién: la ven entera todos los roles con sesión, también el saludo del texto del correo (decisión del usuario: quien valida y trabaja las propuestas puede tener cualquier rol).
   Ninguna sesión escribe la edición ni sus propuestas: solo el POST de Datito.
-  La principal del equipo va aparte, en su propia tabla (`docs/temas/dato-quincena-principal-equipo.md`).
+  La principal del equipo va aparte: la votación, en sus propias tablas, y la elección a mano de las ediciones de antes, en `dato_quincena_principal_equipo` (`docs/temas/dato-quincena-principal-equipo.md`).
   El correo (la lista, los destinatarios, el estado por persona) lo ve solo administración.
 - Lo que no se guarda: el HTML del correo, los CSV o XLSX fuente (alcanzan los cálculos y las direcciones de las fuentes), los destinatarios y los encabezados del mail.
   El RPAD no descarga nada de las direcciones de una edición: las guarda y las muestra como enlaces.
@@ -51,16 +52,18 @@ dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el
 - `GET /api/dato-quincena/ediciones?anio=AAAA`, la lista: `{ anios, anio, ediciones }`.
   `anios`, cada año con ediciones y su `cantidad`, del más nuevo al más viejo; `anio`, el pedido o, sin él, el más reciente con ediciones (null con el archivo vacío); un año sin ediciones da `ediciones` vacía.
   Un `anio` que no son cuatro cifras de 2000 a 2100 (también uno repetido en la query) da 400 «El año no es válido.».
-  `ediciones`, por `fecha_edicion` descendente y, en el mismo día, por `id` descendente, cada una `{ id, fecha_texto, marca, principal, resto, numero, fecha_partes, cantidad, envio }`: «Lunes 2 de noviembre de 2026»;
+  `ediciones`, por `fecha_edicion` descendente y, en el mismo día, por `id` descendente, cada una `{ id, fecha_texto, marca, principal, resto, numero, fecha_partes, cantidad, envio, votacion }`: «Lunes 2 de noviembre de 2026»;
   «Piloto N» o null;
-  el `titulo`, la `cifra_clave` y el `rotulo` de la principal que cuenta, la del equipo si ya eligió y, si no, la de Datito (`docs/temas/dato-quincena-principal-equipo.md`);
+  el `titulo`, la `cifra_clave` y el `rotulo` de la principal que cuenta, la del equipo si su votación ya cerró (o, en una edición de antes, si se eligió a mano) y, si no, la de Datito; `votacion` es null salvo con la votación abierta (`docs/temas/dato-quincena-principal-equipo.md`);
   «Y 2 propuestas más: A y B.», con el nombre del dataset de las demás en su orden, o null;
   `numero`, «N.º 3» en una regular (cuántas regulares hay con esa fecha o anterior, calculado al leer: si una de fecha anterior llega después, los siguientes corren) y null en un piloto;
   `fecha_partes`, `{ dia: 'Lunes', fecha: '9 de noviembre', anio: 'de 2026' }`;
   `cantidad`, «4 propuestas»;
   y `envio`, `{ tipo, texto }`, la pastilla del envío (null si no lleva), con el texto de administración si quien pide lo es (`docs/temas/dato-quincena-correo.md`).
   La lista no trae las infografías ni ninguna dirección de correo.
-- `GET /api/dato-quincena/ediciones/:id`, el detalle, con los textos ya armados (`detalleDeLaEdicion`): `{ id, fecha_texto, marca, numero, titulo, nota_archivo, llegada, correo, cantidad, agenda, agenda_grupos, propuestas, propuestas_datasets, matriz_de_prioridad, cantidades, ver_propuestas, aviso_datasets_nuevos, ver_datasets_nuevos, archivos, principal_datito, principal_equipo }`.
+- `GET /api/dato-quincena/ediciones/:id`, el detalle, con los textos ya armados (`detalleDeLaEdicion`): `{ id, fecha_texto, marca, numero, titulo, nota_archivo, llegada, correo, cantidad, agenda, agenda_grupos, propuestas, propuestas_datasets, matriz_de_prioridad, cantidades, ver_propuestas, aviso_datasets_nuevos, ver_datasets_nuevos, archivos, principal_datito, principal_equipo, votacion }`.
+  `votacion` es null en una edición de antes y, si no, trae el estado, la participación, lo de quien mira y el resultado (`docs/temas/dato-quincena-principal-equipo.md`).
+  Decisión: `ver` y `listar` miran a quien pide (`req.user`) para `puede_votar`, `falta_tu_voto` y `tu_orden`: el detalle deja de ser igual para todos los roles, y lo demás sigue igual.
   `llegada`, «Llegó al RPAD el dd/mm/aaaa a las HH:MM.», de `recibida_at`;
   `correo`, la línea del envío del RPAD (`docs/temas/dato-quincena-correo.md`);
   en una edición sin envío (archivada antes del correo), la de Datito: «Correo enviado el dd/mm/aaaa a las HH:MM, según Datito.» con la hora pasada a Argentina sea cual sea la zona del bot, «Correo enviado según Datito, sin la hora.» o «Datito archivó esta edición sin que saliera el correo.», que sigue siendo cierto si el correo sale después: la edición no cambia y Datito no la vuelve a mandar (sería un 409);
@@ -130,7 +133,7 @@ dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el
 - Herramientas → El dato de la quincena: `dato-quincena.html` (con la carcasa, `main.css` y su `<style>` con los tokens `--sg-*` de Proyectos y las clases `dq-`; sin `publico.css` ni `aria-current` en el HTML) y `js/dato-quincena.js`, como la maqueta aprobada.
   El título, con el `newspaper` de Lucide, y la bajada: «Las propuestas de comunicación que arma Datito cada dos lunes, tal como llegaron. Son internas: guardarlas acá no las aprueba ni las publica. El RPAD las manda por correo a las personas de la lista.».
   El nombre sale de una constante de la página (`NOMBRE_DEL_BOT`) y de la del servidor, porque es provisorio; el HTML no lo repite.
-  Administración ve además dos pestañas, «Ediciones» y «Correo» (`docs/temas/dato-quincena-correo.md`); los demás roles, la página sin pestañas.
+  Administración ve además dos pestañas, «Ediciones» y «Envío y votación» (`docs/temas/dato-quincena-correo.md`); los demás roles, la página sin pestañas.
   Sin sesión, al login; cualquier rol con sesión ve la página entera.
 - La lista (sin `?id=`; `?anio=AAAA` elige el año): los años como botones con su cantidad (`aria-pressed`), solo si hay más de uno, la cantidad del año («Ediciones de 2026: 27») y las tarjetas «tipo diario» de a tres (dos debajo de 960 px, una debajo de 560 px), con páginas de a 18.
   Cada tarjeta lleva «El dato de la quincena» y el N.º (o la marca «Piloto N») con una doble línea, el día, la fecha grande y el año, la cantidad de propuestas, el rótulo y el título de la principal que cuenta (hasta tres renglones) y la pastilla del envío.

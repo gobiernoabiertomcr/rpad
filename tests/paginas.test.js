@@ -115,14 +115,14 @@ const VERSION_PROYECTOS = '20261206';
 // 2026-11-03-mi-espacio-horas-acumuladas, 5 y 10; y lo que dice de la reiteración una licencia sin persona autorizada, spec
 // 2026-11-03-reiteracion-bimestral, 5; y el dato de la quincena en la agenda —su chip, su color y su muestra en la leyenda—, spec
 // 2026-11-14-dato-quincena-en-mi-espacio, 5). Su versión es propia
-const VERSION_MI_ESPACIO = '20261233';
+const VERSION_MI_ESPACIO = '20261234';
 // dato-quincena.js (la página de El dato de la quincena, el archivo de las ediciones de Datito, spec 2026-11-07-dato-quincena, 10 y
 // 11; las tarjetas, la pestaña Correo y la caja del correo del detalle, spec 2026-11-12-dato-quincena-correo, 13; la etiqueta Repite
 // y la caja de la repetición, spec 2026-11-14-dato-quincena-v1-3, 4; la agenda en sus grupos, spec
 // 2026-11-14-dato-quincena-agenda-grupos; el detalle en tres pestañas, spec 2026-11-18-dato-quincena-detalle-pestanas; la principal
 // del equipo —la franja, las marcas, el diálogo y el rótulo de la tarjeta—, spec 2026-11-21-dato-quincena-principal-equipo, 4). Su
 // versión es propia
-const VERSION_DATO_QUINCENA = '20261237';
+const VERSION_DATO_QUINCENA = '20261238';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');
@@ -790,7 +790,7 @@ describe('páginas', () => {
       assert.ok(vista, 'la vista');
       const ids = [...vista.matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
       assert.deepEqual(ids, ['vista-agenda', 'ag-mes-titulo', 'ag-anterior', 'ag-siguiente', 'ag-finde', 'ag-finde-cuenta', 'ag-hoy',
-        'ag-nuevo-evento', 'ag-frase', 'ag-mes', 'ag-leyenda-dato', 'ag-leyenda-ausentes', 'ag-elegido', 'ag-proximos-titulo',
+        'ag-nuevo-evento', 'ag-frase', 'ag-mes', 'ag-leyenda-dato', 'ag-leyenda-voto', 'ag-leyenda-ausentes', 'ag-elegido', 'ag-proximos-titulo',
         'ag-proximos', 'ag-por-mail', 'ag-eventos-por-mail', 'ag-eventos-por-mail-ayuda']);
       // La banda, primero y fuera de las tarjetas, con la ola del Resumen (el mismo dibujo que OLA_DE_LA_BANDA de mi-espacio.js)
       const banda = vista.match(/<div class="me-banda-del-mes">[\s\S]*?<\/svg>\s*<\/div>/)?.[0] ?? '';
@@ -811,18 +811,18 @@ describe('páginas', () => {
       // Ninguna clase nueva lleva la palabra «agenda» (es la Agenda de pedidos de Reportes): solo los ids ag-* y el panel
       for (const [, clases] of vista.matchAll(/\sclass="([^"]*)"/g)) assert.doesNotMatch(clases, /agenda/, clases);
       // La leyenda: los colores, cada uno con su muestra y su ícono (lo que es solo tuyo, el candado; lo que ven otros, el ojo);
-      // ocho, con «Tuyos, a la vista», «Personales de otros» y «Laborales» (spec 2026-10-29-mi-espacio-evento-publico, 5.2) y «El dato
+      // nueve (con «Votar la principal», spec 2026-11-23-dato-quincena-principal-votacion, 5, oculta hasta que el mes trae el ítem), con «Tuyos, a la vista», «Personales de otros» y «Laborales» (spec 2026-10-29-mi-espacio-evento-publico, 5.2) y «El dato
       // de la quincena» (spec 2026-11-14-dato-quincena-en-mi-espacio), oculta hasta saber que el envío automático está prendido, como
       // «Compañeros que no están», hasta saber que quien mira los ve
       const leyenda = vista.match(/<ul class="me-leyenda"[^>]*>([\s\S]*?)<\/ul>/)?.[1] ?? '';
-      const muestras = [...leyenda.matchAll(/<li( id="ag-leyenda-(?:ausentes|dato)" hidden)?><span class="me-color ([\w-]+)" aria-hidden="true">((?:<svg [\s\S]*?<\/svg>)?)<\/span>([^<]+)<\/li>/g)]
+      const muestras = [...leyenda.matchAll(/<li( id="ag-leyenda-(?:ausentes|dato|voto)" hidden)?><span class="me-color ([\w-]+)" aria-hidden="true">((?:<svg [\s\S]*?<\/svg>)?)<\/span>([^<]+)<\/li>/g)]
         .map(([, oculto, clase, icono, texto]) => [clase, texto, Boolean(oculto), icono === '' ? '' : 'svg']);
       assert.deepEqual(muestras, [
         ['propio', 'Solo vos', false, 'svg'], ['propio', 'Tuyos, a la vista', false, 'svg'], ['publico-otro', 'Personales de otros', false, 'svg'],
         ['compartido', 'Laborales', false, 'svg'], ['licencia', 'Tus licencias y francos', false, 'svg'], ['feriado', 'Feriados', false, 'svg'],
-        ['dato', 'El dato de la quincena', true, 'svg'], ['ausente', 'Compañeros que no están', true, 'svg']
+        ['dato', 'El dato de la quincena', true, 'svg'], ['voto', 'Votar la principal', true, 'svg'], ['ausente', 'Compañeros que no están', true, 'svg']
       ]);
-      assert.equal(leyenda.match(/<li\b/g)?.length, 8);
+      assert.equal(leyenda.match(/<li\b/g)?.length, 9);
       assert.ok(leyenda.includes('<li><span class="me-color compartido" aria-hidden="true">'));
       // El día elegido del teléfono: vacío (lo dibuja mi-espacio.js), en la tarjeta del mes, después de la leyenda
       assert.ok(vista.includes('<section class="me-elegido" id="ag-elegido" aria-labelledby="ag-elegido-titulo"></section>'));

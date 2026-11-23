@@ -44,6 +44,8 @@ import { rangoDelPedido, ausentesPara } from './miEspacioController.js';
 // importa emailTemplates.js, que importa las reglas de eventos, y se cerraría un ciclo
 import { datoQuincenaEnMiEspacio } from '../services/datoQuincenaCorreoReglas.js';
 import { leerConfig, ultimaRegularConSuCorreo } from '../services/datoQuincenaCorreoDatos.js';
+import { leerVotaciones, votacionesAbiertasDe } from '../services/datoQuincenaVotacionDatos.js';
+import { estadoDeLaVotacionLeida, itemsDeLaVotacionEnMiEspacio } from '../services/datoQuincenaVotacionReglas.js';
 
 // Cuántos días antes de un evento se leen los feriados: su aviso sale antes que él («El día hábil anterior» de un lunes) y
 // cada día que no es hábil lo corre uno más
@@ -285,6 +287,29 @@ const datoQuincenaDelListado = async ({ desde, hasta, ahora, filasFeriados }) =>
 };
 
 /**
+ * Votar la principal del dato de la quincena en la agenda (spec 2026-11-23-dato-quincena-principal-votacion, 5): `dato_quincena_votacion`,
+ * un ítem el día del cierre de cada votación abierta en la que está quien pide y todavía no votó (`itemsDeLaVotacionEnMiEspacio`).
+ * Es de cada persona, así que va aparte del dato, que es igual para todos. El calendario sale de las filas de feriados del pedido.
+ * Aislado como `datoQuincenaDelListado`: si la lectura o el armado fallan, [] y el error a la consola, y la agenda responde igual.
+ */
+const votacionDelListado = async ({ usuarioId, desde, hasta, ahora, filasFeriados }) => {
+  try {
+    const ids = await votacionesAbiertasDe(usuarioId);
+    if (ids.length === 0) return [];
+    const leidas = await leerVotaciones(ids);
+    const calendario = calendarioCon(filasFeriados);
+    const votaciones = [...leidas].map(([edicion_id, votacion]) => ({
+      edicion_id, fecha_edicion: votacion.fecha_edicion, personas: votacion.personas, votos: votacion.votos, ordenes: votacion.ordenes,
+      estado: estadoDeLaVotacionLeida(votacion, { ahora, calendario })
+    }));
+    return itemsDeLaVotacionEnMiEspacio({ votaciones, usuarioId, desde, hasta });
+  } catch (error) {
+    console.error('Error al obtener la votación de la principal de Mi espacio:', error?.stack ?? error);
+    return [];
+  }
+};
+
+/**
  * GET /api/mi-espacio/eventos?desde=AAAA-MM-DD&hasta=AAAA-MM-DD: lo que ve la persona en un rango de hasta 93 días (las
  * fechas, como «Hoy no están»: 400 en `fechas`, antes de leer nada). `ve_companeros`: si la leyenda dice «Compañeros que no están»;
  * `eventos_por_mail` y `alguien_depende`: la casilla «Recibir mi agenda por mail» y si alguien depende de quien pide, directa o
@@ -308,7 +333,9 @@ const datoQuincenaDelListado = async ({ desde, hasta, ahora, filasFeriados }) =>
  *   lista) o que no cae entero en el rango pedido no es un error: es como si no viniera, y la frase es null.
  * Y, aparte, el dato de la quincena (datoQuincenaDelListado, aislado: no lo cuenta la frase):
  * - `dato_quincena`: las fechas del mail del rango, las mismas para todos los roles;
- * - `dato_quincena_activo`: si el envío automático está prendido.
+ * - `dato_quincena_activo`: si el envío automático está prendido;
+ * - `dato_quincena_votacion`: votar la principal del equipo, el día del cierre, a quien está en la foto y todavía no votó
+ *   (votacionDelListado, aislado).
  */
 export const listarEventos = (req, res) => responder(res, 'Error al obtener los eventos', async () => {
   const { desde, hasta, rechazo: rechazoDelRango } = rangoDelPedido(req.query);
@@ -320,9 +347,10 @@ export const listarEventos = (req, res) => responder(res, 'Error al obtener los 
     eventosVisibles(usuario, desde, hasta), licenciasPropiasEntre(usuario.id, desde, hasta), filasDeFeriados(),
     administracionActiva(), usuariosActivos(), usuariosDelAviso()
   ]);
-  const [{ ausentes }, dato] = await Promise.all([
+  const [{ ausentes }, dato, votacion] = await Promise.all([
     ausentesPara(usuario, { desde, hasta, hoy, filasFeriados, administracion }),
-    datoQuincenaDelListado({ desde, hasta, ahora, filasFeriados })
+    datoQuincenaDelListado({ desde, hasta, ahora, filasFeriados }),
+    votacionDelListado({ usuarioId: usuario.id, desde, hasta, ahora, filasFeriados })
   ]);
   const feriados = feriadosDelRango(filasFeriados, desdeDeLosFeriados(desde), hasta);
   const rango = { desde, hasta, feriados };
@@ -341,7 +369,8 @@ export const listarEventos = (req, res) => responder(res, 'Error al obtener los 
     ...items,
     companeros_por_dia: companerosPorDia(items.ausentes),
     frase_del_mes: mes === null ? null : fraseDelMes({ mes, ...items }),
-    ...dato
+    ...dato,
+    dato_quincena_votacion: votacion
   });
 });
 

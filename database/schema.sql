@@ -1108,3 +1108,50 @@ CREATE TABLE `dato_quincena_principal_equipo` (
   CONSTRAINT `fk_dato_quincena_principal_equipo_usuario` FOREIGN KEY (`elegida_por`)
     REFERENCES `usuarios` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- La votación de la principal del equipo (database/updates/migracion-dato-quincena-votacion.sql): quiénes pueden votar, una fila por
+-- edición que se vota (su existencia dice que se vota), las personas que votaban en cada una (congeladas al crearla) y sus votos.
+-- Lo archivado no cambia. Borrar una edición (SQL a mano) borra su votación, sus personas y, en cascada, sus votos
+-- =====================================================
+CREATE TABLE `dato_quincena_votantes` (
+  `usuario_id` int(11) NOT NULL,
+  `agregado_por` int(11) DEFAULT NULL,
+  `agregado_at` datetime NOT NULL,
+  PRIMARY KEY (`usuario_id`),
+  KEY `fk_dato_quincena_votantes_agregado_por` (`agregado_por`),
+  CONSTRAINT `fk_dato_quincena_votantes_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_dato_quincena_votantes_agregado_por` FOREIGN KEY (`agregado_por`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `dato_quincena_votaciones` (
+  `edicion_id` int(11) NOT NULL,
+  `creada_at` datetime NOT NULL,
+  `cierre_at` datetime DEFAULT NULL,
+  `sellada_at` datetime DEFAULT NULL,
+  `aviso` enum('enviado','parcial','fallido','apagado','no_corresponde') DEFAULT NULL,
+  `aviso_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`edicion_id`),
+  CONSTRAINT `fk_dato_quincena_votaciones_edicion` FOREIGN KEY (`edicion_id`) REFERENCES `dato_quincena_ediciones` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `dato_quincena_votacion_personas` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `edicion_id` int(11) NOT NULL,
+  `usuario_id` int(11) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_dato_quincena_votacion_persona` (`edicion_id`, `usuario_id`),
+  KEY `fk_dato_quincena_votacion_personas_usuario` (`usuario_id`),
+  CONSTRAINT `fk_dato_quincena_votacion_personas_votacion` FOREIGN KEY (`edicion_id`) REFERENCES `dato_quincena_votaciones` (`edicion_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_dato_quincena_votacion_personas_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `dato_quincena_votos` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `persona_id` int(11) NOT NULL,
+  `orden` varchar(40) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `votado_at` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `fk_dato_quincena_votos_persona` (`persona_id`),
+  CONSTRAINT `fk_dato_quincena_votos_persona` FOREIGN KEY (`persona_id`) REFERENCES `dato_quincena_votacion_personas` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

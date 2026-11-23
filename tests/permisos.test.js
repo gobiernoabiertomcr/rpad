@@ -13,16 +13,19 @@ const SIN_FOTO_DEL_ANIO = 'Todavía no hay foto de ese año: se saca el 10/01 de
 
 // El aviso diario de la agenda viaja en /cron/cambios-pendientes: este archivo usa la base del .env, así que corre con su candado tomado en otra
 // conexión: termina «ocupado», sin escribir ni mandar nada (spec 2026-11-04-agenda-aviso-y-dependencia, 6). El correo del dato de la
-// quincena viaja en la misma corrida: su candado, en la misma conexión (spec 2026-11-12-dato-quincena-correo, 8)
+// quincena viaja en la misma corrida: su candado, en la misma conexión (spec 2026-11-12-dato-quincena-correo, 8), y el del sellado de la
+// votación de la principal del equipo, también (spec 2026-11-23-dato-quincena-principal-votacion, 6)
 let conexionDelDiario;
 before(async () => {
   conexionDelDiario = await db().getConnection();
   await conexionDelDiario.query("SELECT GET_LOCK('rpad_mi_espacio_diario', 10)");
   await conexionDelDiario.query("SELECT GET_LOCK('rpad_dato_quincena_correo', 10)");
+  await conexionDelDiario.query("SELECT GET_LOCK('rpad_dato_quincena_votacion', 10)");
 });
 after(async () => {
   await conexionDelDiario?.query("SELECT RELEASE_LOCK('rpad_mi_espacio_diario')");
   await conexionDelDiario?.query("SELECT RELEASE_LOCK('rpad_dato_quincena_correo')");
+  await conexionDelDiario?.query("SELECT RELEASE_LOCK('rpad_dato_quincena_votacion')");
   conexionDelDiario?.release();
 });
 
@@ -516,6 +519,30 @@ describe('el correo del dato de la quincena', () => {
       });
     }
   }
+});
+
+// El voto de la principal del equipo (spec 2026-11-23-dato-quincena-principal-votacion, 3): cualquier rol con sesión llega al
+// controlador, porque el permiso es estar en la foto de la edición y no el rol. El id 999999, que no tiene que existir, da el 404
+// antes de mirar el cuerpo o escribir (este archivo usa la base del .env)
+const RUTAS_DEL_VOTO_DEL_DATO = [['PUT', '/dato-quincena/ediciones/999999/voto', 404, 'No existe esa edición.']];
+describe('el voto del dato de la quincena', () => {
+  for (const clave of ['lector', 'colaborador', 'adminA', 'editor', 'superadmin']) {
+    for (const [metodo, ruta, status, error] of RUTAS_DEL_VOTO_DEL_DATO) {
+      it(`el ${clave} llega al controlador en ${metodo} ${ruta}`, async () => {
+        const res = await pedir(metodo, ruta, usuarios[clave].token);
+        assert.equal(res.status, status, JSON.stringify(res.body));
+        assert.deepEqual(res.body, { success: false, error });
+      });
+    }
+  }
+
+  it('sin sesión, 401', async () => {
+    for (const [metodo, ruta] of RUTAS_DEL_VOTO_DEL_DATO) {
+      const res = await pedir(metodo, ruta, undefined);
+      assert.equal(res.status, 401, ruta);
+      assert.equal(res.body.success, false, ruta);
+    }
+  });
 });
 
 describe('cron', () => {

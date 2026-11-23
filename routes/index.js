@@ -149,6 +149,7 @@ import { recibirEdicion, listar, ver, descargar, elegirPrincipalDelEquipo } from
 import {
   verCorreo, cambiarEnvio, cambiarDestinatarios, verCorreoDeLaEdicion, reenviarEdicion, mandarPruebaDeLaEdicion
 } from '../controllers/datoQuincenaCorreoController.js';
+import { votar } from '../controllers/datoQuincenaVotacionController.js';
 
 const router = Router();
 
@@ -400,9 +401,12 @@ router.put('/dato-quincena/correo/destinatarios', authMiddleware, adminOnly, cam
 router.get('/dato-quincena/ediciones/:id/correo', authMiddleware, adminOnly, verCorreoDeLaEdicion);
 router.post('/dato-quincena/ediciones/:id/reenvios', authMiddleware, adminOnly, reenviarEdicion);
 router.post('/dato-quincena/ediciones/:id/prueba', authMiddleware, adminOnly, mandarPruebaDeLaEdicion);
-// La principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo, 2): la elige administración, como la caja Correo; la
-// edición no cambia (la elección vive en su tabla)
+// La principal del equipo elegida a mano (spec 2026-11-21-dato-quincena-principal-equipo, 2): queda para una pestaña con la página
+// anterior y, desde la votación, contesta 409 sin escribir; sigue siendo de administración
 router.put('/dato-quincena/ediciones/:id/principal-equipo', authMiddleware, adminOnly, elegirPrincipalDelEquipo);
+// La votación de la principal del equipo (spec 2026-11-23-dato-quincena-principal-votacion, 3): cualquier rol con sesión, porque el
+// permiso es estar en la foto de la edición y no el rol
+router.put('/dato-quincena/ediciones/:id/voto', authMiddleware, votar);
 
 // =====================================================
 // Cron (protegido por clave secreta)

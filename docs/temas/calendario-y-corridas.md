@@ -7,6 +7,7 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-10-26-mi-espacio-agenda-design.md`
 - `docs/superpowers/specs/2026-11-04-agenda-aviso-y-dependencia-design.md`
 - `docs/superpowers/specs/2026-11-12-dato-quincena-correo-design.md`
+- `docs/superpowers/specs/2026-11-23-dato-quincena-principal-votacion-design.md` (el sellado de la votación)
 
 ## Archivos
 
@@ -88,6 +89,12 @@ emailService y emailTemplates: `sendEmail`, `remitente` y `marcoEmail`; cada pla
   Tiene su propio candado, `GET_LOCK('rpad_dato_quincena_correo', 0)` (`BLOQUEO_DATO_QUINCENA`, por `conBloqueo` con ese nombre), y su propio registro de la última corrida, que lee Correos → Estado.
   `tests/notificaciones.test.js` y `tests/permisos.test.js`, que llaman a la corrida de las 14:00 sobre la base del `.env`, toman este candado además del del aviso diario.
   Las rutas manuales de administración (`/api/notificaciones/ejecutar` y `/api/notificaciones/cambios-pendientes`) corren también el paso.
+- El sellado de la votación de la principal del equipo es otro paso de las dos corridas, sin Tarea Cron propia y sin frenarlas (`docs/temas/dato-quincena-principal-equipo.md`).
+  Va justo después del correo del dato de la quincena (`votacionDelDatoQuincenaAislada`, que nunca rechaza), con su propio candado, `GET_LOCK('rpad_dato_quincena_votacion', 0)` (`BLOQUEO_VOTACION`).
+  Sella solo un día hábil, con el calendario leído y desde las 14:00 del día del cierre: la de las 14:00 de ese día o, si no pudo, la de las 8:05 del siguiente día hábil; las rutas manuales siguen la misma regla.
+  A las 8:05 su resultado va en `resultados.votacion_dato_quincena` y sus errores a `resultados.errores` con `tipo: 'dato-quincena-votacion'`; a las 14:00, en `data.votacion_dato_quincena`, y sus errores dan 207 también en un día no hábil; `ocupada` no es un error.
+  Un calendario con error no sella nada y no suma un error: el controlador ya informa la caída de los feriados.
+  `tests/notificaciones.test.js` y `tests/permisos.test.js` toman también este candado.
 - Cron cada media hora (`GET /api/cron/eventos`, con `cronAuth`: sin la clave, o con una que no es, 403; spec 2026-10-26-mi-espacio-agenda, 5): los recordatorios de la agenda (`ejecutarRecordatoriosDeEventos` de `controllers/notificacionesController.js`, que llama al servicio del mismo nombre de `services/miEspacioEventosCorrida.js`; qué manda, en `docs/temas/mi-espacio-agenda.md`).
   Una Tarea Cron de cPanel propia, `*/30` todos los días (decisión del usuario:
   «1 hora antes» con una corrida por hora podía avisar con muy poco margen).

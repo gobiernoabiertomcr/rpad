@@ -4,6 +4,7 @@ Los eventos personales y laborales, quién ve qué, los cuatro emails y la corri
 
 Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-10-26-mi-espacio-agenda-design.md`
+- `docs/superpowers/specs/2026-11-23-dato-quincena-principal-votacion-design.md` (votar la principal del dato de la quincena)
 
 ## Archivos
 
@@ -93,7 +94,7 @@ y miEspacioEventosCorrida (la corrida de los recordatorios, con su propio candad
   `{ nombre, desde, hasta, texto, hasta_texto, dias }`, con el nombre corto:
   «Carla no está»; a quien no es administración, [] sin consultar); cada cosa de varios días va entera, con `dias`, sus días hábiles dentro del rango.
   Las filas de los feriados se leen una vez por pedido, y la administración activa (`administracionActiva`), también, en el mismo `Promise.all`.
-  `dato_quincena`, las fechas del mail del dato de la quincena que caen en el rango, las mismas para todos los roles (`datoQuincenaEnMiEspacio`, con la serie de la pestaña Correo: `docs/temas/dato-quincena-correo.md`), y `dato_quincena_activo`, si el envío automático está prendido; `frase_del_mes` no las cuenta.
+  `dato_quincena`, las fechas del mail del dato de la quincena que caen en el rango, las mismas para todos los roles (`datoQuincenaEnMiEspacio`, con la serie de la pestaña Envío y votación: `docs/temas/dato-quincena-correo.md`), y `dato_quincena_activo`, si el envío automático está prendido; `frase_del_mes` no las cuenta.
   El calendario sale de esas mismas filas de feriados (`calendarioCon`), y el interruptor (`leerConfig`) y la última regular con su correo (`ultimaRegularConSuCorreo`) se leen aislados (`datoQuincenaDelListado`): si la lectura o el armado fallan, `[]` y `false`, el error a la consola, y la agenda responde igual.
   Decisión: las reglas del correo se importan en el controlador, no en `miEspacioEventosReglas.js`, porque `datoQuincenaCorreoReglas.js` importa `emailTemplates.js`, que importa las reglas de eventos, y se cerraría un ciclo.
   Además:
@@ -117,6 +118,15 @@ y miEspacioEventosCorrida (la corrida de los recordatorios, con su propio candad
 - Decisiones del usuario del 27/10/2026: 1) **sin modalidad cargada, la agenda funciona igual**: la pestaña y «Nuevo evento» se ven siempre, aunque «Cargar licencia» y «Cargar horas extras» estén ocultos, y el Resumen sin modalidad muestra solo el mensaje, sin «Hoy y mañana»; 2) la descripción de la página (`<meta name="description">`) es «Tus licencias, tus horas extras, tu agenda y lo que te queda»;
   3) la leyenda del mes no muestra «Compañeros que no están» a quien no los ve (el lector y el colaborador;
   `#ag-leyenda-ausentes`, que se prende con `ve_companeros`); tampoco muestra «El dato de la quincena» (`#ag-leyenda-dato`) con el envío apagado (`dato_quincena_activo`); las demás se ven (son ocho en total: ver `docs/temas/mi-espacio-evento-publico.md`); 4) la nota del email de vencimiento («Lo que cargás en Mi espacio lo ves solo vos.») no cambia: habla de licencias; 5) la agenda no toca la corrida de la mañana: su texto de Correos → Estado («No se pudieron enviar los avisos de Mi espacio: el email salió, pero no se pudo anotar») no se cambia.
+- Votar la principal del dato de la quincena (`docs/temas/dato-quincena-principal-equipo.md`): el día del cierre, quien está en la foto de una votación abierta y todavía no votó ve un ítem «Votá la principal del dato de la quincena».
+  Es de cada persona, así que va aparte del chip del dato de la quincena, que es igual para todos y sin enlace.
+  - El servidor lo arma en `GET /api/mi-espacio/eventos` (`votacionDelListado`, aislado: si falla, `[]` y la agenda responde igual), en la clave `dato_quincena_votacion`, después de `dato_quincena_activo`: `[{ fecha, hora, texto, nombre, titulo, detalle, enlace }]`, con «Hasta 12:00» en `hora`, el detalle «Edición del lunes 23/11.» y el enlace `dato-quincena.html?id=N`.
+  - Sin calendario no hay cierre y no hay ítem.
+    Desaparece apenas vota o cuando cierra; no va al aviso diario ni a ningún mail.
+  - La página lo pone después del chip del dato de la quincena y antes de los eventos: en la casilla del día, un enlace «**Hasta 12:00** Votá la principal…»; en el día elegido y en «Próximos», «Hasta 12:00» en la columna de la hora, el título, el detalle y un botón-enlace «Votar».
+  - Un clic en el ítem va a la edición y no abre «Nuevo evento» (`alTocarEventos` deja pasar un `a[href]`).
+  - Cobre, con el ícono `vote` de Lucide (en el teléfono, un punto cuadrado): se distingue por su ícono y su texto, no solo por el color.
+    La leyenda suma su muestra (`#ag-leyenda-voto`), que se ve solo si el mes trae un ítem; sus estilos están en el `<style>` de `mi-espacio.html`.
 - Las tablas, su migración y su vuelta atrás, en `docs/temas/base-de-datos.md`; la corrida, en `docs/temas/calendario-y-corridas.md`; el despliegue, en `docs/temas/despliegue.md`.
 
 ## La página

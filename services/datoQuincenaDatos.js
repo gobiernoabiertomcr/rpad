@@ -7,13 +7,17 @@
  * Las fechas se leen como texto 'AAAA-MM-DD' (DATE_FORMAT: el pool no tiene `dateStrings`) y la llegada como segundos UNIX
  * (UNIX_TIMESTAMP: un TIMESTAMP está en UTC y `NOW()` da UTC en el Docker local y hora argentina en producción).
  * Los bytes de los archivos (`contenido`) solo los lee `leerArchivo`, la descarga: la lista y el detalle nunca los traen.
- * La principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo) vive en su propia tabla, una fila por elección: la leen la
- * lista y el detalle, y la escribe `guardarPrincipalDelEquipo`, sin tocar lo archivado.
+ * La principal del equipo elegida a mano (spec 2026-11-21-dato-quincena-principal-equipo) vive en su propia tabla, una fila por
+ * elección: la leen la lista y el detalle de las ediciones de antes de la votación. Desde la votación nadie la escribe (el PUT de la
+ * elección a mano contesta 409).
+ * La votación (spec 2026-11-23-dato-quincena-principal-votacion, 3): `guardarEdicion` crea la de cada edición en su transacción, y
+ * `listarEdiciones` la lee para todas las de la página (`services/datoQuincenaVotacionDatos.js`).
  */
 import pool from '../config/database.js';
 import { ARCHIVOS, TIPO_DE_DESCARGA, nombreDeLaEdicion } from './datoQuincenaReglas.js';
 import { envioAlLlegar } from './datoQuincenaCorreoReglas.js';
 import { leerConfig, correoDe, enviosDe } from './datoQuincenaCorreoDatos.js';
+import { crearLaVotacion, leerVotaciones } from './datoQuincenaVotacionDatos.js';
 import { ahoraArgentina } from './notasDigitalesCalendario.js';
 
 // Los rpad_id que citan las filas, sin repetir y sin null
@@ -30,6 +34,9 @@ const idsCitados = (filas) => [...new Set(filas.map((fila) => fila.rpad_id).filt
  * programada o no enviada (envioAlLlegar, con el interruptor leído ahí mismo y `hoy`, 'AAAA-MM-DD' en Argentina), con
  * `creada_at` = `ahora` ('AAAA-MM-DD HH:MM:SS', de ahoraArgentina, nunca NOW()). Un piloto no tiene fila. Si esa fila no se
  * puede guardar, no se guarda nada: así no queda una regular que nunca salga. Una repetida o un conflicto no programan nada.
+ * La votación (spec 2026-11-23-dato-quincena-principal-votacion, 3): después del correo, regular o piloto, su fila y la foto de quienes
+ * votan (crearLaVotacion), con la misma hora. Si no se puede guardar, tampoco se guarda la edición; una repetida o un conflicto no la
+ * crean.
  */
 export const guardarEdicion = async ({
   clave, tipo, fecha_edicion, referencia_piloto, titulo, metadataTexto, huella, filas, adjuntos, ahora = ahoraArgentina(),
@@ -85,6 +92,7 @@ export const guardarEdicion = async ({
           [id, envio.estado, envio.motivo ?? null, ahora]
         );
       }
+      await crearLaVotacion(conexion, { edicionId: id, ahora });
       await conexion.commit();
       return { estado: 'creada', id };
     } catch (error) {
@@ -144,6 +152,9 @@ const numeroDeLaFila = (numero) => (numero === null || numero === undefined ? nu
  * Un año sin ediciones da `filas` vacía. Las propuestas, con `IN (?)` solo si hay ediciones.
  * `orden_del_equipo` (spec 2026-11-21-dato-quincena-principal-equipo, 3): el orden de la principal del equipo vigente (la elección
  * de mayor id de la edición), o null si nadie eligió; una sola consulta más, también con `IN (?)`.
+ * `votacion` (spec 2026-11-23-dato-quincena-principal-votacion, 3): lo que lee leerVotaciones de esa edición (la votación, su foto y
+ * sus votos), o null en una de antes, sin una consulta por edición. Lo que muestra la lista lo arma el controlador, con el calendario y
+ * quien mira.
  */
 export const listarEdiciones = async (anio) => {
   const [anios] = await pool.query(
@@ -189,6 +200,7 @@ export const listarEdiciones = async (anio) => {
     [ids]
   );
   const delEquipo = new Map(elecciones.map((eleccion) => [Number(eleccion.edicion_id), Number(eleccion.orden)]));
+  const votaciones = await leerVotaciones(ids);
   const porEdicion = new Map(ids.map((id) => [id, []]));
   for (const propuesta of propuestas) {
     porEdicion.get(Number(propuesta.edicion_id))?.push({
@@ -210,6 +222,7 @@ export const listarEdiciones = async (anio) => {
       numero: numeroDeLaFila(edicion.numero),
       propuestas: porEdicion.get(Number(edicion.id)),
       orden_del_equipo: delEquipo.get(Number(edicion.id)) ?? null,
+      votacion: votaciones.get(Number(edicion.id)) ?? null,
       correo_del_bot: { estado: edicion.correo_estado ?? null, enviado_at: edicion.correo_enviado_at ?? null }
     }))
   };
@@ -352,62 +365,4 @@ export const leerPrincipalDelEquipo = async (edicionId) => {
     [edicionId]
   );
   return fila ? { orden: Number(fila.orden), nombre: fila.nombre ?? null, elegida_at: fila.elegida_at } : null;
-};
-
-/**
- * Guarda la principal del equipo de una edición (spec 2026-11-21-dato-quincena-principal-equipo, 2), en una transacción con la fila
- * de la edición bloqueada (FOR UPDATE): dos elecciones a la vez de la misma edición esperan una a la otra, así no se cruzan, gana la
- * última y la misma no se repite. Las demás lecturas van sin candado, a propósito: con LOCK IN SHARE MODE, dos elecciones de
- * ediciones distintas tomaban el mismo hueco del índice (edicion_id, orden) y el INSERT de cada una esperaba al otro (un deadlock y
- * un 500). El FOR UPDATE ya ordena las de la misma edición, y la FK del INSERT toma sola el candado de la propuesta.
- * `orden` es el de ordenDeLaEleccion (null si el cuerpo no trae un número que sirva). Si la edición no existe, `existe` false; si
- * el orden no es el de una de sus propuestas, `valida` false; si ya es el de la vigente (la de mayor id), no escribe nada; si no,
- * inserta una fila con quién (`usuarioId`) y cuándo (`ahora`, 'AAAA-MM-DD HH:MM:SS' de ahoraArgentina, nunca NOW()). Nunca un
- * UPDATE ni un DELETE: lo archivado no cambia. `coincide`: si el orden es el de la principal de Datito (la columna principal o, si
- * ninguna, la primera). Resuelve `{ existe, valida, cambio, coincide }`; un error de la base, tira. La conexión se devuelve
- * siempre.
- */
-export const guardarPrincipalDelEquipo = async ({ edicionId, orden, usuarioId, ahora = ahoraArgentina() }) => {
-  const sinGuardar = (existe) => ({ existe, valida: false, cambio: false, coincide: false });
-  const conexion = await pool.getConnection();
-  try {
-    await conexion.beginTransaction();
-    try {
-      const [[edicion]] = await conexion.execute('SELECT id FROM dato_quincena_ediciones WHERE id = ? FOR UPDATE', [edicionId]);
-      if (!edicion) {
-        await conexion.rollback();
-        return sinGuardar(false);
-      }
-      const [propuestas] = await conexion.execute(
-        'SELECT orden, principal FROM dato_quincena_propuestas WHERE edicion_id = ? ORDER BY orden', [edicionId]
-      );
-      const enOrden = propuestas.map((propuesta) => ({ orden: Number(propuesta.orden), principal: Number(propuesta.principal) === 1 }));
-      if (orden === null || !enOrden.some((propuesta) => propuesta.orden === orden)) {
-        await conexion.rollback();
-        return sinGuardar(true);
-      }
-      const deDatito = enOrden.find((propuesta) => propuesta.principal) ?? enOrden[0];
-      const coincide = deDatito.orden === orden;
-      // Con la edición bloqueada, la vigente es la última que se guardó: un SELECT común la ve, porque la foto de la transacción
-      // nace en su primera lectura sin candado, ya con el bloqueo tomado y lo de la elección anterior confirmado
-      const [[vigente]] = await conexion.execute(
-        'SELECT orden FROM dato_quincena_principal_equipo WHERE edicion_id = ? ORDER BY id DESC LIMIT 1', [edicionId]
-      );
-      if (vigente && Number(vigente.orden) === orden) {
-        await conexion.commit();
-        return { existe: true, valida: true, cambio: false, coincide };
-      }
-      await conexion.execute(
-        'INSERT INTO dato_quincena_principal_equipo (edicion_id, orden, elegida_por, elegida_at) VALUES (?, ?, ?, ?)',
-        [edicionId, orden, usuarioId, ahora]
-      );
-      await conexion.commit();
-      return { existe: true, valida: true, cambio: true, coincide };
-    } catch (error) {
-      await conexion.rollback().catch(() => {});
-      throw error;
-    }
-  } finally {
-    conexion.release();
-  }
 };

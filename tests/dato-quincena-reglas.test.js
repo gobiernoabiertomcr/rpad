@@ -15,9 +15,10 @@ import {
   fechaLarga, marcaDePiloto, horaArgentina, diaArgentino, textoDeLlegada, textoDelCorreo, textoDeCantidad, textoDelResto,
   textoDelNumero, tamanoTexto, fotoDelDataset, textoParaCopiar, borradorParaCopiar, filasDeLaEdicion, avisosDeLaEdicion,
   reciboDe, anioDeLaLista, nombreDeLaEdicion, TIPO_DE_DESCARGA, itemDeLaLista, detalleDeLaEdicion, fechasPrevias, gruposDeLaAgenda,
-  prioridadDeDataset, propuestasDatasetsDelDetalle, matrizDePrioridad, MENSAJES_PRINCIPAL_EQUIPO, mensajeDeLaEleccion, ordenDeLaEleccion
+  prioridadDeDataset, propuestasDatasetsDelDetalle, matrizDePrioridad, MENSAJES_PRINCIPAL_EQUIPO
 } from '../services/datoQuincenaReglas.js';
 import { sumarDias } from '../services/notasDigitalesCalendario.js';
+import { votacionDelDetalle } from '../services/datoQuincenaVotacionReglas.js';
 import { RPAD_URL } from '../services/emailTemplates.js';
 import { envioDelRecibo, lineaDelCorreo, pastillaDelEnvio } from '../services/datoQuincenaCorreoReglas.js';
 import { calendarioCon } from '../services/feriadosReglas.js';
@@ -2672,11 +2673,11 @@ describe('itemDeLaLista', () => {
     const pastilla = { tipo: 'parcial', texto: 'Enviada a 3 de 4' };
     const item = itemDeLaLista(fila, pastilla);
     assert.deepEqual(item.envio, pastilla);
-    assert.equal(Object.keys(item).at(-1), 'envio');
+    assert.deepEqual(Object.keys(item).slice(-2), ['envio', 'votacion']);
     for (const sin of [null, undefined]) {
       const otro = itemDeLaLista(fila, sin);
       assert.equal(otro.envio, null, String(sin));
-      assert.equal(Object.keys(otro).at(-1), 'envio');
+      assert.deepEqual(Object.keys(otro).slice(-2), ['envio', 'votacion']);
     }
     assert.equal(itemDeLaLista(fila).envio, null);
   });
@@ -2727,7 +2728,8 @@ describe('itemDeLaLista', () => {
       numero: null,
       fecha_partes: { dia: 'Lunes', fecha: '23 de noviembre', anio: 'de 2026' },
       cantidad: '5 propuestas',
-      envio: null
+      envio: null,
+      votacion: null
     });
   });
 
@@ -2784,10 +2786,30 @@ describe('itemDeLaLista', () => {
     assert.equal(vacia.resto, null);
   });
 
+  // spec 2026-11-23-dato-quincena-principal-votacion, 3: con la votación manda ella; `votacion` va al final
+  it('votación abierta: la de Datito con su rótulo, aunque haya una elección a mano; la lista de la tarjeta, tal cual', () => {
+    const fila = filaDeLaLista(14, 'regular', '2026-11-16', null, ['Dataset A', 'Dataset B', 'Dataset C'], 2);
+    const de_la_lista = { texto: 'Se vota hasta el mar 24/11 a las 12:00', falta_tu_voto: true };
+    const item = itemDeLaLista({ ...fila, orden_del_equipo: 1, votacion: { abierta: true, orden_ganadora: null, de_la_lista } });
+    assert.deepEqual(item.principal, itemDeLaLista(fila).principal);
+    assert.equal(item.principal.rotulo, 'Principal de Datito');
+    assert.deepEqual(item.votacion, de_la_lista);
+    assert.equal(Object.keys(item).at(-1), 'votacion');
+  });
+
+  it('votación cerrada: la ganadora con «Principal del equipo»; sin votacion, null', () => {
+    const fila = filaDeLaLista(14, 'regular', '2026-11-16', null, ['Dataset A', 'Dataset B', 'Dataset C'], 2);
+    const item = itemDeLaLista({ ...fila, votacion: { abierta: false, orden_ganadora: 2, de_la_lista: null } });
+    assert.deepEqual(item.principal, { titulo: 'Otro título 2', cifra_clave: '2 casos', rotulo: 'Principal del equipo' });
+    assert.equal(item.resto, 'Y 2 propuestas más: Dataset A y Dataset C.');
+    assert.equal(item.votacion, null);
+    assert.equal(itemDeLaLista(fila).votacion, null);
+  });
+
   it('sin propuestas (solo con un SQL a mano), principal y resto null, sin tirar', () => {
     assert.deepEqual(itemDeLaLista(filaDeLaLista(6, 'regular', '2026-11-23', null, [], 2)), {
       id: 6, fecha_texto: 'Lunes 23 de noviembre de 2026', marca: null, principal: null, resto: null, numero: 'N.º 2',
-      fecha_partes: { dia: 'Lunes', fecha: '23 de noviembre', anio: 'de 2026' }, cantidad: '0 propuestas', envio: null
+      fecha_partes: { dia: 'Lunes', fecha: '23 de noviembre', anio: 'de 2026' }, cantidad: '0 propuestas', envio: null, votacion: null
     });
   });
 
@@ -3103,9 +3125,9 @@ describe('detalleDeLaEdicion', () => {
   ]);
   const adjuntosDe = (edicion) => edicion.adjuntos.map(({ campo, nombre, mime, bytes }) => ({ campo, nombre, mime, bytes }));
   const detalle = ({
-    fila = filaDePrueba(), edicion = JSON.parse(fila.metadata), guardadas = GUARDADAS, adjuntos, linea, previas, eleccion
+    fila = filaDePrueba(), edicion = JSON.parse(fila.metadata), guardadas = GUARDADAS, adjuntos, linea, previas, eleccion, votacion
   } = {}) => detalleDeLaEdicion({
-    fila, edicion, guardadas, adjuntos: adjuntos ?? adjuntosDe(edicion), lineaDelCorreo: linea, previas, eleccion
+    fila, edicion, guardadas, adjuntos: adjuntos ?? adjuntosDe(edicion), lineaDelCorreo: linea, previas, eleccion, votacion
   });
 
   // La línea del correo de la edición de prueba (spec 2026-11-12-dato-quincena-correo, 6), la que arma el controlador: archivada
@@ -3142,7 +3164,7 @@ describe('detalleDeLaEdicion', () => {
 
   it('las dos principales van al final, después de archivos, y lo demás no cambia con la elección', () => {
     const sinElegir = detalle({ linea: lineaDePrueba() });
-    assert.deepEqual(Object.keys(sinElegir).slice(-3), ['archivos', 'principal_datito', 'principal_equipo']);
+    assert.deepEqual(Object.keys(sinElegir).slice(-4), ['archivos', 'principal_datito', 'principal_equipo', 'votacion']);
     for (const orden of [1, 2]) {
       const { principal_equipo: delEquipo, ...elResto } = detalle({ linea: lineaDePrueba(), eleccion: { ...ELECCION, orden } });
       const { principal_equipo: sinEquipo, ...elRestoSinElegir } = sinElegir;
@@ -3152,6 +3174,68 @@ describe('detalleDeLaEdicion', () => {
     }
     // Las propuestas siguen con la principal de Datito y sus etiquetas
     assert.deepEqual(sinElegir.propuestas.map((p) => [p.principal, p.etiquetas]), [[true, ['Principal', 'Validar']], [false, ['Agenda']]]);
+  });
+
+  // spec 2026-11-23-dato-quincena-principal-votacion, 3: con la votación (la salida de votacionDelDetalle, ya armada), la clave
+  // `votacion` va al final y `principal_equipo` sale de ella, no de la elección a mano
+  const votacionDePrueba = (estado, votos, quienMira = 901) => votacionDelDetalle({
+    propuestas: [{ orden: 1, titulo: 'Un título inventado' }, { orden: 2, titulo: 'Otro título inventado' }], deDatito: 1,
+    estado: { abierta: estado === 'abierta', cierre: '2026-11-03 12:00', sin_calendario: false },
+    personas: [
+      { persona_id: 1, usuario_id: 901, nombre: 'Persona Uno' }, { persona_id: 2, usuario_id: 902, nombre: 'Persona Dos' },
+      { persona_id: 3, usuario_id: 903, nombre: 'Persona Tres' }
+    ],
+    votos: votos.map(([persona_id, orden], i) => ({ id: i + 1, persona_id, orden: orden.join(','), votado_at: '2026-11-03 09:00:00' })),
+    quienMira
+  });
+  const CASOS_DE_LA_VOTACION = [
+    ['detalle_votacion_abierta', 'abierta', [[2, [1, 2]]]],
+    ['detalle_votacion_abierta_con_voto', 'abierta', [[1, [2, 1]], [2, [1, 2]]]],
+    ['detalle_votacion_cerrada_puntos', 'cerrada', [[1, [2, 1]], [2, [2, 1]], [3, [1, 2]]]],
+    ['detalle_votacion_cerrada_desempate', 'cerrada', [[1, [2, 1]], [2, [1, 2]]]],
+    ['detalle_votacion_cerrada_nadie', 'cerrada', []]
+  ];
+
+  for (const [clave, estado, votos] of CASOS_DE_LA_VOTACION) {
+    it(`con la votación (${clave}): el detalle de las respuestas de la página, entero y con las claves en su orden`, () => {
+      const d = detalle({ linea: lineaDePrueba(), votacion: votacionDePrueba(estado, votos) });
+      assert.deepEqual(d, RESPUESTAS[clave].data);
+      assert.deepEqual(ordenDeLasClaves(d), ordenDeLasClaves(RESPUESTAS[clave].data));
+      assert.equal(RESPUESTAS[clave].success, true);
+      assert.equal(Object.keys(d).at(-1), 'votacion');
+    });
+  }
+
+  it('con la votación, la elección a mano no cuenta; sin ella (null o sin la clave), como antes y votacion null', () => {
+    const conVotacion = detalle({ eleccion: { ...ELECCION, orden: 2 }, votacion: votacionDePrueba('abierta', []) });
+    assert.equal(conVotacion.principal_equipo.orden, null);
+    assert.equal(conVotacion.principal_equipo.quien, null);
+    for (const votacion of [undefined, null]) {
+      const d = detalle({ eleccion: { ...ELECCION, orden: 2 }, votacion });
+      assert.equal(d.principal_equipo.orden, 2);
+      assert.equal(d.votacion, null);
+    }
+  });
+
+  it('abierta: sin principal todavía, el resumen de la votación y sin cifra ni quién; cerrada: la ganadora sin quién', () => {
+    assert.deepEqual(detalle({ votacion: votacionDePrueba('abierta', []) }).principal_equipo, {
+      orden: null, coincide: false, rotulo: 'Principal del equipo', pastilla: 'Principal del equipo', marca: 'Equipo',
+      resumen: 'se vota hasta el martes 03/11 a las 12:00.', cifra_clave: null, quien: null
+    });
+    const otra = detalle({ votacion: votacionDePrueba('cerrada', [[1, [2, 1]]]) }).principal_equipo;
+    assert.deepEqual([otra.orden, otra.coincide, otra.resumen, otra.cifra_clave, otra.quien],
+      [2, false, 'Propuesta 2 · Otro título inventado', '56 casos · septiembre de 2026', null]);
+    const misma = detalle({ votacion: votacionDePrueba('cerrada', []) }).principal_equipo;
+    assert.deepEqual([misma.orden, misma.coincide, misma.resumen, misma.cifra_clave, misma.quien],
+      [1, true, 'la misma de Datito (propuesta 1).', null, null]);
+  });
+
+  it('sin calendario (abierta, sin cierre): «se está votando.»', () => {
+    const votacion = votacionDelDetalle({
+      propuestas: [{ orden: 1, titulo: 'A' }, { orden: 2, titulo: 'B' }], deDatito: 1,
+      estado: { abierta: true, cierre: null, sin_calendario: true }, personas: [], votos: [], quienMira: 901
+    });
+    assert.equal(detalle({ votacion }).principal_equipo.resumen, 'se está votando.');
   });
 
   it('sin elegir (sin eleccion o con null): «todavía no la eligió.», sin cifra ni quién', () => {
@@ -3631,7 +3715,7 @@ describe('detalleDeLaEdicion', () => {
     for (const d of [detalle(), detalleConRepeticion(), piloto, detalleConDatasets([]), detalleConDatasets(propuestasDatasetsDePrueba())]) {
       const claves = Object.keys(d);
       assert.deepEqual(claves.slice(claves.indexOf('propuestas_datasets')),
-        ['propuestas_datasets', ...CLAVES_DE_LAS_PESTANAS, 'archivos', 'principal_datito', 'principal_equipo']);
+        ['propuestas_datasets', ...CLAVES_DE_LAS_PESTANAS, 'archivos', 'principal_datito', 'principal_equipo', 'votacion']);
       assert.deepEqual(Object.keys(d.cantidades), ['propuestas', 'datasets_nuevos']);
     }
   });
@@ -3726,40 +3810,11 @@ describe('detalleDeLaEdicion', () => {
   });
 });
 
-// La principal del equipo (spec 2026-11-21-dato-quincena-principal-equipo, 2): los textos del PUT al pie de la letra y qué orden vale
-describe('la elección de la principal del equipo', () => {
-  it('los mensajes fijos: el orden que no sirve (400) y el 500', () => {
-    assert.deepEqual({ ...MENSAJES_PRINCIPAL_EQUIPO }, {
-      orden: 'Elegí una de las propuestas de la edición.',
-      alGuardar: 'Error al guardar la principal del equipo'
-    });
+// El 500 del PUT de la principal del equipo
+describe('el texto fijo de la principal del equipo', () => {
+  it('el 500 no usa las palabras que el sistema evita', () => {
+    assert.deepEqual({ ...MENSAJES_PRINCIPAL_EQUIPO }, { alGuardar: 'Error al guardar la principal del equipo' });
     assert.ok(Object.isFrozen(MENSAJES_PRINCIPAL_EQUIPO));
-  });
-
-  it('los cuatro textos de la respuesta: quedó o ya era, la de Datito o la propuesta N', () => {
-    assert.equal(mensajeDeLaEleccion({ orden: 1, coincide: true, cambio: true }), 'Quedó la de Datito como principal del equipo.');
-    assert.equal(mensajeDeLaEleccion({ orden: 2, coincide: false, cambio: true }), 'Quedó la propuesta 2 como principal del equipo.');
-    assert.equal(mensajeDeLaEleccion({ orden: 1, coincide: true, cambio: false }), 'La de Datito ya era la principal del equipo.');
-    assert.equal(mensajeDeLaEleccion({ orden: 5, coincide: false, cambio: false }), 'La propuesta 5 ya era la principal del equipo.');
-    // La de Datito no dice su número: puede ser cualquiera
-    assert.equal(mensajeDeLaEleccion({ orden: 3, coincide: true, cambio: true }), 'Quedó la de Datito como principal del equipo.');
-  });
-
-  it('los textos nombran al bot con NOMBRE_DEL_BOT y no usan las palabras que el sistema evita', () => {
-    for (const cambio of [true, false]) {
-      assert.ok(mensajeDeLaEleccion({ orden: 1, coincide: true, cambio }).includes(NOMBRE_DEL_BOT));
-      for (const coincide of [true, false]) {
-        assert.doesNotMatch(mensajeDeLaEleccion({ orden: 1, coincide, cambio }), PALABRAS_EVITADAS);
-      }
-    }
     for (const mensaje of Object.values(MENSAJES_PRINCIPAL_EQUIPO)) assert.doesNotMatch(mensaje, PALABRAS_EVITADAS);
-  });
-
-  it('el orden: un número entero de 1 a 255 (el de una propuesta guardada); otra cosa, null', () => {
-    for (const orden of [1, 2, 5, 255]) assert.equal(ordenDeLaEleccion(orden), orden);
-    for (const valor of ['2', '1', 0, -1, 1.5, 256, 300, NaN, Infinity, null, undefined, true, [2], { orden: 2 }, 2n,
-      Number.MAX_SAFE_INTEGER + 1]) {
-      assert.equal(ordenDeLaEleccion(valor), null, String(valor));
-    }
   });
 });
