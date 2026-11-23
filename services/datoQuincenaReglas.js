@@ -952,7 +952,7 @@ export const textoParaCopiar = (propuesta) => {
     ...(notas.length > 0 ? [bloqueConGuiones('Para validar antes de publicar', notas)] : []),
     `Cómo se calculó\n${propuesta.calculo}`,
     `Contexto histórico\n${propuesta.contexto_historico}`,
-    `Por qué hoy\n${propuesta.por_que_hoy}`,
+    `Por qué es noticia\n${propuesta.por_que_hoy}`,
     `Ángulo\n${propuesta.angulo}`,
     `Idea de placa\n${propuesta.idea_placa}`,
     `Texto para redes\n${propuesta.texto_redes}`,

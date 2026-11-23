@@ -7,6 +7,8 @@
 // El mail cambió a propósito en dos lugares (spec 2026-11-21-dato-quincena-principal-equipo, 5): la frase de la principal, después
 // de la bajada, y el recuadro con el botón al RPAD, después de la fila del saludo. Lo esperado es el fixture con exactamente esas
 // dos inserciones, en el HTML y en el texto, cada una en un ancla que aparece una sola vez: el resto sigue igual byte por byte.
+// Y el rótulo de `por_que_hoy` (spec 2026-11-23-dato-quincena-detalle-visual): «Por qué hoy» dice «Por qué es noticia», una vez por
+// propuesta, en el HTML y en el texto.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
@@ -61,6 +63,15 @@ const RECUADRO_HTML = `
           </tr>`;
 const RECUADRO_TEXTO = `Esta edición se lee mejor en el RPAD: ${URL_DE_PRUEBA}\n\n`;
 
+// El rótulo de `por_que_hoy` (spec 2026-11-23-dato-quincena-detalle-visual): una vez por propuesta (el fixture tiene dos), en el
+// HTML y en el texto
+const ROTULO_ANTES = 'Por qué hoy';
+const ROTULO = 'Por qué es noticia';
+const conElRotulo = (texto) => {
+  assert.equal(texto.split(ROTULO_ANTES).length - 1, 2, 'el rótulo de antes, una vez por propuesta');
+  return texto.split(ROTULO_ANTES).join(ROTULO);
+};
+
 // Lo esperado: el fixture con una inserción justo después (o justo antes) de un ancla que aparece una sola vez en él
 const unaVez = (texto, ancla) => assert.equal(texto.split(ancla).length - 1, 1, `el ancla aparece una sola vez: ${JSON.stringify(ancla)}`);
 const despuesDe = (texto, ancla, insercion) => {
@@ -74,14 +85,14 @@ const antesDe = (texto, ancla, insercion) => {
 
 // El mail del fixture con la frase y el recuadro. El HTML: la frase, después de la bajada; el recuadro, después de la fila del
 // saludo (`saludo`: «Buen día, Persona.» o, en la prueba, «Buen día.»). El texto: la frase, en el bloque del título, debajo de
-// la bajada; el recuadro, en su bloque, después del del título (justo antes del pie de la infografía)
+// la bajada; el recuadro, en su bloque, después del del título (justo antes del pie de la infografía). Y el rótulo nuevo
 const conLaPrincipal = ({ subject, html, text }, saludo) => ({
   subject,
-  html: despuesDe(despuesDe(html, 'ni publicadas.</p>', FRASE_HTML), `${saludo}</p>\n            </td>\n          </tr>`, RECUADRO_HTML),
-  text: antesDe(despuesDe(text, 'ni publicadas.\n', `${FRASE}\n`), 'La infografía de la propuesta principal.', RECUADRO_TEXTO)
+  html: conElRotulo(despuesDe(despuesDe(html, 'ni publicadas.</p>', FRASE_HTML), `${saludo}</p>\n            </td>\n          </tr>`, RECUADRO_HTML)),
+  text: conElRotulo(antesDe(despuesDe(text, 'ni publicadas.\n', `${FRASE}\n`), 'La infografía de la propuesta principal.', RECUADRO_TEXTO))
 });
 
-describe('el resguardo del 24/11: una edición sin propuestas_datasets da lo mismo que en 8784663, con la frase y el recuadro', () => {
+describe('el resguardo del 24/11: una edición sin propuestas_datasets da lo mismo que en 8784663, con la frase, el recuadro y el rótulo', () => {
   it('el mail de la edición: asunto, HTML y texto', () => {
     const esperado = conLaPrincipal(RESGUARDO.mail, 'Buen día, Persona.');
     const { subject, html, text } = datoQuincenaTemplate(modelo(), { conSvg: true });
@@ -105,6 +116,9 @@ describe('el resguardo del 24/11: una edición sin propuestas_datasets da lo mis
     for (const [nombre, mail] of [['html', html], ['text', text]]) {
       assert.equal(mail.split(FRASE).length - 1, 1, `la frase, una vez en ${nombre}`);
       assert.equal(mail.split(RECUADRO).length - 1, 1, `el recuadro, una vez en ${nombre}`);
+      // El rótulo de `por_que_hoy`, el nuevo una vez por propuesta y el de antes, ninguna
+      assert.equal(mail.split(ROTULO).length - 1, 2, `el rótulo nuevo, una vez por propuesta en ${nombre}`);
+      assert.equal(mail.split(ROTULO_ANTES).length - 1, 0, `el rótulo de antes, en ninguna parte de ${nombre}`);
     }
     assert.ok(html.includes(`ni publicadas.</p>${FRASE_HTML}`));
     const lugares = ['Buen día, Persona.', RECUADRO, 'src="cid:infografia-dato-quincena"'].map((parte) => html.indexOf(parte));
@@ -113,14 +127,15 @@ describe('el resguardo del 24/11: una edición sin propuestas_datasets da lo mis
       + 'La infografía de la propuesta principal.'));
   });
 
-  it('sin la frase ni el recuadro en el modelo, el mail es el de 8784663 byte por byte', () => {
+  it('sin la frase ni el recuadro en el modelo, el mail es el de 8784663 byte por byte, con el rótulo nuevo', () => {
     for (const [caso, cambios, opciones] of [
       ['mail', {}, { conSvg: true }], ['mail_prueba', { prueba: true, nombreCompleto: null }, { conSvg: false }]
     ]) {
       const sinLaPrincipal = modelo(cambios);
       delete sinLaPrincipal.aclaracion;
       delete sinLaPrincipal.recuadro;
-      assert.deepEqual(datoQuincenaTemplate(sinLaPrincipal, opciones), RESGUARDO[caso], caso);
+      const { subject, html, text } = RESGUARDO[caso];
+      assert.deepEqual(datoQuincenaTemplate(sinLaPrincipal, opciones), { subject, html: conElRotulo(html), text: conElRotulo(text) }, caso);
     }
   });
 });

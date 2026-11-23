@@ -62,6 +62,8 @@ const TEXTOS_DEL_ESTADO = Object.freeze({
   noExiste: 'No existe esa edición.'
 });
 const TEXTO_TODAS_LAS_EDICIONES = 'Todas las ediciones';
+// El rótulo de la ficha de la cifra clave (spec 2026-11-23-dato-quincena-detalle-visual): un texto fijo de la página, como «Ángulo»
+const TEXTO_CIFRA_CLAVE = 'La cifra clave';
 
 // Las pestañas de una edición (spec 2026-11-18-dato-quincena-detalle-pestanas, 1 y 2): su clave, la de &vista=, y su texto.
 // «Datasets nuevos» solo va si la edición trae la clave propuestas_datasets
@@ -390,6 +392,11 @@ const htmlDeCopiar = (texto, nombre, { rotulo = 'Copiar', clase } = {}) => `<but
 const htmlDeCampo = (titulo, contenido) => `<div class="dq-campo"><div class="dq-campo-cabeza"><h5>${titulo}</h5></div>${contenido}</div>`;
 // Un texto del servidor, con sus saltos de línea (los muestra white-space: pre-line)
 const htmlDeTexto = (texto) => `<p class="dq-texto">${esc(texto)}</p>`;
+// La cifra clave en su ficha (spec 2026-11-23-dato-quincena-detalle-visual), distinta del título: el rótulo fijo y el texto del servidor.
+// `clase` es siempre un literal de la página: «dq-cifra» en la propuesta y «dq-principal-cifra» en General
+function htmlDeLaCifra(texto, clase) {
+  return `<div class="${clase}"><p class="dq-cifra-rotulo">${TEXTO_CIFRA_CLAVE}</p><p class="dq-cifra-texto">${esc(texto)}</p></div>`;
+}
 
 // El dataset de una propuesta: el nombre, con enlace a su página solo con id_enlace, y «en el portal», con enlace solo si es https://
 function partesDelDataset(dataset) {
@@ -419,9 +426,9 @@ function htmlDelPaso(vecina, sentido) {
 
 /**
  * La propuesta que se ve en Propuestas (spec 2026-11-18-dato-quincena-detalle-pestanas, 4), en un <article> nombrado por su título:
- * arriba, el número, las etiquetas, el título (h3, el que recibe el foco al elegirla) y la cifra; el dataset (con enlace a su página
+ * arriba, el número, las etiquetas, el título (h3, el que recibe el foco al elegirla) y la cifra en su ficha; el dataset (con enlace a su página
  * solo con id_enlace, y «en el portal» siempre, con enlace si es https://) y la foto del RPAD en una tira; la repetición, si hay, y
- * «Para validar antes de publicar», siempre a la vista. En dos columnas, «Por qué hoy», «Ángulo» y «Puntos centrales» | «Texto para
+ * «Para validar antes de publicar», siempre a la vista. En dos columnas, «Por qué es noticia», «Ángulo» y «Puntos centrales» | «Texto para
  * redes» con su «Copiar»; a lo ancho, el borrador con su «Copiar» y la idea de placa; plegados, el cálculo, el contexto y las fuentes;
  * al pie, «Copiar la propuesta» y `anterior` y `siguiente` (las vecinas, o null).
  * `principales` son las de principalesDeLaEdicion: arriba, la pastilla del equipo (si es la suya) y la de Datito en su etiqueta
@@ -459,12 +466,12 @@ function htmlDePropuesta(propuesta, { anterior = null, siguiente = null, admin =
   return '<article class="dq-propuesta" aria-labelledby="dq-propuesta-titulo">'
     + `<div class="dq-prop-arriba"><span class="dq-orden">${esc(p.orden_texto)}</span>${delEquipo}${etiquetas}${accion}</div>`
     + `<h3 class="dq-prop-titulo" id="dq-propuesta-titulo" tabindex="-1">${esc(p.titulo)}</h3>`
-    + `<p class="dq-cifra">${esc(p.cifra_clave)}</p>`
+    + htmlDeLaCifra(p.cifra_clave, 'dq-cifra')
     + `<div class="dq-tira"><p class="dq-dataset"><span class="dq-tira-rotulo">Dataset:</span> ${nombre} · ${portal}</p>${htmlDeLaFoto(p.foto)}</div>`
     + htmlDeLaRepeticion(p.repeticion)
     + validar
     + '<div class="dq-dos"><div class="dq-dos-izq">'
-    + htmlDeCampoDeLaPropuesta('Por qué hoy', htmlDeTexto(p.por_que_hoy))
+    + htmlDeCampoDeLaPropuesta('Por qué es noticia', htmlDeTexto(p.por_que_hoy))
     + htmlDeCampoDeLaPropuesta('Ángulo', htmlDeTexto(p.angulo))
     + htmlDeCampoDeLaPropuesta('Puntos centrales', `<ul>${listaDe(p.puntos_centrales).map((punto) => `<li>${esc(punto)}</li>`).join('')}</ul>`)
     + '</div><div class="dq-redes">'
@@ -758,7 +765,7 @@ const htmlDelPanelDeLaEdicion = (clave, elegida, html) => `<div class="dq-ed-pan
   + `aria-labelledby="dq-tab-${clave}" tabindex="0"${clave === elegida ? '' : ' hidden'}>${html}</div>`;
 
 // La principal de Datito, en General, con el rótulo del servidor («La principal de Datito»): su título, sus etiquetas (sin «Principal»:
-// ya lo dice arriba), su cifra, su dataset y el botón que pasa a Propuestas, con el texto del servidor (ver_propuestas). Debajo, la nota
+// ya lo dice arriba), su cifra en su ficha, su dataset y el botón que pasa a Propuestas, con el texto del servidor (ver_propuestas). Debajo, la nota
 // de Datito (si hay) y el renglón del recibo, que va siempre: es el que se vuelve a dibujar después de un reenvío. Sin propuestas (no
 // llega: el POST pide al menos una), solo eso
 function htmlDeLaPrincipal(detalle, principal, rotulo = PRINCIPAL_DE_ANTES.rotulo) {
@@ -774,7 +781,7 @@ function htmlDeLaPrincipal(detalle, principal, rotulo = PRINCIPAL_DE_ANTES.rotul
   return `<div class="dq-la-principal"><p class="dq-sobre">${esc(rotulo)}</p>`
     + `<h3 class="dq-principal-titulo">${esc(principal.titulo)}</h3>`
     + (etiquetas ? `<p class="dq-principal-etiquetas">${etiquetas}</p>` : '')
-    + `<p class="dq-principal-cifra">${esc(principal.cifra_clave)}</p>`
+    + htmlDeLaCifra(principal.cifra_clave, 'dq-principal-cifra')
     + `<p class="dq-principal-dataset">Dataset: ${nombre} · ${portal}</p>`
     + `<p class="dq-ir"><button type="button" class="dq-btn dq-btn-tinta" data-ir-vista="propuestas">${esc(ver)}</button></p>`
     + `${pie}</div>`;

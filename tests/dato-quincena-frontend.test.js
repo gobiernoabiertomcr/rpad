@@ -711,10 +711,25 @@ describe('dato-quincena.js: el detalle (spec, 10)', () => {
     assert.ok(otra.includes('<span class="dq-etiqueta dq-et-agenda">Agenda</span>'));
     // El título, un h3 que recibe el foco al elegir la propuesta
     assert.ok(principal.includes('<h3 class="dq-prop-titulo" id="dq-propuesta-titulo" tabindex="-1">Un título inventado</h3>'));
-    assert.ok(principal.includes(`<p class="dq-cifra">${esc('1.234 casos · septiembre de 2026')}</p>`));
+    assert.ok(principal.includes(`<div class="dq-cifra"><p class="dq-cifra-rotulo">La cifra clave</p><p class="dq-cifra-texto">${esc('1.234 casos · septiembre de 2026')}</p></div>`));
     // Una etiqueta que no conoce, escapada y sin color
     const rara = ctx.htmlDePropuesta({ ...DETALLE().propuestas[1], etiquetas: [XSS] });
     assert.ok(rara.includes(`<span class="dq-etiqueta">${XSS_ESCAPADO}</span>`));
+  });
+
+  // spec 2026-11-23-dato-quincena-detalle-visual: la cifra clave, en una ficha con su rótulo fijo, distinta del título
+  it('la cifra clave en una ficha con su rótulo, en Propuestas y en General, escapada', () => {
+    assert.equal(constante('TEXTO_CIFRA_CLAVE'), 'La cifra clave');
+    assert.equal(ctx.htmlDeLaCifra(XSS, 'dq-cifra'),
+      `<div class="dq-cifra"><p class="dq-cifra-rotulo">La cifra clave</p><p class="dq-cifra-texto">${XSS_ESCAPADO}</p></div>`);
+    const detalle = conTextos(DETALLE(), XSS);
+    const [propuesta] = propuestasDe(detalle);
+    const general = panelDe(ctx.htmlDelDetalle(detalle), 'general');
+    for (const [nombre, html, clase] of [['Propuestas', propuesta, 'dq-cifra'], ['General', general, 'dq-principal-cifra']]) {
+      assert.equal(cuantas(html, /class="dq-cifra-rotulo"/g), 1, nombre);
+      assert.ok(html.includes(`<div class="${clase}"><p class="dq-cifra-rotulo">La cifra clave</p><p class="dq-cifra-texto">${XSS_ESCAPADO}</p></div>`), nombre);
+      assert.ok(!html.includes('<p class="dq-cifra">') && !html.includes('<p class="dq-principal-cifra">'), nombre);
+    }
   });
 
   // spec 2026-11-14-dato-quincena-v1-3, 4: «Repite» con su clase y el history de Lucide (decorativo, como el de Validar);
@@ -814,20 +829,20 @@ describe('dato-quincena.js: el detalle (spec, 10)', () => {
     assert.equal(cuantas(html, /href="http:/g), 0);
   });
 
-  // spec 2026-11-18-dato-quincena-detalle-pestanas, 4: en dos columnas, «Por qué hoy», «Ángulo» y «Puntos centrales» | «Texto para
+  // spec 2026-11-18-dato-quincena-detalle-pestanas, 4: en dos columnas, «Por qué es noticia», «Ángulo» y «Puntos centrales» | «Texto para
   // redes»; a lo ancho, el borrador y la idea de placa; plegados, el cálculo, el contexto y las fuentes
   it('los campos, en el orden de la spec 4, con los textos tal como llegaron', () => {
     const [primera] = DETALLE().propuestas;
     const html = ctx.htmlDePropuesta(primera);
     const titulos = [...html.matchAll(/<h4>([^<]+)<\/h4>|<summary><svg[^>]*>[\s\S]*?<\/svg><span>([^<]+)<\/span>/g)].map((m) => m[1] ?? m[2]);
-    assert.deepEqual(titulos, ['Por qué hoy', 'Ángulo', 'Puntos centrales', 'Texto para redes', 'Borrador de nota', 'Idea de placa',
+    assert.deepEqual(titulos, ['Por qué es noticia', 'Ángulo', 'Puntos centrales', 'Texto para redes', 'Borrador de nota', 'Idea de placa',
       'Cómo se calculó', 'Contexto histórico', 'Fuentes']);
     for (const campo of ['calculo', 'contexto_historico', 'por_que_hoy', 'angulo', 'idea_placa', 'texto_redes']) {
       assert.ok(html.includes(`<p class="dq-texto">${esc(primera[campo])}</p>`), campo);
     }
     // Las dos columnas: los tres campos a la izquierda y el texto para redes, como tarjeta de publicación, a la derecha
     const dos = html.slice(html.indexOf('<div class="dq-dos">'), html.indexOf('<div class="dq-borrador">'));
-    assert.match(dos, /^<div class="dq-dos"><div class="dq-dos-izq"><div class="dq-campo"><h4>Por qué hoy<\/h4>[\s\S]*<\/div><\/div><div class="dq-redes"><div class="dq-redes-cabeza"><h4>Texto para redes<\/h4><button [^>]*>Copiar<\/button><\/div><div class="dq-redes-post"><p class="dq-texto">[^<]*<\/p><\/div><\/div><\/div>$/);
+    assert.match(dos, /^<div class="dq-dos"><div class="dq-dos-izq"><div class="dq-campo"><h4>Por qué es noticia<\/h4>[\s\S]*<\/div><\/div><div class="dq-redes"><div class="dq-redes-cabeza"><h4>Texto para redes<\/h4><button [^>]*>Copiar<\/button><\/div><div class="dq-redes-post"><p class="dq-texto">[^<]*<\/p><\/div><\/div><\/div>$/);
     assert.ok(dos.includes('<div class="dq-campo"><h4>Puntos centrales</h4><ul><li>Primer punto inventado.</li><li>Segundo punto inventado.</li><li>Tercer punto inventado.</li></ul></div>'));
     // El borrador, como artículo, con su «Copiar»
     assert.match(html, /<div class="dq-borrador"><div class="dq-borrador-cabeza"><h4>Borrador de nota<\/h4><button [^>]*>Copiar<\/button><\/div><div class="dq-borrador-cuerpo"><p class="dq-nota-titulo">Un borrador inventado<\/p><p class="dq-texto">Primer párrafo inventado\.<\/p><p class="dq-texto">Segundo párrafo inventado\.<\/p><\/div><\/div>/);
@@ -975,7 +990,7 @@ describe('dato-quincena.js: el detalle en pestañas y General (spec 2026-11-18-d
     const principal = general.slice(general.indexOf('<div class="dq-la-principal">'), general.indexOf('<div class="dq-edicion-pie">'));
     assert.match(principal, new RegExp('^<div class="dq-la-principal"><p class="dq-sobre">La principal de Datito</p><h3 class="dq-principal-titulo">Un título inventado</h3>'
       + '<p class="dq-principal-etiquetas"><span class="dq-etiqueta dq-et-validar"><svg aria-hidden="true"[^>]*>[\\s\\S]*?</svg>Validar</span></p>'
-      + `<p class="dq-principal-cifra">${esc('1.234 casos · septiembre de 2026')}</p>`
+      + `<div class="dq-principal-cifra"><p class="dq-cifra-rotulo">La cifra clave</p><p class="dq-cifra-texto">${esc('1.234 casos · septiembre de 2026')}</p></div>`
       + '<p class="dq-principal-dataset">Dataset: <a href="dataset.html\\?id=1">Dataset de prueba A</a> · '
       + '<a href="https://datos.ejemplo.gob.ar/dataset/prueba-a" target="_blank" rel="noopener noreferrer">en el portal</a></p>'
       + '<p class="dq-ir"><button type="button" class="dq-btn dq-btn-tinta" data-ir-vista="propuestas">Ver las 2 propuestas</button></p>$'));
@@ -1082,7 +1097,7 @@ describe('dato-quincena.js: el detalle en pestañas y General (spec 2026-11-18-d
     assert.ok(html.includes(`<p class="dq-mancheta"><span>El dato de la quincena</span><span class="dq-numero">${XSS_ESCAPADO}</span></p>`));
     assert.ok(html.includes(`<h2 class="dq-ed-fecha">${XSS_ESCAPADO}</h2><p class="dq-ed-paquete">${XSS_ESCAPADO}</p>`));
     assert.ok(general.includes(`<h3 class="dq-principal-titulo">${XSS_ESCAPADO}</h3>`));
-    assert.ok(general.includes(`<p class="dq-principal-cifra">${XSS_ESCAPADO}</p>`));
+    assert.ok(general.includes(`<div class="dq-principal-cifra"><p class="dq-cifra-rotulo">La cifra clave</p><p class="dq-cifra-texto">${XSS_ESCAPADO}</p></div>`));
     assert.ok(general.includes(`data-ir-vista="propuestas">${XSS_ESCAPADO}</button>`));
     assert.ok(general.includes(`<div class="dq-aviso-nuevos"><p>${XSS_ESCAPADO}</p><button type="button" class="dq-btn dq-btn-borde" data-ir-vista="datasets">${XSS_ESCAPADO}</button></div>`));
     assert.ok(cuantas(general, /&lt;img src=x onerror=1&gt;/g) > 20);
@@ -1196,8 +1211,8 @@ describe('dato-quincena.js: Propuestas, una por vez con índice (spec 2026-11-18
   it('la propuesta que se ve, en el orden de la spec: arriba, la tira, la repetición, «Para validar», las dos columnas, el borrador, la placa, los plegados y el pie', () => {
     const [principal] = propuestasDe(DETALLE_CON_REPETICION());
     const piezas = ['<div class="dq-prop-arriba"><span class="dq-orden">Propuesta 1</span><span class="dq-etiqueta dq-et-principal"><svg aria-hidden="true"',
-      '<h3 class="dq-prop-titulo" id="dq-propuesta-titulo" tabindex="-1">', '<p class="dq-cifra">', '<div class="dq-tira"><p class="dq-dataset">',
-      '<dl class="dq-foto">', '<div class="dq-repite">', '<div class="dq-validar">', '<div class="dq-dos"><div class="dq-dos-izq">', '<h4>Por qué hoy</h4>',
+      '<h3 class="dq-prop-titulo" id="dq-propuesta-titulo" tabindex="-1">', '<div class="dq-cifra"><p class="dq-cifra-rotulo">', '<div class="dq-tira"><p class="dq-dataset">',
+      '<dl class="dq-foto">', '<div class="dq-repite">', '<div class="dq-validar">', '<div class="dq-dos"><div class="dq-dos-izq">', '<h4>Por qué es noticia</h4>',
       '<h4>Ángulo</h4>', '<h4>Puntos centrales</h4>', '<div class="dq-redes">', 'aria-label="Copiar el texto para redes"', '<div class="dq-borrador">',
       'aria-label="Copiar el borrador"', '<h4>Idea de placa</h4>', '<span>Cómo se calculó</span>', '<span>Contexto histórico</span>', '<span>Fuentes</span>',
       '<footer class="dq-prop-pie">', 'aria-label="Copiar la propuesta (Propuesta 1)"', '<nav class="dq-pasos" aria-label="Otras propuestas">'];
@@ -2385,6 +2400,7 @@ describe('dato-quincena.html: la página', () => {
     const estilo = html.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? '';
     for (const clase of ['dq-hoja', 'dq-mancheta', 'dq-ed-fecha', 'dq-ed-paquete', 'dq-ed-pestanas', 'dq-ed-pestana', 'dq-ed-cuenta',
       'dq-ed-panel', 'dq-portada', 'dq-figura', 'dq-la-principal', 'dq-sobre', 'dq-principal-titulo', 'dq-principal-etiquetas', 'dq-principal-cifra',
+      'dq-cifra-rotulo', 'dq-cifra-texto',
       'dq-principal-dataset', 'dq-ir', 'dq-edicion-pie', 'dq-agenda-cols', 'dq-agenda-col', 'dq-linea', 'dq-evento-titulo', 'dq-evento-detalle',
       'dq-archivos-fila', 'dq-aviso-nuevos', 'dq-correo-de-la-edicion']) assert.ok(estilo.includes(`.${clase}`), clase);
     // La doble línea arriba de las pestañas; la elegida, en tinta y con una barra gruesa debajo (no es solo el color)
@@ -2408,6 +2424,26 @@ describe('dato-quincena.html: la página', () => {
     assert.match(estilo, /\.dq-ed-pestanas \{[^}]*scroll-margin-top: calc\(var\(--header-height\) \+ 12px\);/);
     // El costado fijo y la columna del detalle de antes ya no están
     assert.doesNotMatch(estilo, /dq-lateral|\.dq-detalle\b|\.dq-columna|\.dq-titulo-paquete|\.dq-cabecera \{|\.dq-fecha \{/);
+  });
+
+  // spec 2026-11-23-dato-quincena-detalle-visual: la cifra en una ficha celeste (también en alto contraste, por el borde), el título un
+  // poco más chico, los títulos de los campos de la propuesta en Bricolage y los de Datasets nuevos y «Para validar» como estaban
+  it('el CSS de la ficha, del título y de los campos (spec 2026-11-23-dato-quincena-detalle-visual)', () => {
+    const estilo = html.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? '';
+    assert.match(estilo, /\.dq-cifra, \.dq-principal-cifra \{[^}]*border: 1px solid transparent;[^}]*border-radius: 12px; background: var\(--sg-cielo\); color: var\(--sg-tinta\);[^}]*overflow-wrap: anywhere;/);
+    assert.match(estilo, /\.dq-cifra-texto \{[^}]*font-family: var\(--f-titulo\); font-weight: 700; font-size: clamp\(1\.12rem, 1rem \+ 0\.4vw, 1\.3rem\);[^}]*overflow-wrap: anywhere;/);
+    assert.match(estilo, /\.dq-cifra-rotulo \{[^}]*font-size: 0\.8rem; font-weight: 700;/);
+    assert.match(estilo, /\.dq-prop-titulo \{[^}]*font-size: clamp\(1\.45rem, 1\.15rem \+ 0\.95vw, 1\.9rem\);/);
+    assert.match(estilo, /\.dq-campo h4, \.dq-redes-cabeza h4, \.dq-borrador-cabeza h4 \{[^}]*font-family: var\(--f-titulo\); font-size: 1\.05rem; font-weight: 700;/);
+    assert.match(estilo, /\.dq-campo h5 \{[^}]*font-family: var\(--f-texto\); font-size: 0\.88rem;/);
+    assert.match(estilo, /\.dq-validar h4, \.dq-validar h5 \{[^}]*font-family: var\(--f-texto\);/);
+    const telefono = estilo.match(/@media \(max-width: 640px\) \{([\s\S]*?)\n {8}\}/)?.[1] ?? '';
+    assert.ok(telefono.includes('.dq-prop-titulo { font-size: 1.4rem; }'), 'el título en el teléfono');
+    assert.ok(telefono.includes('.dq-cifra-texto, .dq-principal-cifra .dq-cifra-texto { font-size: 1.08rem; }'), 'la cifra en el teléfono');
+    // La cifra grande de antes ya no está
+    assert.ok(!estilo.includes('font-weight: 800; font-size: clamp(1.55rem, 1.2rem + 1vw, 2rem)'));
+    assert.ok(!estilo.includes('.dq-prop-titulo, .dq-cifra { font-size: 1.5rem; }'));
+    assert.ok(!estilo.includes('.dq-principal-cifra { font-size: 1.5rem; }'));
   });
 
   it('las pestañas de la edición corren de costado si no entran (sin barra a la vista) y el anillo del foco de la primera no tapa la «G»', () => {

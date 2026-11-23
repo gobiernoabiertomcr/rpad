@@ -209,4 +209,4 @@ middleware/auth.js (`tokenDelDatoQuincena`), middleware/rateLimit.js (`limiteDat
 
 ## Archivos de tests
 
-`dato-quincena-reglas.test.js`, `dato-quincena-api.test.js`, `dato-quincena-resguardo.test.js` (el mail de una edición sin `propuestas_datasets`: el fixture, que no se regenera, con exactamente dos inserciones, la frase y el recuadro de la principal del equipo), `permisos.test.js`, `schema.test.js`
+`dato-quincena-reglas.test.js`, `dato-quincena-api.test.js`, `dato-quincena-resguardo.test.js` (el mail de una edición sin `propuestas_datasets`: el fixture, que no se regenera, con exactamente dos inserciones, la frase y el recuadro de la principal del equipo, y el rótulo «Por qué es noticia»), `permisos.test.js`, `schema.test.js`

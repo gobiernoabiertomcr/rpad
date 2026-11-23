@@ -123,8 +123,8 @@ Los textos los trae el servidor y la página los imprime, todos por `Utils.escap
   En el texto plano, un bloque «Esta edición se lee mejor en el RPAD: <dirección>» después del bloque del título.
   El botón del final queda.
 - Sale igual en la corrida, los reintentos, los reenvíos y la prueba.
-- Lo controla `tests/dato-quincena-resguardo.test.js`: su fixture no se regenera y compara contra el mail de antes con exactamente esas dos inserciones, en anclas que aparecen una sola vez.
-  Si el mail cambia en algo más que la frase y el recuadro, ese test falla a propósito.
+- Lo controla `tests/dato-quincena-resguardo.test.js`: su fixture no se regenera y compara contra el mail de antes con exactamente esas dos inserciones, en anclas que aparecen una sola vez, y el rótulo «Por qué es noticia» en lugar de «Por qué hoy», una vez por propuesta.
+  Si el mail cambia en algo más que la frase, el recuadro y ese rótulo, ese test falla a propósito.
 
 ## Lo que no cambia
 

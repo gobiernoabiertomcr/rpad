@@ -1425,7 +1425,7 @@ describe('datoQuincenaTemplate: el texto plano y el nombre del bot', () => {
     '- Primera nota.',
     '- Segunda nota.',
     '',
-    'Por qué hoy',
+    'Por qué es noticia',
     'Una razón inventada para publicarlo hoy.',
     '',
     'Ángulo',
@@ -1462,7 +1462,7 @@ describe('datoQuincenaTemplate: el texto plano y el nombre del bot', () => {
     'https://datos.ejemplo.gob.ar/dataset/prueba-b',
     'En el RPAD ese día: Próximo a vencer. Datos al —. Última actualización 03/06/2026. Próxima en 4 días.',
     '',
-    'Por qué hoy',
+    'Por qué es noticia',
     'Otra razón inventada.',
     '',
     'Ángulo',
@@ -1567,10 +1567,10 @@ describe('datoQuincenaTemplate: el texto plano y el nombre del bot', () => {
     // Sin un id, el mismo texto: el texto plano no lleva el enlace
     m.propuestas[0].repeticion.id_edicion = null;
     assert.equal(datoQuincenaTemplate(m, { conSvg: true }).text, text);
-    // Sin notas para validar, antes de «Por qué hoy»
+    // Sin notas para validar, antes de «Por qué es noticia»
     m.propuestas[0].notas_validacion = [];
     assert.ok(datoQuincenaTemplate(m, { conSvg: true }).text.includes('Próxima en 29 días.\n\nRepite el dataset de la edición del '
-      + '02/11/2026.\nDatos nuevos: Uno.\nDos.\n\nPor qué hoy\n'));
+      + '02/11/2026.\nDatos nuevos: Uno.\nDos.\n\nPor qué es noticia\n'));
     assert.equal(datoQuincenaTemplate(modelo(), { conSvg: true }).text, TEXTO);
   });
 

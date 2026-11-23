@@ -973,7 +973,7 @@ const contenidoDelDato = (propuesta) => {
     notas.length > 0
       ? conAireArriba(12, avisoDestacado(`<strong>${PARA_VALIDAR}</strong>${notas.map((nota) => `<br>• ${conRenglones(nota)}`).join('')}`))
       : '',
-    campoDelDato('Por qué hoy', parrafo(conRenglones(propuesta?.por_que_hoy))),
+    campoDelDato('Por qué es noticia', parrafo(conRenglones(propuesta?.por_que_hoy))),
     campoDelDato('Ángulo', parrafo(conRenglones(propuesta?.angulo))),
     campoDelDato('Idea de placa', parrafo(conRenglones(propuesta?.idea_placa))),
     campoDelDato('Texto para redes', recuadro(parrafo(conRenglones(propuesta?.texto_redes)))),
@@ -1168,7 +1168,7 @@ const textoDeLaPropuesta = (propuesta) => {
     ].join('\n'),
     ...(repeticion === null ? [] : [`${textoDelDato(repeticion.texto)}\n${textoDelDato(repeticion.motivo)}`]),
     ...(notas.length > 0 ? [conGuiones(PARA_VALIDAR, notas)] : []),
-    `Por qué hoy\n${textoDelDato(propuesta?.por_que_hoy)}`,
+    `Por qué es noticia\n${textoDelDato(propuesta?.por_que_hoy)}`,
     `Ángulo\n${textoDelDato(propuesta?.angulo)}`,
     `Idea de placa\n${textoDelDato(propuesta?.idea_placa)}`,
     `Texto para redes\n${textoDelDato(propuesta?.texto_redes)}`,

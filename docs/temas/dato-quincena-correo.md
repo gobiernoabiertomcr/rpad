@@ -151,7 +151,7 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
   el recuadro «Esta edición se lee mejor en el RPAD», con su botón (abajo);
   la infografía en línea (`cid`) con su pie;
   «Agenda de la quincena», en sus grupos («Lo que pasó», «Lo que viene» y «Efemérides», los de `agenda_grupos`: `docs/temas/dato-quincena.md`);
-  una tarjeta por propuesta, con su franja («Propuesta 1 de 4», «Principal» en la principal) y la cifra, el dataset, la repetición si hay, por qué hoy, el ángulo, la idea de placa, el texto para redes, los puntos, el borrador, lo que hay que validar y las fuentes;
+  una tarjeta por propuesta, con su franja («Propuesta 1 de 4», «Principal» en la principal) y la cifra, el dataset, la repetición si hay, «Por qué es noticia» (`por_que_hoy`), el ángulo, la idea de placa, el texto para redes, los puntos, el borrador, lo que hay que validar y las fuentes;
   si la edición trae `propuestas_datasets`, «Propuestas de datasets nuevos» (abajo);
   el botón «Ver la edición en el RPAD» (`RPAD_URL/dato-quincena.html?id=N`);
   y una nota al pie con dónde están el texto del bot, los cálculos y la edición completa, por qué le llega y a quién avisar para dejar de recibirlo.
@@ -168,8 +168,8 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
   `numero`, `valor` y `riesgo` viajan en cada una y la plantilla no los dibuja: la franja reemplaza al número y su rótulo.
   De cada propuesta de comunicación, el modelo deja afuera `orden`, `orden_texto` y lo que se copia (`FUERA_DEL_MAIL`).
   Con null no hay sección: el bloque es null, `marcoEmail` lo saltea y el texto plano no suma nada.
-  Sin la clave, el mail no lleva la sección y sale como el del fixture con exactamente dos inserciones, la frase y el recuadro de la principal del equipo (`docs/temas/dato-quincena-principal-equipo.md`); el resto, byte por byte.
-  Lo controla `tests/dato-quincena-resguardo.test.js`: el fixture no se regenera nunca, y las dos inserciones las suma el test.
+  Sin la clave, el mail no lleva la sección y sale como el del fixture con exactamente dos inserciones, la frase y el recuadro de la principal del equipo (`docs/temas/dato-quincena-principal-equipo.md`), y el rótulo «Por qué es noticia» en lugar de «Por qué hoy»; el resto, byte por byte.
+  Lo controla `tests/dato-quincena-resguardo.test.js`: el fixture no se regenera nunca, y las dos inserciones y el rótulo los suma el test.
   Con `[]`, el título y la línea «Esta quincena no hay propuestas de datasets.».
 - Cada una va en una tarjeta con el borde de las propuestas, con 16 px entre una y otra (una fila de alto fijo, por Outlook).
   Arriba, la franja verde clara (fondo `#EEF6F1`, borde `#D5E9DD`, texto `#2E6B4C`) con «Dataset nuevo 1 de 3».
