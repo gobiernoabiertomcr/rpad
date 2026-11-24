@@ -1111,7 +1111,8 @@ function htmlDelCorreo(datos) {
     + '</section>'
     + '<section class="dq-caja" aria-labelledby="dq-votacion-titulo">'
     + '<div class="dq-caja-cabeza"><h2 id="dq-votacion-titulo">La votación de la principal del equipo</h2></div>'
-    + '<p>Cada edición se vota hasta las <b>12:00 del día en que sale el mail</b>; si sale a las 14:00, hasta las 12:00 del día hábil siguiente. '
+    + '<p>Cada edición se vota hasta las <b>12:00 del día en que sale el mail</b> (o del día hábil siguiente, si sale a las 14:00) '
+    + 'o hasta que voten todas las personas de su lista, lo que pase primero. '
     + 'Cada persona que vota toca las propuestas de la que más quiere trabajar a la que menos: el 1.º puesto da tantos puntos como propuestas hay y el último, 1. '
     + `Gana la que suma más; si empatan, la de ${NOMBRE_DEL_BOT} o, si no está entre las empatadas, la de número más bajo. Si nadie vota, queda la de ${NOMBRE_DEL_BOT}.</p>`
     + '<p class="dq-suave">Hasta el cierre se ve quién votó; el orden de cada persona, después. A las 14:00 del día del cierre, administración recibe un mail '
@@ -1265,12 +1266,15 @@ function anunciarDatoQuincena(texto, id = 'dq-anuncio') {
 // abierta y su caja del correo; `vista` y `propuesta`, la pestaña de la edición que se ve y la propuesta que se mira en Propuestas
 // (null: la del equipo o la de Datito); `reenvio` y `voto`, los diálogos abiertos (`voto`: `{ volverA, tocadas }`, el botón que lo
 // abrió y los `orden` en el orden en que se tocaron); `guardandoVoto`, mientras se guarda un orden (no se abre ninguno de los dos
-// diálogos, no cambia lo tocado ni empieza otro guardado)
+// diálogos, no cambia lo tocado ni empieza otro guardado); `abriendoVoto`, mientras «Votar» vuelve a pedir la edición (no se abre
+// ninguno de los dos diálogos)
 const vistaDatoQuincena = {
   pedido: 0, anio: null, pagina: 1, cargando: false, datos: null, imagenes: new Set(), modal: null,
   admin: false, pestana: 'ediciones', detalle: null, caja: null, vista: 'general', propuesta: null, reenvio: null,
-  voto: null, guardandoVoto: false
+  voto: null, guardandoVoto: false, abriendoVoto: false
 };
+// Una cosa por vez: mientras se guarda un orden o «Votar» espera la edición, no se abre «Tu orden» ni «Reenviar…»
+const votoOcupadoDq = () => vistaDatoQuincena.guardandoVoto === true || vistaDatoQuincena.abriendoVoto === true;
 
 const elementoDq = (id) => document.getElementById(id);
 
@@ -1893,7 +1897,7 @@ function mandarPruebaDq(boton) {
 function abrirReenvioDq(boton) {
   const id = idDeEdicion(vistaDatoQuincena.detalle?.id);
   const caja = vistaDatoQuincena.caja;
-  if (vistaDatoQuincena.guardandoVoto === true || id === null || caja === null) return;
+  if (votoOcupadoDq() || id === null || caja === null) return;
   elementoDq('dq-reenvio-cuerpo').innerHTML = htmlDelReenvio(caja.lista_de_hoy);
   const abierto = { id, volverA: boton };
   vistaDatoQuincena.reenvio = abierto;
@@ -2082,11 +2086,21 @@ async function redibujarElDetalleDq(id, { sigue, foco = null }) {
     console.error('Error volviendo a cargar la edición:', error);
   }
   if (!sigue()) return;
-  const { vista, propuesta, admin, caja } = vistaDatoQuincena;
-  if (detalle === null || typeof detalle !== 'object' || idDeEdicion(detalle.id) !== id) {
+  if (!esLaEdicionDq(detalle, id)) {
+    const { vista, propuesta } = vistaDatoQuincena;
     await cargarDetalleDq(id, { vista, propuesta });
     return;
   }
+  await dibujarLaEdicionDeNuevoDq(id, detalle, { foco });
+}
+
+// Si lo que llegó es la edición `id`
+const esLaEdicionDq = (detalle, id) => detalle !== null && typeof detalle === 'object' && idDeEdicion(detalle.id) === id;
+
+// Dibuja `detalle`, la edición `id` recién pedida, en el lugar (como redibujarElDetalleDq, sin volver a pedirla), con el foco en `foco`
+// dentro del panel que se ve o, si no está, en su pestaña
+async function dibujarLaEdicionDeNuevoDq(id, detalle, { foco = null } = {}) {
+  const { vista, propuesta, admin, caja } = vistaDatoQuincena;
   const contenido = elementoDq('dq-contenido');
   const imagen = contenido.querySelector('img.dq-infografia');
   vistaDatoQuincena.detalle = detalle;
@@ -2131,19 +2145,82 @@ function dibujarElVotoDq({ foco = null, anunciar = false } = {}) {
   if (foco) cuerpo.querySelector?.(foco)?.focus?.();
 }
 
+// El aviso a la última persona en votar (votacion.aviso_de_cierre): con textContent, oculto si no viene
+function ponerElAvisoDeCierreDq(modal, texto) {
+  const aviso = elementoDq('dq-voto-aviso');
+  const dialogo = modal.querySelector?.('[role="dialog"]');
+  if (aviso) {
+    aviso.textContent = texto;
+    aviso.hidden = texto === '';
+  }
+  // El aviso se lee con el diálogo (aria-describedby) solo mientras se muestra; no es una región viva
+  if (dialogo) dialogo.setAttribute('aria-describedby', texto === '' || !aviso ? 'dq-voto-texto' : 'dq-voto-texto dq-voto-aviso');
+}
+
 /**
- * «Votar» y «Cambiar mi orden» abren «Tu orden» con el texto del servidor (votacion.dialogo) y, sin voto, ninguna tocada; con voto, su
- * orden. El foco, en la primera propuesta (después de la transición del velo). Solo con la votación abierta y puede_votar (el true
- * literal); mientras se guarda un orden o con el diálogo ya abierto, no hace nada.
+ * «Votar» y «Cambiar mi orden»: primero vuelven a pedir la edición, porque la votación pudo cambiar desde que se dibujó (otra persona
+ * votó, cerró o quien mira votó en otra pestaña), y abren «Tu orden» con la votación recién llegada (mostrarElVotoDq). Mientras espera,
+ * el botón queda deshabilitado (un doble clic manda un solo pedido) y no se abre «Reenviar…» ni otro «Tu orden». Si ya no se puede
+ * votar, la edición se vuelve a dibujar con lo que llegó y no abre; si el pedido falla, el error y no abre (un 401, al login); si
+ * mientras tanto la página mostró otra cosa u otro diálogo se abrió, nada. Solo con la votación abierta y puede_votar (el true literal)
+ * en lo que se ve; mientras se guarda un orden, mientras espera otra apertura o con el diálogo ya abierto, no hace nada.
  */
-function abrirElVotoDq(boton) {
-  const detalle = vistaDatoQuincena.detalle;
+async function abrirElVotoDq(boton) {
+  const id = idDeEdicion(vistaDatoQuincena.detalle?.id);
+  const votacion = votacionDe(vistaDatoQuincena.detalle);
+  if (votoOcupadoDq() || vistaDatoQuincena.voto !== null || id === null || !elementoDq('dq-voto')
+    || votacion?.estado !== 'abierta' || votacion.puede_votar !== true) return;
+  const pedido = vistaDatoQuincena.pedido;
+  const sigue = () => pedido === vistaDatoQuincena.pedido && vistaDatoQuincena.detalle?.id === id;
+  let detalle = null;
+  vistaDatoQuincena.abriendoVoto = true;
+  try {
+    await conBotonBloqueadoDq(boton, async () => {
+      detalle = await edicionParaVotarDq(id, sigue);
+    });
+  } finally {
+    vistaDatoQuincena.abriendoVoto = false;
+  }
+  const otroDialogo = vistaDatoQuincena.voto !== null || vistaDatoQuincena.reenvio !== null || vistaDatoQuincena.modal !== null;
+  if (detalle !== null && sigue() && !otroDialogo) mostrarElVotoDq(boton, detalle);
+}
+
+// La edición `id` recién pedida, si todavía se puede votar; si no, la dibuja en el lugar (sin «Votar»: el foco va a su pestaña) y da
+// null. Si el pedido falla, avisa el error del servidor o TEXTOS_DEL_VOTO.error y da null (un 401, al login); si mientras tanto la
+// página mostró otra cosa (`sigue`), null sin avisar
+async function edicionParaVotarDq(id, sigue) {
+  let detalle;
+  try {
+    detalle = (await API.pedirJson('GET', `/dato-quincena/ediciones/${String(id)}`))?.data;
+  } catch (error) {
+    if (!sigue()) return null;
+    if (error?.status === 401) irAlLoginDesdeDatoQuincena();
+    else avisarErrorDatoQuincena(mensajeDelErrorDq(error, TEXTOS_DEL_VOTO.error));
+    return null;
+  }
+  if (!sigue()) return null;
+  if (!esLaEdicionDq(detalle, id)) {
+    avisarErrorDatoQuincena(TEXTOS_DEL_VOTO.error);
+    return null;
+  }
+  const votacion = votacionDe(detalle);
+  if (votacion?.estado === 'abierta' && votacion.puede_votar === true) return detalle;
+  await dibujarLaEdicionDeNuevoDq(id, detalle, { foco: FOCO_DESPUES_DE_VOTAR });
+  return null;
+}
+
+/**
+ * Abre «Tu orden» con la votación de `detalle` (la recién pedida): su texto (votacion.dialogo), el aviso a la última persona en votar y,
+ * sin voto, ninguna tocada; con voto, su orden. Las propuestas son las de la edición que se ve, que no cambian. El foco, en la primera
+ * propuesta (después de la transición del velo); al cerrar, vuelve a `boton`.
+ */
+function mostrarElVotoDq(boton, detalle) {
   const votacion = votacionDe(detalle);
   const modal = elementoDq('dq-voto');
-  if (vistaDatoQuincena.guardandoVoto === true || vistaDatoQuincena.voto !== null || idDeEdicion(detalle?.id) === null || !modal
-    || votacion?.estado !== 'abierta' || votacion.puede_votar !== true) return;
+  if (!modal) return;
   const texto = elementoDq('dq-voto-texto');
   if (texto) texto.textContent = conTextoDq(votacion.dialogo) ? votacion.dialogo : '';
+  ponerElAvisoDeCierreDq(modal, conTextoDq(votacion.aviso_de_cierre) ? votacion.aviso_de_cierre : '');
   const anuncio = elementoDq('dq-voto-anuncio');
   if (anuncio) anuncio.textContent = '';
   const abierto = { volverA: boton, tocadas: tocadasAlAbrir(detalle) };

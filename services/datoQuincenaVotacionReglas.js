@@ -42,24 +42,50 @@ export const cierreDeLaVotacion = ({ fecha_edicion, llegada, calendario }) => {
   return `${calendario.proximoDiaHabil(desde)} ${HORA_DEL_CIERRE}`;
 };
 
-/** Si se puede votar: sellada, cerrada; sin sellar y sin calendario, abierta y sin cierre; si no, hasta el cierre calculado. */
-export const estadoDeLaVotacion = ({ cierre_at, fecha_edicion, llegada, ahora, calendario }) => {
-  if (cierre_at) return { abierta: false, cierre: String(cierre_at).slice(0, 16), sin_calendario: false };
-  if (calendario.error !== null) return { abierta: true, cierre: null, sin_calendario: true };
-  const cierre = cierreDeLaVotacion({ fecha_edicion, llegada, calendario });
-  return { abierta: ahora.slice(0, 16) < cierre, cierre, sin_calendario: false };
+/**
+ * Si se puede votar (spec 2026-11-23-dato-quincena-votacion-cierre-anticipado): cierra en lo que pase primero, las 12:00 de siempre o
+ * el voto que completa la foto (`cierreAnticipado`, con `personas`, `votos` y `ordenes`; sin ellos, como antes de esa regla).
+ * Devuelve `{ abierta, cierre, cierre_nominal, por_todos, hasta_id, sin_calendario }`:
+ * - `cierre_nominal`, el de las 12:00 (cierreDeLaVotacion), o null sellada, sin calendario o sin llegada: con él se sella, y lo sellado
+ *   no vuelve a tocar el calendario;
+ * - cerrada porque votaron todos, `por_todos` true, `cierre` la hora de ese voto y `hasta_id` su id: cuentan él y los anteriores;
+ * - si no, `por_todos` false y `hasta_id` null: sellada, cerrada con su `cierre_at`; sin cierre de siempre, abierta y sin cierre
+ *   (`sin_calendario`); si no, abierta hasta el cierre de siempre.
+ * Sin sellar, los votos alcanzan aunque falte el calendario. Decisión: sellada, cerró por todos solo si el sellado guardó la hora de ese
+ * voto. Una votación sellada a las 12:00 antes de esta regla queda como se selló aunque sus votos completen la foto: su
+ * resultado ya salió por mail. Lo sellado tampoco depende del calendario: para el voto que cerró se miran todos los votos.
+ */
+export const estadoDeLaVotacion = ({ cierre_at, fecha_edicion, llegada, ahora, calendario, personas = [], votos = [], ordenes = [] }) => {
+  const estado = ({ abierta, cierre, sin_calendario = false, anticipado = null, nominal = null }) => ({
+    abierta, cierre, cierre_nominal: nominal, por_todos: anticipado !== null, hasta_id: anticipado?.id ?? null, sin_calendario
+  });
+  if (cierre_at) {
+    const sellado = String(cierre_at).slice(0, 16);
+    const anticipado = cierreAnticipado({ personas, votos, ordenes, cierreNominal: null });
+    return anticipado !== null && anticipado.votado_at.slice(0, 16) === sellado
+      ? estado({ abierta: false, cierre: sellado, anticipado })
+      : estado({ abierta: false, cierre: sellado });
+  }
+  const nominal = calendario.error === null && typeof llegada === 'string'
+    ? cierreDeLaVotacion({ fecha_edicion, llegada, calendario })
+    : null;
+  const anticipado = cierreAnticipado({ personas, votos, ordenes, cierreNominal: nominal });
+  if (anticipado !== null) return estado({ abierta: false, cierre: anticipado.votado_at.slice(0, 16), anticipado, nominal });
+  if (nominal === null) return estado({ abierta: true, cierre: null, sin_calendario: true });
+  return estado({ abierta: ahora.slice(0, 16) < nominal, cierre: nominal, nominal });
 };
 
 /**
- * El estado de una votación tal como la lee `leerVotaciones` (`cierre_at` como texto o null, `fecha_edicion` y `recibida_ts`, los
- * segundos UNIX de la llegada), con `ahora` y el calendario del pedido. Sin una llegada que se pueda leer (solo con un SQL a mano) y
- * sin sellar, el cierre no se sabe: como sin calendario, abierta, sin cierre y sin voto que se guarde.
+ * El estado de una votación tal como la lee `leerVotaciones` (`cierre_at` como texto o null, `fecha_edicion`, `recibida_ts`, los
+ * segundos UNIX de la llegada, y la foto, los votos y las propuestas), con `ahora` y el calendario del pedido. Sin una llegada que se
+ * pueda leer (solo con un SQL a mano) y sin sellar, el cierre de siempre no se sabe: como sin calendario, abierta, sin cierre y sin voto
+ * que se guarde, salvo que ya hayan votado todos.
  */
-export const estadoDeLaVotacionLeida = ({ cierre_at, fecha_edicion, recibida_ts }, { ahora, calendario }) => {
-  const llegada = llegadaDe(recibida_ts);
-  if (!cierre_at && llegada === null) return { abierta: true, cierre: null, sin_calendario: true };
-  return estadoDeLaVotacion({ cierre_at, fecha_edicion, llegada, ahora, calendario });
-};
+export const estadoDeLaVotacionLeida = ({ cierre_at, fecha_edicion, recibida_ts, personas, votos, ordenes }, { ahora, calendario }) =>
+  estadoDeLaVotacion({
+    cierre_at, fecha_edicion, llegada: llegadaDe(recibida_ts), ahora, calendario,
+    personas: personas ?? [], votos: votos ?? [], ordenes: ordenes ?? []
+  });
 
 // Si la lista es una permutación exacta de `ordenes` (enteros seguros, sin repetir)
 const esPermutacion = (lista, ordenes) => Array.isArray(lista)
@@ -78,12 +104,40 @@ export const ordenDeTexto = (texto, ordenes) => {
   return esPermutacion(lista, ordenes) ? lista : null;
 };
 
-/** De cada persona, su voto de mayor id anterior al cierre y con un orden válido: Map persona_id -> lista. */
-export const votosVigentes = ({ personas, votos, cierre, ordenes }) => {
+/**
+ * El voto que cierra la votación porque votaron todos (spec 2026-11-23-dato-quincena-votacion-cierre-anticipado), `{ id, votado_at }`,
+ * o null: el que completa la foto, el primer voto válido (el de menor id) de la última persona que faltaba (el mayor de esos ids).
+ * Cuentan los votos con un orden que es una permutación de `ordenes` y anteriores a `cierreNominal` ('AAAA-MM-DD HH:MM'; sin él,
+ * todos). Decisión: el orden lo da el id, el orden en que se guardaron, no la hora. Una foto vacía nunca cierra antes: null.
+ */
+export const cierreAnticipado = ({ personas, votos, ordenes, cierreNominal = null }) => {
+  if (personas.length === 0) return null;
+  let ultimo = null;
+  for (const { persona_id } of personas) {
+    let primero = null;
+    for (const v of votos) {
+      if (v.persona_id !== persona_id || (primero !== null && v.id >= primero.id)) continue;
+      if (cierreNominal && String(v.votado_at).slice(0, 16) >= cierreNominal) continue;
+      if (ordenDeTexto(v.orden, ordenes) !== null) primero = v;
+    }
+    if (primero === null) return null;
+    if (ultimo === null || primero.id > ultimo.id) ultimo = primero;
+  }
+  return { id: ultimo.id, votado_at: String(ultimo.votado_at) };
+};
+
+/**
+ * De cada persona, su voto de mayor id con un orden válido y anterior al cierre: Map persona_id -> lista. Con `hastaId` (cerrada porque
+ * votaron todos: el `hasta_id` del estado), cuentan los de id hasta ese, sin mirar la hora: el voto que cerró es del minuto del cierre.
+ */
+export const votosVigentes = ({ personas, votos, cierre, ordenes, hastaId = null }) => {
   const vigentes = new Map();
+  const cuenta = hastaId === null || hastaId === undefined
+    ? (v) => !cierre || String(v.votado_at).slice(0, 16) < cierre
+    : (v) => v.id <= hastaId;
   for (const { persona_id } of personas) {
     const propios = votos
-      .filter((v) => v.persona_id === persona_id && (!cierre || String(v.votado_at).slice(0, 16) < cierre))
+      .filter((v) => v.persona_id === persona_id && cuenta(v))
       .sort((a, b) => b.id - a.id);
     for (const v of propios) {
       const lista = ordenDeTexto(v.orden, ordenes);
@@ -126,10 +180,22 @@ export const cierreLargo = (cierre) => `el ${diaDeLaSemana(cierre.slice(0, 10))}
 export const cierreMedio = (cierre) => `el ${diaDeLaSemana(cierre.slice(0, 10))} ${diaMes(cierre)} a las ${horaDe(cierre)}`;
 export const cierreCorto = (cierre) => `${diaDeLaSemana(cierre.slice(0, 10)).slice(0, 3)} ${diaMes(cierre)} a las ${horaDe(cierre)}`;
 
-/** El mensaje del PUT del voto (sección 3): hasta cuándo se puede cambiar el orden guardado, o que ya era ese. */
-export const mensajeDelVoto = ({ cambio, cierre }) => (cambio
-  ? `Guardamos tu orden. Lo podés cambiar hasta ${cierreMedio(cierre)}.`
-  : 'Tu orden ya era ese.');
+// Hasta cuándo se puede cambiar un orden guardado: el cierre de siempre o, antes, el voto que completa la foto (spec
+// 2026-11-23-dato-quincena-votacion-cierre-anticipado). El diálogo y el mensaje del voto lo dicen igual
+const hastaCuandoSeCambia = (cierre) => `Lo podés cambiar hasta ${cierreMedio(cierre)}, o hasta que voten todas las personas de la lista.`;
+
+/**
+ * El mensaje del PUT del voto (sección 3): hasta cuándo se puede cambiar el orden guardado, o que ya era ese. Con `cerro`, el voto
+ * guardado completó la foto y cerró la votación (spec 2026-11-23-dato-quincena-votacion-cierre-anticipado).
+ */
+export const mensajeDelVoto = ({ cambio, cierre, cerro = false }) => {
+  if (!cambio) return 'Tu orden ya era ese.';
+  if (cerro) return 'Guardamos tu orden. Votaron todos: la votación cerró.';
+  return `Guardamos tu orden. ${hastaCuandoSeCambia(cierre)}`;
+};
+
+// El aviso del diálogo para quien es la única que falta votar (spec 2026-11-23-dato-quincena-votacion-cierre-anticipado)
+const AVISO_DE_CIERRE = 'Sos la última persona en votar: al guardar, la votación cierra y nadie puede cambiar su orden.';
 
 // ---------------------------------------------------------------------------------------------------------------------------
 // Los textos de la votación (spec 2026-11-23-dato-quincena-principal-votacion, secciones 3, 5 y 6): los arma el servidor y las
@@ -214,11 +280,12 @@ const resultadoDelDetalle = ({ propuestas, deDatito, personas, vigentes }) => {
  * La votación en el detalle (sección 3, «El detalle»): `propuestas` `[{ orden, titulo }]` en el orden de la edición, `deDatito` su
  * orden, `estado` el de estadoDeLaVotacion, `personas` `[{ persona_id, usuario_id, nombre }]` en el orden de la foto (`nombre` null si la
  * cuenta se borró), `votos` las filas crudas de dato_quincena_votos y `quienMira` el userId (null: nadie de la foto, como en el mail).
- * Lo de quien mira (`puede_votar`, `falta_tu_voto`, `tu_orden`, `dialogo`) es de cada persona; lo demás, igual para todos.
+ * Lo de quien mira (`puede_votar`, `falta_tu_voto`, `tu_orden`, `dialogo`, `aviso_de_cierre`) es de cada persona; lo demás, igual
+ * para todos. `aviso_de_cierre` solo para quien puede votar, no tiene voto y es la única que falta: su voto cierra la votación.
  */
 export const votacionDelDetalle = ({ propuestas, deDatito, estado, personas, votos, quienMira }) => {
   const ordenes = propuestas.map((p) => p.orden);
-  const vigentes = votosVigentes({ personas, votos, cierre: estado.cierre, ordenes });
+  const vigentes = votosVigentes({ personas, votos, cierre: estado.cierre, ordenes, hastaId: estado.hasta_id ?? null });
   const yo = personaDe(personas, quienMira);
   const votaron = personas.filter((p) => vigentes.has(p.persona_id)).map(nombreDe);
   const faltan = personas.filter((p) => !vigentes.has(p.persona_id)).map(nombreDe);
@@ -228,6 +295,7 @@ export const votacionDelDetalle = ({ propuestas, deDatito, estado, personas, vot
   let cierre;
   if (estado.sin_calendario) cierre = 'No se pudo leer el calendario: el cierre se confirma en unos minutos.';
   else if (estado.abierta) cierre = `Se vota hasta ${cierreLargo(estado.cierre)}.`;
+  else if (estado.por_todos) cierre = `La votación cerró ${cierreLargo(estado.cierre)}, cuando votaron todos.`;
   else cierre = `La votación cerró ${cierreLargo(estado.cierre)}.`;
   let resumen = null;
   if (estado.abierta) resumen = estado.sin_calendario ? 'se está votando.' : `se vota hasta ${cierreMedio(estado.cierre)}.`;
@@ -242,16 +310,20 @@ export const votacionDelDetalle = ({ propuestas, deDatito, estado, personas, vot
       ? miOrden.map((orden, i) => ({ puesto: puesto(i + 1), orden, texto: `Propuesta ${orden} · ${tituloDe(orden)}` }))
       : null,
     dialogo: puedeVotar
-      ? `Tocá las propuestas en orden, de la que más querés trabajar como principal a la que menos. Lo podés cambiar hasta ${cierreMedio(estado.cierre)}.`
+      ? `Tocá las propuestas en orden, de la que más querés trabajar como principal a la que menos. ${hastaCuandoSeCambia(estado.cierre)}`
       : null,
+    aviso_de_cierre: puedeVotar && miOrden === null && faltan.length === 1 ? AVISO_DE_CIERRE : null,
     resultado: estado.abierta ? null : resultadoDelDetalle({ propuestas, deDatito, personas, vigentes })
   };
 };
 
-/** La votación en la tarjeta de la lista: null si cerró; abierta, hasta cuándo y si le falta votar a quien mira. */
+/**
+ * La votación en la tarjeta de la lista: null si cerró (también porque votaron todos); abierta, hasta cuándo y si le falta votar a
+ * quien mira.
+ */
 export const votacionDeLaLista = ({ estado, personas, votos, quienMira, ordenes }) => {
   if (!estado.abierta) return null;
-  const vigentes = votosVigentes({ personas, votos, cierre: estado.cierre, ordenes });
+  const vigentes = votosVigentes({ personas, votos, cierre: estado.cierre, ordenes, hastaId: estado.hasta_id ?? null });
   const yo = personaDe(personas, quienMira);
   return {
     texto: estado.sin_calendario ? 'Se está votando' : `Se vota hasta el ${cierreCorto(estado.cierre)}`,
@@ -288,7 +360,7 @@ export const votacionParaLaLista = ({ votacion, propuestas, quienMira, ahora, ca
   const estado = estadoDeLaVotacionLeida(votacion, { ahora, calendario });
   let ordenGanadora = null;
   if (!estado.abierta) {
-    const vigentes = votosVigentes({ personas, votos, cierre: estado.cierre, ordenes });
+    const vigentes = votosVigentes({ personas, votos, cierre: estado.cierre, ordenes, hastaId: estado.hasta_id });
     ordenGanadora = resultadoDeLaVotacion({
       ordenes, deDatito: principalGuardadaDeDatito(propuestas)?.orden ?? null, votos: [...vigentes.values()]
     }).orden;
@@ -303,7 +375,8 @@ export const votacionParaLaLista = ({ votacion, propuestas, quienMira, ahora, ca
 /**
  * Lo que la agenda de Mi espacio suma el día del cierre (sección 5): de cada votación abierta y con cierre (`votaciones`, una por
  * edición: `{ edicion_id, fecha_edicion, estado, personas, votos, ordenes }`) en la que `usuarioId` está en la foto y todavía no votó,
- * un ítem con el día del cierre dentro de `desde`–`hasta` ('AAAA-MM-DD'). Sin calendario no hay cierre y no hay ítem.
+ * un ítem con el día del cierre dentro de `desde`–`hasta` ('AAAA-MM-DD'). Sin calendario no hay cierre y no hay ítem; cerrada porque
+ * votaron todos, tampoco.
  */
 export const itemsDeLaVotacionEnMiEspacio = ({ votaciones, usuarioId, desde, hasta }) => votaciones.flatMap((v) => {
   if (!v.estado.abierta || v.estado.cierre === null) return [];
@@ -311,7 +384,9 @@ export const itemsDeLaVotacionEnMiEspacio = ({ votaciones, usuarioId, desde, has
   if (fecha < desde || fecha > hasta) return [];
   const yo = personaDe(v.personas, usuarioId);
   if (yo === null) return [];
-  const vigentes = votosVigentes({ personas: v.personas, votos: v.votos, cierre: v.estado.cierre, ordenes: v.ordenes });
+  const vigentes = votosVigentes({
+    personas: v.personas, votos: v.votos, cierre: v.estado.cierre, ordenes: v.ordenes, hastaId: v.estado.hasta_id ?? null
+  });
   if (vigentes.has(yo.persona_id)) return [];
   const hora = horaDe(v.estado.cierre);
   const texto = 'Votá la principal del dato de la quincena';

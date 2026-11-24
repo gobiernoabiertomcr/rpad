@@ -9,6 +9,8 @@
  */
 import pool from '../config/database.js';
 import { esAdmin, emailValido } from './usuariosReglas.js';
+import { ahoraArgentina } from './notasDigitalesCalendario.js';
+import { cierreAnticipado } from './datoQuincenaVotacionReglas.js';
 
 // Una hora DATETIME como texto, o null
 const horaComoTexto = (columna) => `DATE_FORMAT(${columna}, '%Y-%m-%d %H:%i:%s')`;
@@ -106,14 +108,19 @@ export const leerVotaciones = async (edicionIds, conexion = pool) => {
  * elecciones de ediciones distintas tomaban el mismo hueco de un índice y el INSERT de cada una esperaba al otro (un deadlock y un
  * 500). El FOR UPDATE ya ordena los de la misma edición, y la FK del INSERT toma sola el candado de la fila de la foto. Con el bloqueo
  * tomado, un SELECT común ve el último voto confirmado: la foto de la transacción nace en su primera lectura sin candado.
+ * Con el bloqueo tomado se leen la foto, los votos y las propuestas de la edición (leerVotaciones, en esta conexión) y la hora del voto,
+ * `ahora = reloj()` ('AAAA-MM-DD HH:MM:SS' de ahoraArgentina): la misma con la que se mira el cierre y la que se guarda, así el orden de
+ * los votos y el del cierre no se cruzan (spec 2026-11-23-dato-quincena-votacion-cierre-anticipado).
  * `orden` es el texto de ordenDelVoto ('2,1,4,3'), ya validado contra las propuestas; `estaCerrada({ cierre_at, fecha_edicion,
- * recibida_ts })` decide con la hora de ese momento si ya cerró (y puede tirar: no se escribe nada). Sin la votación,
- * `{ votacion: false }`; si la persona no está en la foto, `persona: false`; si cerró, `cerrada: true`; si el orden ya es el de su
- * último voto, `cambio: false` sin escribir; si no, inserta una fila con `votado_at` = `ahora` ('AAAA-MM-DD HH:MM:SS' de
- * ahoraArgentina). Resuelve siempre `{ votacion, persona, cerrada, cambio }`; un error de la base, tira. La conexión se devuelve siempre.
+ * recibida_ts, personas, votos, ordenes, ahora })` decide si ya cerró (a las 12:00 o porque votaron todos) y puede tirar: no se escribe
+ * nada. Sin la votación, `{ votacion: false }`; si la persona no está en la foto, `persona: false`; si cerró, `cerrada: true`; si el
+ * orden ya es el de su último voto, `cambio: false` sin escribir; si no, inserta una fila con `votado_at` = `ahora`. `cerro`: el voto
+ * insertado completó la foto (es el que da cierreAnticipado), así que con él la votación cerró. Sin el corte del cierre de siempre: el
+ * voto se aceptó con la votación abierta, antes de ese cierre, y es el de mayor id. Resuelve siempre `{ votacion, persona, cerrada,
+ * cambio, cerro }`; un error de la base, tira. La conexión se devuelve siempre.
  */
-export const guardarVoto = async ({ edicionId, usuarioId, orden, ahora, estaCerrada }) => {
-  const resultado = (votacion, persona, cerrada, cambio) => ({ votacion, persona, cerrada, cambio });
+export const guardarVoto = async ({ edicionId, usuarioId, orden, reloj = ahoraArgentina, estaCerrada }) => {
+  const resultado = (votacion, persona, cerrada, cambio, cerro = false) => ({ votacion, persona, cerrada, cambio, cerro });
   const conexion = await pool.getConnection();
   try {
     await conexion.beginTransaction();
@@ -131,34 +138,40 @@ export const guardarVoto = async ({ edicionId, usuarioId, orden, ahora, estaCerr
         await conexion.rollback();
         return resultado(false, false, false, false);
       }
-      const [[persona]] = await conexion.execute(
-        'SELECT id FROM dato_quincena_votacion_personas WHERE edicion_id = ? AND usuario_id = ?', [edicionId, usuarioId]
-      );
+      // La primera lectura sin candado, con el bloqueo ya tomado: ve todos los votos confirmados
+      const { personas, votos, ordenes } = (await leerVotaciones([edicionId], conexion)).get(edicionId);
+      const persona = personas.find((p) => p.usuario_id === usuarioId);
       if (!persona) {
         await conexion.rollback();
         return resultado(true, false, false, false);
       }
+      const ahora = reloj();
       const leida = {
         cierre_at: fila.cierre_at ?? null,
         fecha_edicion: fila.fecha_edicion,
-        recibida_ts: fila.recibida_ts === null ? null : Number(fila.recibida_ts)
+        recibida_ts: fila.recibida_ts === null ? null : Number(fila.recibida_ts),
+        personas,
+        votos,
+        ordenes,
+        ahora
       };
       if (estaCerrada(leida)) {
         await conexion.rollback();
         return resultado(true, true, true, false);
       }
-      const [[ultimo]] = await conexion.execute(
-        'SELECT orden FROM dato_quincena_votos WHERE persona_id = ? ORDER BY id DESC LIMIT 1', [persona.id]
-      );
+      // Su último voto, el de mayor id (los votos vienen por id)
+      const ultimo = votos.filter((v) => v.persona_id === persona.persona_id).at(-1);
       if (ultimo && ultimo.orden === orden) {
         await conexion.commit();
         return resultado(true, true, false, false);
       }
-      await conexion.execute(
-        'INSERT INTO dato_quincena_votos (persona_id, orden, votado_at) VALUES (?, ?, ?)', [persona.id, orden, ahora]
+      const [insertado] = await conexion.execute(
+        'INSERT INTO dato_quincena_votos (persona_id, orden, votado_at) VALUES (?, ?, ?)', [persona.persona_id, orden, ahora]
       );
+      const nuevo = { id: Number(insertado.insertId), persona_id: persona.persona_id, orden, votado_at: ahora };
+      const cerro = cierreAnticipado({ personas, votos: [...votos, nuevo], ordenes })?.id === nuevo.id;
       await conexion.commit();
-      return resultado(true, true, false, true);
+      return resultado(true, true, false, true, cerro);
     } catch (error) {
       await conexion.rollback().catch(() => {});
       throw error;
@@ -175,9 +188,9 @@ export const guardarVoto = async ({ edicionId, usuarioId, orden, ahora, estaCerr
 // ---------------------------------------------------------------------------------------------------------------------------
 
 /**
- * Las votaciones sin sellar, con lo que hace falta para calcular su cierre (`estadoDeLaVotacionLeida`), sin candado:
- * `[{ edicion_id, tipo, fecha_edicion, recibida_ts }]`, de la edición más vieja a la más nueva. Lo demás (la foto y los votos), con
- * leerVotaciones, solo de las que ya toca sellar.
+ * Las votaciones sin sellar, con lo que hace falta para calcular su cierre de siempre (`estadoDeLaVotacionLeida`), sin candado:
+ * `[{ edicion_id, tipo, fecha_edicion, recibida_ts }]`, de la edición más vieja a la más nueva. Lo demás (la foto y los votos, de
+ * los que sale si cerró antes porque votaron todos), con leerVotaciones, solo de las que ya toca sellar.
  */
 export const votacionesSinSellar = async (conexion = pool) => {
   const [filas] = await conexion.query(

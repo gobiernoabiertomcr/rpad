@@ -188,7 +188,7 @@ describe('dato-quincena.js: las respuestas del servidor (spec, 9) son el contrat
     const conDatasets = [respuesta('detalle_con_datasets').data, respuesta('detalle_datasets_vacia').data];
     const delEquipo = [respuesta('detalle_equipo_coincide').data, respuesta('detalle_equipo_otra').data];
     const votados = ['detalle_votacion_abierta', 'detalle_votacion_abierta_con_voto', 'detalle_votacion_cerrada_puntos',
-      'detalle_votacion_cerrada_desempate', 'detalle_votacion_cerrada_nadie'].map((n) => respuesta(n).data);
+      'detalle_votacion_cerrada_desempate', 'detalle_votacion_cerrada_nadie', 'detalle_votacion_cerrada_por_todos'].map((n) => respuesta(n).data);
     for (const detalle of [DETALLE(), DETALLE_CON_REPETICION(), ...conDatasets, ...delEquipo, ...votados]) {
       assert.deepEqual(Object.keys(detalle), [
         'id', 'fecha_texto', 'marca', 'numero', 'titulo', 'nota_archivo', 'llegada', 'correo', 'cantidad', 'agenda', 'agenda_grupos',
@@ -247,6 +247,13 @@ describe('dato-quincena.js: las respuestas del servidor (spec, 9) son el contrat
     // Los tres estados de la del equipo: sin elegir, la misma de Datito y otra
     assert.deepEqual([DETALLE(), ...delEquipo].map((d) => [d.principal_equipo.orden, d.principal_equipo.coincide]), [[null, false], [1, true], [2, false]]);
     assert.deepEqual([DETALLE(), ...delEquipo].map((d) => d.principal_datito.orden), [1, 1, 1]);
+    // La votación (spec 2026-11-23-dato-quincena-principal-votacion, 3), con el aviso del diálogo después del diálogo (spec
+    // 2026-11-23-dato-quincena-votacion-cierre-anticipado)
+    for (const detalle of votados) {
+      assert.deepEqual(Object.keys(detalle.votacion), [
+        'estado', 'resumen', 'cierre', 'participacion', 'puede_votar', 'falta_tu_voto', 'tu_orden', 'dialogo', 'aviso_de_cierre', 'resultado'
+      ]);
+    }
   });
 });
 
@@ -1746,7 +1753,7 @@ describe('dato-quincena.js: todo texto del servidor va escapado', () => {
       ...['detalle', 'detalle_equipo_coincide', 'detalle_equipo_otra'].flatMap((nombre) => [true, false].flatMap((admin) => ['general', 'propuestas']
         .map((vista) => ctx.htmlDelDetalle(respuesta(nombre).data, { admin, vista })))),
       ...['detalle_votacion_abierta', 'detalle_votacion_abierta_con_voto', 'detalle_votacion_cerrada_puntos', 'detalle_votacion_cerrada_desempate',
-        'detalle_votacion_cerrada_nadie'].flatMap((nombre) => ['general', 'propuestas'].map((vista) => ctx.htmlDelDetalle(respuesta(nombre).data, { vista }))),
+        'detalle_votacion_cerrada_nadie', 'detalle_votacion_cerrada_por_todos'].flatMap((nombre) => ['general', 'propuestas'].map((vista) => ctx.htmlDelDetalle(respuesta(nombre).data, { vista }))),
       ctx.htmlDelDialogoDelVoto(respuesta('detalle_votacion_abierta').data, [2]),
       ctx.htmlDeTarjeta({ ...LISTA().ediciones[0], votacion: { texto: 'Se vota hasta el mar 03/11 a las 12:00', falta_tu_voto: true } }),
       ctx.htmlDelDetalle(DETALLE_CON_REPETICION()), ctx.htmlDelDetalle(respuesta('detalle_con_datasets').data, { admin: true, vista: 'datasets' }),
@@ -1847,7 +1854,8 @@ describe('dato-quincena.js: la pestaña Correo (spec 2026-11-12-dato-quincena-co
       + '<li><b>Edición del lunes 21/12/2026</b><span>Sale ese día a las 8:05.</span></li></ul>'));
     // La votación, en dos párrafos (la maqueta aprobada), con el nombre del bot de la constante de la página
     assert.ok(html.includes('<section class="dq-caja" aria-labelledby="dq-votacion-titulo"><div class="dq-caja-cabeza"><h2 id="dq-votacion-titulo">La votación de la principal del equipo</h2></div>'
-      + '<p>Cada edición se vota hasta las <b>12:00 del día en que sale el mail</b>; si sale a las 14:00, hasta las 12:00 del día hábil siguiente. '
+      + '<p>Cada edición se vota hasta las <b>12:00 del día en que sale el mail</b> (o del día hábil siguiente, si sale a las 14:00) '
+      + 'o hasta que voten todas las personas de su lista, lo que pase primero. '
       + 'Cada persona que vota toca las propuestas de la que más quiere trabajar a la que menos: el 1.º puesto da tantos puntos como propuestas hay y el último, 1. '
       + 'Gana la que suma más; si empatan, la de Datito o, si no está entre las empatadas, la de número más bajo. Si nadie vota, queda la de Datito.</p>'
       + '<p class="dq-suave">Hasta el cierre se ve quién votó; el orden de cada persona, después. A las 14:00 del día del cierre, administración recibe un mail con la que ganó '
@@ -2378,6 +2386,9 @@ describe('dato-quincena.html: la página', () => {
     assert.match(modal, /<div id="dq-voto-cuerpo"><\/div>/);
     // La región viva del diálogo, fuera del cuerpo que se vuelve a dibujar en cada toque
     assert.match(modal, /<div id="dq-voto-cuerpo"><\/div>\s*<p class="visualmente-oculto" id="dq-voto-anuncio" role="status"><\/p>/);
+    // El aviso a la última persona en votar: oculto, dentro del cuerpo del diálogo y antes del pie con «Guardar mi orden»; no es región viva
+    assert.match(modal, /<p class="dq-voto-aviso" id="dq-voto-aviso" hidden><\/p>\s*<\/div>\s*<div class="modal-footer">/);
+    assert.ok(!/id="dq-voto-aviso"[^>]*(role=|aria-live)/.test(modal), 'no es una región viva');
     assert.match(modal, /<button type="button" class="dq-btn dq-btn-borde" data-cerrar>Cancelar<\/button>/);
     // «Guardar mi orden» empieza deshabilitado: el script lo habilita cuando todas tienen su puesto
     assert.ok(modal.includes(`<button type="button" class="dq-btn dq-btn-tinta" id="dq-voto-guardar" disabled>${constante('TEXTOS_DEL_VOTO').guardar}</button>`));
@@ -2401,7 +2412,7 @@ describe('dato-quincena.html: la página', () => {
       + ctx.htmlDeLaCajaDelCorreo(CAJA())), []);
     // Con la franja del equipo (de antes y votada), los votos y el cuerpo del diálogo «Tu orden»
     for (const nombre of ['detalle', 'detalle_equipo_coincide', 'detalle_equipo_otra', 'detalle_votacion_abierta', 'detalle_votacion_abierta_con_voto',
-      'detalle_votacion_cerrada_puntos', 'detalle_votacion_cerrada_desempate', 'detalle_votacion_cerrada_nadie']) {
+      'detalle_votacion_cerrada_puntos', 'detalle_votacion_cerrada_desempate', 'detalle_votacion_cerrada_nadie', 'detalle_votacion_cerrada_por_todos']) {
       const detalle = respuesta(nombre).data;
       assert.deepEqual(repetidos(html + ctx.htmlDePestanas('ediciones') + ctx.htmlDelDetalle(detalle, { admin: true, vista: 'propuestas' })
         + ctx.htmlDelDialogoDelVoto(detalle, [1])), [], nombre);
@@ -3158,7 +3169,7 @@ describe('dato-quincena.js: la votación de la principal del equipo (spec 2026-1
       assert.ok(!ctx.htmlDelDialogoDelVoto(detalle, [1]).includes(NEGRITA));
     }
     for (const nombre of ['detalle', 'detalle_equipo_coincide', 'detalle_equipo_otra', 'detalle_votacion_abierta', 'detalle_votacion_abierta_con_voto',
-      'detalle_votacion_cerrada_puntos', 'detalle_votacion_cerrada_desempate', 'detalle_votacion_cerrada_nadie']) {
+      'detalle_votacion_cerrada_puntos', 'detalle_votacion_cerrada_desempate', 'detalle_votacion_cerrada_nadie', 'detalle_votacion_cerrada_por_todos']) {
       for (const admin of [true, false]) {
         for (const vista of ['general', 'propuestas']) {
           const html = ctx.htmlDelDetalle(respuesta(nombre).data, { admin, vista });
@@ -3291,6 +3302,14 @@ describe('dato-quincena.js: la votación de la principal del equipo (spec 2026-1
     assert.match(telefono, /\.dq-votar-esta \{ margin-left: 0; \}/);
     // «Guardar mi orden» deshabilitado se ve apagado
     assert.match(estilo, /#dq-voto-guardar:disabled \{ opacity: 0\.55; \}/);
+    // El aviso a la última persona en votar, con los tokens de los otros avisos en sol (sin colores fijos), en negrita y con la barra
+    const aviso = estilo.match(/\.dq-voto-aviso \{([^}]*)\}/)?.[1] ?? '';
+    assert.match(aviso, /background: var\(--sg-sol\);/);
+    assert.match(aviso, /border: 1px solid var\(--sg-ambar\);/);
+    assert.match(aviso, /border-left: 5px solid var\(--sg-ambar\);/);
+    assert.match(aviso, /color: var\(--sg-ambar\);/);
+    assert.match(aviso, /font-weight: 700;/);
+    assert.doesNotMatch(aviso, /#[0-9A-Fa-f]{3,6}\b/);
     assert.doesNotMatch(estilo, /Datito/);
     assert.doesNotMatch(estilo, /\.mq-/);
   });
@@ -3307,7 +3326,7 @@ describe('dato-quincena.js: votar (la parte del DOM)', () => {
     detalle.propuestas = detalle.propuestas.slice(0, 1);
     return detalle;
   };
-  const MENSAJE = 'Guardamos tu orden. Lo podés cambiar hasta el martes 03/11 a las 12:00.';
+  const MENSAJE = 'Guardamos tu orden. Lo podés cambiar hasta el martes 03/11 a las 12:00, o hasta que voten todas las personas de la lista.';
   const despues = () => new Promise((listo) => setImmediate(listo));
   const conDetalle = (c, detalle, { vista = 'general', propuesta = null, caja = null, admin = false } = {}) => vm.runInContext(
     `vistaDatoQuincena.admin = ${admin}; vistaDatoQuincena.detalle = ${JSON.stringify(detalle)}; vistaDatoQuincena.vista = ${JSON.stringify(vista)};`
@@ -3345,6 +3364,49 @@ describe('dato-quincena.js: votar (la parte del DOM)', () => {
   };
   const tocar = (dialogo, orden) => dialogo.oyentes.click({ target: botonCon('button[data-tocar]', { tocar: String(orden) }) });
   const tocadas = (c) => plano(vm.runInContext('vistaDatoQuincena.voto?.tocadas ?? null', c));
+  // «Votar» o «Cambiar mi orden»: el clic vuelve a pedir la edición y el diálogo abre con la respuesta
+  const tocarVotar = async (c, boton) => {
+    c.alTocarDq({ target: boton });
+    await despues();
+  };
+
+  it('el aviso a la última persona en votar: arriba de «Guardar mi orden», con textContent y asociado al diálogo; sin él, oculto', async () => {
+    const aviso = 'Sos la última persona en votar: al guardar, la votación cierra y nadie puede cambiar su orden.';
+    const abrir = async (detalle) => {
+      const d = dialogoFalso();
+      const aviso$ = falso({ hidden: true });
+      d.lugares['dq-voto-aviso'] = aviso$;
+      const dialogo = falso();
+      dialogo.setAttribute('aria-describedby', 'dq-voto-texto');
+      d.modal.querySelector = (sel) => (sel === '[role="dialog"]' ? dialogo : null);
+      const { c } = paginaFalsa({ admin: false, search: '?id=12', lugares: d.lugares, responder: () => ({ success: true, data: detalle }) });
+      c.setTimeout = (f) => f();
+      await c.iniciarDatoQuincena();
+      const votar = botonCon('button[data-votar]', {});
+      votar.focus = () => {};
+      await tocarVotar(c, votar);
+      return { aviso: aviso$, dialogo, d };
+    };
+    const ultima = respuesta('detalle_votacion_abierta_ultima').data;
+    ultima.votacion.aviso_de_cierre = '<b>' + aviso + '</b>';
+    const con = await abrir(ultima);
+    assert.equal(con.aviso.textContent, '<b>' + aviso + '</b>', 'con textContent: el servidor escapa el navegador, no se arma HTML');
+    assert.equal(con.aviso.innerHTML, '');
+    assert.equal(con.aviso.hidden, false);
+    assert.equal(con.dialogo.getAttribute('aria-describedby'), 'dq-voto-texto dq-voto-aviso');
+    const sin = await abrir(respuesta('detalle_votacion_abierta').data);
+    assert.equal(sin.aviso.textContent, '');
+    assert.equal(sin.aviso.hidden, true);
+    assert.equal(sin.dialogo.getAttribute('aria-describedby'), 'dq-voto-texto');
+    // Quien ya votó (o no puede votar) no abre el diálogo: nada se muestra
+    const votoYa = respuesta('detalle_votacion_abierta_ultima').data;
+    votoYa.votacion.puede_votar = false;
+    votoYa.votacion.aviso_de_cierre = null;
+    const ya = await abrir(votoYa);
+    assert.equal(ya.aviso.hidden, true);
+    // El fixture trae el aviso de verdad
+    assert.equal(respuesta('detalle_votacion_abierta_ultima').data.votacion.aviso_de_cierre, aviso);
+  });
 
   it('un lector en la foto: «Votar» abre «Tu orden» vacío con el texto del servidor; tocar da el puesto y lo anuncia; con todas, «Guardar mi orden»; Escape cierra', async () => {
     const d = dialogoFalso();
@@ -3355,7 +3417,7 @@ describe('dato-quincena.js: votar (la parte del DOM)', () => {
     assert.equal(typeof d.oyentes.click, 'function');
     const votar = botonCon('button[data-votar]', {});
     votar.focus = () => d.enfocados.push('votar');
-    c.alTocarDq({ target: votar });
+    await tocarVotar(c, votar);
     assert.ok(d.modal.classList.contains('active'));
     assert.equal(todos['dq-voto-texto'].textContent, ABIERTA().votacion.dialogo);
     assert.equal(d.cuerpo.innerHTML, c.htmlDelDialogoDelVoto(ABIERTA(), []));
@@ -3389,12 +3451,12 @@ describe('dato-quincena.js: votar (la parte del DOM)', () => {
     assert.equal(d.enfocados.at(-1), 'votar');
     assert.equal(vm.runInContext('vistaDatoQuincena.voto', c), null);
     // «Cancelar» y el velo (si el clic empezó en el velo) también cierran
-    c.alTocarDq({ target: votar });
+    await tocarVotar(c, votar);
     const cancelar = falso();
     cancelar.closest = (selector) => (selector === '[data-cerrar]' ? cancelar : null);
     d.oyentes.click({ target: cancelar });
     assert.ok(!d.modal.classList.contains('active'));
-    c.alTocarDq({ target: votar });
+    await tocarVotar(c, votar);
     d.oyentes.mousedown({ target: falso() });
     d.oyentes.click({ target: d.modal });
     assert.ok(d.modal.classList.contains('active'), 'una selección que termina en el velo no cierra');
@@ -3421,7 +3483,7 @@ describe('dato-quincena.js: votar (la parte del DOM)', () => {
     });
     c.setTimeout = (f) => f();
     await c.iniciarDatoQuincena();
-    c.alTocarDq({ target: botonCon('button[data-votar]', {}) });
+    await tocarVotar(c, botonCon('button[data-votar]', {}));
     assert.deepEqual(tocadas(c), [2, 1], 'con su orden');
     assert.equal(d.guardar.disabled, false);
     d.oyentes.click({ target: botonCon('button[data-de-nuevo]', {}) });
@@ -3453,9 +3515,11 @@ describe('dato-quincena.js: votar (la parte del DOM)', () => {
     });
     c.conectarElVotoDq();
     conDetalle(c, CON_VOTO(), { vista: 'propuestas', propuesta: 2 });
-    c.alTocarDq({ target: botonCon('button[data-votar]', {}) });
+    await tocarVotar(c, botonCon('button[data-votar]', {}));
     await d.oyentes['guardar:click']({ currentTarget: d.guardar });
-    assert.deepEqual(pedidos, [['PUT', '/dato-quincena/ediciones/12/voto', { orden: [2, 1] }], ['GET', '/dato-quincena/ediciones/12']]);
+    assert.deepEqual(pedidos, [
+      ['GET', '/dato-quincena/ediciones/12'], ['PUT', '/dato-quincena/ediciones/12/voto', { orden: [2, 1] }], ['GET', '/dato-quincena/ediciones/12']
+    ]);
     assert.equal(contenido.innerHTML, c.htmlDelDetalle(CON_VOTO(), { admin: false, vista: 'propuestas', propuesta: 2 }));
     assert.equal(boton.enfocado, true);
     assert.deepEqual(avisos, [['Tu orden ya era ese.', 'info']]);
@@ -3471,9 +3535,9 @@ describe('dato-quincena.js: votar (la parte del DOM)', () => {
     });
     c.conectarElVotoDq();
     conDetalle(c, CON_VOTO());
-    c.alTocarDq({ target: botonCon('button[data-votar]', {}) });
+    await tocarVotar(c, botonCon('button[data-votar]', {}));
     await d.oyentes['guardar:click']({ currentTarget: d.guardar });
-    assert.deepEqual(pedidos, [['PUT', '/dato-quincena/ediciones/12/voto', { orden: [2, 1] }]]);
+    assert.deepEqual(pedidos, [['GET', '/dato-quincena/ediciones/12'], ['PUT', '/dato-quincena/ediciones/12/voto', { orden: [2, 1] }]]);
     assert.deepEqual(avisos, [['Un error &lt;inventado&gt;.', 'error']]);
     // Con el diálogo abierto (aria-modal), la región de la página no se anuncia: va también a la del diálogo, como texto
     assert.equal(todos['dq-voto-anuncio'].textContent, 'Un error <inventado>.');
@@ -3486,7 +3550,7 @@ describe('dato-quincena.js: votar (la parte del DOM)', () => {
     assert.deepEqual(avisos.at(-1), ['No se pudo guardar tu orden. Probá de nuevo en unos minutos.', 'error']);
     assert.equal(todos['dq-voto-anuncio'].textContent, 'No se pudo guardar tu orden. Probá de nuevo en unos minutos.');
     assert.ok(d.modal.classList.contains('active'), 'sigue abierto');
-    assert.deepEqual(pedidos.map(([metodo]) => metodo), ['PUT', 'PUT']);
+    assert.deepEqual(pedidos.map(([metodo]) => metodo), ['GET', 'PUT', 'PUT']);
     error = errorDelServidor(401, 'Sesión vencida');
     await d.oyentes['guardar:click']({ currentTarget: d.guardar });
     assert.equal(c.window.location.href, 'login.html');
@@ -3502,18 +3566,25 @@ describe('dato-quincena.js: votar (la parte del DOM)', () => {
       const d = dialogoFalso();
       const pestana = enfocable();
       const contenido = contenidoFalso({ '#dq-tab-general': pestana });
+      // Al abrir, la edición todavía se vota; después del PUT, ya no
+      let votado = false;
       const { c, pedidos, avisos, todos, urls } = paginaFalsa({
         admin: false, search: '?id=12', lugares: { ...d.lugares, 'dq-contenido': contenido },
         responder: (metodo) => {
-          if (metodo === 'PUT') throw errorDelServidor(status, mensaje);
-          return { success: true, data: despues };
+          if (metodo === 'PUT') {
+            votado = true;
+            throw errorDelServidor(status, mensaje);
+          }
+          return { success: true, data: votado ? despues : CON_VOTO() };
         }
       });
       c.conectarElVotoDq();
       conDetalle(c, CON_VOTO());
-      c.alTocarDq({ target: botonCon('button[data-votar]', {}) });
+      await tocarVotar(c, botonCon('button[data-votar]', {}));
       await d.oyentes['guardar:click']({ currentTarget: d.guardar });
-      assert.deepEqual(pedidos, [['PUT', '/dato-quincena/ediciones/12/voto', { orden: [2, 1] }], ['GET', '/dato-quincena/ediciones/12']], mensaje);
+      assert.deepEqual(pedidos, [
+        ['GET', '/dato-quincena/ediciones/12'], ['PUT', '/dato-quincena/ediciones/12/voto', { orden: [2, 1] }], ['GET', '/dato-quincena/ediciones/12']
+      ], mensaje);
       assert.deepEqual(avisos, [[mensaje, 'error']], mensaje);
       assert.equal(todos['dq-voto-anuncio'].textContent, mensaje);
       assert.equal(todos['dq-anuncio'].textContent, mensaje);
@@ -3535,26 +3606,199 @@ describe('dato-quincena.js: votar (la parte del DOM)', () => {
     c.setTimeout = (f) => f();
     c.conectarElVotoDq();
     conDetalle(c, UNA());
-    c.alTocarDq({ target: botonCon('button[data-votar]', {}) });
+    await tocarVotar(c, botonCon('button[data-votar]', {}));
     assert.equal(d.cuerpo.innerHTML, c.htmlDelDialogoDelVoto(UNA(), []));
     assert.equal(d.guardar.disabled, true);
     tocar(d, 1);
     assert.equal(d.guardar.disabled, false);
     assert.equal(todos['dq-voto-anuncio'].textContent, 'Listo: ya está la única.');
     await d.oyentes['guardar:click']({ currentTarget: d.guardar });
-    assert.deepEqual(pedidos[0], ['PUT', '/dato-quincena/ediciones/12/voto', { orden: [1] }]);
+    assert.deepEqual(pedidos[1], ['PUT', '/dato-quincena/ediciones/12/voto', { orden: [1] }]);
   });
 
-  it('«Votar» no abre nada si no se puede votar (cerrada o fuera de la foto) ni sin una edición', () => {
+  it('«Votar» no abre nada ni pide la edición si lo que se ve no se puede votar (cerrada o fuera de la foto) ni sin una edición', async () => {
     const d = dialogoFalso();
-    const { c } = paginaFalsa({ admin: false, search: '?id=12', lugares: d.lugares });
+    const { c, pedidos } = paginaFalsa({ admin: false, search: '?id=12', lugares: d.lugares, responder: () => ({ success: true, data: ABIERTA() }) });
     c.conectarElVotoDq();
     for (const detalle of [PUNTOS(), { ...ABIERTA(), votacion: { ...ABIERTA().votacion, puede_votar: false } }, OTRA(), { ...ABIERTA(), id: 0 }]) {
       conDetalle(c, detalle);
-      c.alTocarDq({ target: botonCon('button[data-votar]', {}) });
+      await tocarVotar(c, botonCon('button[data-votar]', {}));
       assert.ok(!d.modal.classList.contains('active'), JSON.stringify(detalle.votacion));
       assert.equal(vm.runInContext('vistaDatoQuincena.voto', c), null);
     }
+    assert.deepEqual(pedidos, []);
+  });
+
+  // Al abrir, «Tu orden» vuelve a pedir la edición: la votación pudo cambiar desde que se dibujó (otra persona votó, cerró o quien mira
+  // votó en otra pestaña)
+  it('«Votar» vuelve a pedir la edición y abre «Tu orden» con la votación recién llegada: su texto, el aviso a la última persona y su orden', async () => {
+    const ULTIMA = () => respuesta('detalle_votacion_abierta_ultima').data;
+    const casos = [
+      // Lo que se ve no tiene voto; lo que llega, su orden (votó en otra pestaña) y otro texto
+      [ABIERTA(), { ...CON_VOTO(), votacion: { ...CON_VOTO().votacion, dialogo: 'Un texto <recién> llegado.' } },
+        { texto: 'Un texto <recién> llegado.', tocadas: [2, 1], aviso: '' }],
+      // Lo que llega: ya votaron las otras dos y quien mira es la última
+      [ABIERTA(), ULTIMA(), { texto: ULTIMA().votacion.dialogo, tocadas: [], aviso: ULTIMA().votacion.aviso_de_cierre }],
+      // Lo que se ve tenía el aviso; lo que llega ya no (votó en otra pestaña): sin aviso
+      [ULTIMA(), CON_VOTO(), { texto: CON_VOTO().votacion.dialogo, tocadas: [2, 1], aviso: '' }]
+    ];
+    for (const [visto, llegado, esperado] of casos) {
+      const d = dialogoFalso();
+      const aviso = falso({ hidden: true });
+      d.lugares['dq-voto-aviso'] = aviso;
+      const { c, pedidos, todos, avisos } = paginaFalsa({
+        admin: false, search: '?id=12', lugares: d.lugares, responder: () => ({ success: true, data: llegado })
+      });
+      c.setTimeout = (f) => f();
+      c.conectarElVotoDq();
+      conDetalle(c, visto);
+      await tocarVotar(c, botonCon('button[data-votar]', {}));
+      assert.deepEqual(pedidos, [['GET', '/dato-quincena/ediciones/12']]);
+      assert.ok(d.modal.classList.contains('active'), esperado.texto);
+      assert.equal(todos['dq-voto-texto'].textContent, esperado.texto, 'con textContent');
+      assert.deepEqual(tocadas(c), esperado.tocadas);
+      assert.equal(d.cuerpo.innerHTML, c.htmlDelDialogoDelVoto(visto, esperado.tocadas));
+      assert.equal(aviso.textContent, esperado.aviso);
+      assert.equal(aviso.hidden, esperado.aviso === '');
+      assert.deepEqual(d.enfocados, ['button[data-tocar]'], 'el foco en la primera propuesta');
+      assert.deepEqual(avisos, []);
+    }
+  });
+
+  it('mientras espera la edición: el botón deshabilitado, un doble clic pide una sola vez y no abren «Reenviar…» ni otro «Tu orden»; con la respuesta, abre y Escape devuelve el foco al botón', async () => {
+    const d = dialogoFalso();
+    const reenvio = falso();
+    let llegar = null;
+    const { c, pedidos, todos, oyentes } = paginaFalsa({
+      search: '?id=12', lugares: { ...d.lugares, 'dq-reenvio': reenvio, 'dq-envio-lugar': falso() },
+      responder: () => new Promise((listo) => { llegar = () => listo({ success: true, data: CON_VOTO() }); })
+    });
+    c.setTimeout = (f) => f();
+    c.conectarElVotoDq();
+    conDetalle(c, ABIERTA(), { caja: CAJA(), admin: true });
+    const votar = botonCon('button[data-votar]', {});
+    const enfocados = [];
+    votar.focus = () => enfocados.push('votar');
+    // El de la propuesta, otro «Votar» de la misma edición
+    const otro = botonCon('button[data-votar]', {});
+    await tocarVotar(c, votar);
+    assert.equal(votar.disabled, true, 'deshabilitado mientras espera');
+    await tocarVotar(c, votar);
+    await tocarVotar(c, otro);
+    c.alTocarDq({ target: botonCon('button[data-reenviar]', {}) });
+    assert.deepEqual(pedidos, [['GET', '/dato-quincena/ediciones/12']], 'un solo pedido');
+    assert.equal(otro.disabled, false, 'el otro no se tocó');
+    assert.ok(!reenvio.classList.contains('active'), '«Reenviar…» no abre mientras espera');
+    assert.equal(todos['dq-reenvio-cuerpo'].innerHTML, '');
+    assert.ok(!d.modal.classList.contains('active'), 'todavía no abre');
+    assert.equal(vm.runInContext('vistaDatoQuincena.voto', c), null);
+    llegar();
+    await despues();
+    assert.ok(d.modal.classList.contains('active'));
+    assert.equal(votar.disabled, false);
+    assert.deepEqual(tocadas(c), [2, 1]);
+    assert.deepEqual(d.enfocados, ['button[data-tocar]']);
+    oyentes['document:keydown']({ key: 'Escape', preventDefault() {} });
+    assert.ok(!d.modal.classList.contains('active'));
+    assert.deepEqual(enfocados, ['votar'], 'el foco vuelve al botón que lo abrió');
+    // Con la respuesta, «Reenviar…» vuelve a abrir
+    c.alTocarDq({ target: botonCon('button[data-reenviar]', {}) });
+    assert.ok(reenvio.classList.contains('active'));
+  });
+
+  it('si ya no se puede votar (cerró, también porque votaron todos, o puede_votar false): vuelve a dibujar la edición con lo que llegó, sin «Votar», y no abre; el foco en su pestaña', async () => {
+    const SIN_VOTAR = () => ({ ...ABIERTA(), votacion: { ...ABIERTA().votacion, puede_votar: false, falta_tu_voto: false, dialogo: null } });
+    for (const llegado of [respuesta('detalle_votacion_cerrada_por_todos').data, PUNTOS(), SIN_VOTAR()]) {
+      const d = dialogoFalso();
+      const pestana = enfocable();
+      const contenido = contenidoFalso({ '#dq-tab-general': pestana });
+      const { c, pedidos, avisos, urls } = paginaFalsa({
+        admin: false, search: '?id=12', lugares: { ...d.lugares, 'dq-contenido': contenido }, responder: () => ({ success: true, data: llegado })
+      });
+      c.conectarElVotoDq();
+      conDetalle(c, ABIERTA());
+      await tocarVotar(c, botonCon('button[data-votar]', {}));
+      assert.deepEqual(pedidos, [['GET', '/dato-quincena/ediciones/12']], 'la edición se pide una sola vez');
+      assert.ok(!d.modal.classList.contains('active'));
+      assert.equal(vm.runInContext('vistaDatoQuincena.voto', c), null);
+      assert.equal(contenido.innerHTML, c.htmlDelDetalle(llegado, { admin: false, vista: 'general', propuesta: null }));
+      assert.ok(!contenido.innerHTML.includes('data-votar'));
+      assert.equal(pestana.enfocado, true);
+      assert.deepEqual(plano(vm.runInContext('vistaDatoQuincena.detalle', c)), llegado);
+      assert.deepEqual(avisos, []);
+      assert.deepEqual(urls, []);
+    }
+  });
+
+  it('si el pedido falla: el error del servidor (escapado) o el de siempre, no abre ni vuelve a dibujar y el botón vuelve a andar; un 401, al login', async () => {
+    const DE_SIEMPRE = 'No se pudo guardar tu orden. Probá de nuevo en unos minutos.';
+    const casos = [
+      [() => { throw errorDelServidor(500, 'Error al obtener <la> edición'); }, 'Error al obtener &lt;la&gt; edición'],
+      [() => { throw new TypeError('Failed to fetch'); }, DE_SIEMPRE],
+      // Una respuesta que no es la edición
+      [() => ({ success: true, data: null }), DE_SIEMPRE],
+      [() => ({ success: true, data: { ...ABIERTA(), id: 99 } }), DE_SIEMPRE]
+    ];
+    for (const [responder, aviso] of casos) {
+      const d = dialogoFalso();
+      const contenido = contenidoFalso();
+      const { c, pedidos, avisos } = paginaFalsa({ admin: false, search: '?id=12', lugares: { ...d.lugares, 'dq-contenido': contenido }, responder });
+      c.conectarElVotoDq();
+      conDetalle(c, ABIERTA());
+      const votar = botonCon('button[data-votar]', {});
+      await tocarVotar(c, votar);
+      assert.deepEqual(pedidos, [['GET', '/dato-quincena/ediciones/12']]);
+      assert.deepEqual(avisos, [[aviso, 'error']]);
+      assert.ok(!d.modal.classList.contains('active'), aviso);
+      assert.equal(vm.runInContext('vistaDatoQuincena.voto', c), null);
+      assert.equal(votar.disabled, false);
+      assert.equal(contenido.innerHTML, '');
+    }
+    const d = dialogoFalso();
+    const { c } = paginaFalsa({ admin: false, search: '?id=12', lugares: d.lugares, responder: () => { throw errorDelServidor(401, 'Sesión vencida'); } });
+    c.conectarElVotoDq();
+    conDetalle(c, ABIERTA());
+    await tocarVotar(c, botonCon('button[data-votar]', {}));
+    assert.equal(c.window.location.href, 'login.html');
+    assert.ok(!d.modal.classList.contains('active'));
+  });
+
+  it('si mientras espera la página mostró otra cosa u otro diálogo se abrió («Ver»), no abre ni dibuja nada', async () => {
+    for (const mientras of ['vistaDatoQuincena.pedido += 1;', 'vistaDatoQuincena.modal = { volverA: null };']) {
+      const d = dialogoFalso();
+      const contenido = contenidoFalso();
+      let llegar = null;
+      const { c, avisos } = paginaFalsa({
+        admin: false, search: '?id=12', lugares: { ...d.lugares, 'dq-contenido': contenido },
+        responder: () => new Promise((listo) => { llegar = () => listo({ success: true, data: PUNTOS() }); })
+      });
+      c.conectarElVotoDq();
+      conDetalle(c, ABIERTA());
+      await tocarVotar(c, botonCon('button[data-votar]', {}));
+      vm.runInContext(mientras, c);
+      llegar();
+      await despues();
+      if (mientras.includes('pedido')) assert.equal(contenido.innerHTML, '', 'no vuelve a dibujar');
+      llegar = null;
+      assert.ok(!d.modal.classList.contains('active'), mientras);
+      assert.equal(vm.runInContext('vistaDatoQuincena.voto', c), null);
+      assert.deepEqual(avisos, []);
+    }
+    // Con lo que se puede votar, tampoco abre encima de «Ver»
+    const d = dialogoFalso();
+    let llegar = null;
+    const { c } = paginaFalsa({
+      admin: false, search: '?id=12', lugares: d.lugares,
+      responder: () => new Promise((listo) => { llegar = () => listo({ success: true, data: ABIERTA() }); })
+    });
+    c.conectarElVotoDq();
+    conDetalle(c, ABIERTA());
+    await tocarVotar(c, botonCon('button[data-votar]', {}));
+    vm.runInContext('vistaDatoQuincena.modal = { volverA: null };', c);
+    llegar();
+    await despues();
+    assert.ok(!d.modal.classList.contains('active'));
+    assert.equal(vm.runInContext('vistaDatoQuincena.voto', c), null);
   });
 
   it('una por vez: mientras se guarda, tocar no cambia el orden, «Votar» no vuelve a abrir y «Reenviar…» no abre su diálogo; con la respuesta, sí', async () => {
@@ -3574,7 +3818,7 @@ describe('dato-quincena.js: votar (la parte del DOM)', () => {
     c.setTimeout = (f) => f();
     c.conectarElVotoDq();
     conDetalle(c, CON_VOTO(), { caja: CAJA(), admin: true });
-    c.alTocarDq({ target: cambiar });
+    await tocarVotar(c, cambiar);
     const guardando = d.oyentes['guardar:click']({ currentTarget: d.guardar });
     const antes = vm.runInContext('vistaDatoQuincena.voto', c);
     tocar(d, 1);
@@ -3587,18 +3831,22 @@ describe('dato-quincena.js: votar (la parte del DOM)', () => {
     c.alTocarDq({ target: reenviar });
     assert.ok(!reenvio.classList.contains('active'), 'no abre mientras se guarda');
     assert.equal(todos['dq-reenvio-cuerpo'].innerHTML, '');
-    assert.deepEqual(pedidos, [['PUT', '/dato-quincena/ediciones/12/voto', { orden: [2, 1] }]]);
+    await despues();
+    assert.deepEqual(pedidos, [['GET', '/dato-quincena/ediciones/12'], ['PUT', '/dato-quincena/ediciones/12/voto', { orden: [2, 1] }]],
+      '«Cambiar mi orden» no volvió a pedir la edición');
     responderElPut();
     await guardando;
     await despues();
-    assert.deepEqual(pedidos, [['PUT', '/dato-quincena/ediciones/12/voto', { orden: [2, 1] }], ['GET', '/dato-quincena/ediciones/12']]);
+    assert.deepEqual(pedidos, [
+      ['GET', '/dato-quincena/ediciones/12'], ['PUT', '/dato-quincena/ediciones/12/voto', { orden: [2, 1] }], ['GET', '/dato-quincena/ediciones/12']
+    ]);
     assert.deepEqual(enfocados, ['cambiar'], 'el foco en «Cambiar mi orden», sin un diálogo abierto encima');
     // Con la respuesta, «Reenviar…» abre con la lista de hoy y «Cambiar mi orden» vuelve a abrir «Tu orden»
     c.alTocarDq({ target: reenviar });
     assert.ok(reenvio.classList.contains('active'));
     assert.equal(todos['dq-reenvio-cuerpo'].innerHTML, c.htmlDelReenvio(CAJA().lista_de_hoy));
     c.cerrarReenvioDq();
-    c.alTocarDq({ target: cambiar });
+    await tocarVotar(c, cambiar);
     assert.ok(d.modal.classList.contains('active'));
   });
 
@@ -3659,7 +3907,7 @@ describe('dato-quincena.js: votar (la parte del DOM)', () => {
 
   it('Tab y Mayúscula+Tab no salen de «Tu orden» (aria-modal): del último al primero y del primero al último; cerrado, Tab es del navegador', async () => {
     const d = dialogoFalso();
-    const { c, oyentes } = paginaFalsa({ admin: false, search: '?id=12', lugares: d.lugares });
+    const { c, oyentes } = paginaFalsa({ admin: false, search: '?id=12', lugares: d.lugares, responder: () => ({ success: true, data: ABIERTA() }) });
     c.setTimeout = () => {};
     c.conectarElVotoDq();
     conDetalle(c, ABIERTA());
@@ -3680,7 +3928,7 @@ describe('dato-quincena.js: votar (la parte del DOM)', () => {
       return { prevenido, enfocado: c.document.activeElement };
     };
     assert.deepEqual(desde(afuera, false), { prevenido: false, enfocado: afuera }, 'cerrado, Tab es del navegador');
-    c.alTocarDq({ target: botonCon('button[data-votar]', {}) });
+    await tocarVotar(c, botonCon('button[data-votar]', {}));
     assert.equal(d.guardar.disabled, true);
     assert.deepEqual(desde(cancelar, false), { prevenido: true, enfocado: cerrar });
     assert.deepEqual(desde(cerrar, true), { prevenido: true, enfocado: cancelar });

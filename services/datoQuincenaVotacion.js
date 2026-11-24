@@ -4,9 +4,12 @@
  * - Con su propio candado (`rpad_dato_quincena_votacion`), ni el de las Notas, ni el del aviso diario, ni el del correo: con otra corrida
  *   del paso en marcha, termina «ocupada» sin escribir nada, y no es un error.
  * - Sella cada votación sin sellar cuyo cierre ya pasó, calculado con el calendario de la corrida (`estadoDeLaVotacionLeida`), solo si
- *   `debeSellar`: un día hábil, con el calendario leído y desde las 14:00 del día del cierre. Si no, la deja para la corrida siguiente: la
- *   de las 14:00 de ese día o, si no pudo, la de las 8:05 del siguiente día hábil. Las corridas a mano siguen la misma regla. Sellar es
- *   guardar `cierre_at` y `sellada_at`: desde ahí la votación ya no depende del calendario.
+ *   `debeSellar`: un día hábil, con el calendario leído y desde las 14:00 del día del cierre de siempre (`cierre_nominal`). Si no, la deja
+ *   para la corrida siguiente: la de las 14:00 de ese día o, si no pudo, la de las 8:05 del siguiente día hábil. Las corridas a mano siguen
+ *   la misma regla. Sellar es guardar `cierre_at` y `sellada_at`: desde ahí la votación ya no depende del calendario.
+ * - Una votación que cerró antes porque votaron todos (spec 2026-11-23-dato-quincena-votacion-cierre-anticipado) se sella igual con el
+ *   horario de siempre, nunca antes: el mail del resultado sale a las 14:00 del día del cierre de siempre. `cierre_at` guarda el cierre
+ *   que tuvo, la hora del voto que la cerró: con ella, sellada, se sigue leyendo cerrada por todos (`estadoDeLaVotacion`).
  * - En una regular, al sellar se manda el mail del resultado a administración (activa, con un email válido y sin licencia oficial ese
  *   día), salvo con el envío automático apagado («apagado»: no se manda después). Un piloto se sella sin mail («no_corresponde»).
  * - El mail sale una sola vez por edición: lo reserva el UPDATE condicionado que sella (sellarLaVotacion), y solo la corrida que la selló
@@ -49,12 +52,17 @@ const aLaConsola = (texto, error) => console.error(texto, String(error?.code ?? 
 
 const falla = (resultado, edicionId, error, usuarioId = null) => resultado.errores.push({ edicion_id: edicionId, usuario_id: usuarioId, error });
 
-// El cierre de una votación sin sellar si ya toca sellarla ('AAAA-MM-DD HH:MM'), o null: sin calendario o sin una llegada que se pueda
-// leer el cierre no se sabe, y antes de las 14:00 del día del cierre (o un día que no es hábil) todavía no
-const cierreSiToca = (fila, { ahora, calendario }) => {
-  const { cierre } = estadoDeLaVotacionLeida({ ...fila, cierre_at: null }, { ahora, calendario });
-  return cierre !== null && debeSellar({ cierre, ahora, calendario }) ? cierre : null;
+// Si ya toca sellar una votación sin sellar, con su cierre de siempre (el de las 12:00, que no depende de los votos: alcanza la fila de
+// votacionesSinSellar): sin calendario o sin una llegada que se pueda leer no se sabe, y antes de las 14:00 de ese día (o un día que no
+// es hábil) todavía no. Decisión: aunque haya cerrado antes porque votaron todos, nunca se sella antes
+const tocaSellar = (fila, { ahora, calendario }) => {
+  const { cierre_nominal: cierreDeSiempre } = estadoDeLaVotacionLeida({ ...fila, cierre_at: null }, { ahora, calendario });
+  return cierreDeSiempre !== null && debeSellar({ cierre: cierreDeSiempre, ahora, calendario });
 };
+
+// El cierre que se guarda al sellar ('AAAA-MM-DD HH:MM'), con la votación entera (la foto, los votos y las propuestas): la hora del voto
+// que la cerró si votaron todos; si no, el de las 12:00
+const cierreQueSeGuarda = (votacion, { ahora, calendario }) => estadoDeLaVotacionLeida(votacion, { ahora, calendario }).cierre;
 
 /**
  * Lo que hace falta para el mail de una edición, una vez: la edición guardada (sus propuestas en su orden, con la cifra clave) y la
@@ -147,15 +155,14 @@ const correr = async ({ ahora, calendario, enviar }, resultado) => {
   const tocan = [];
   for (const fila of sinSellar) {
     try {
-      const cierre = cierreSiToca(fila, { ahora, calendario });
-      if (cierre !== null) tocan.push({ fila, cierre });
+      if (tocaSellar(fila, { ahora, calendario })) tocan.push(fila);
     } catch (error) {
       aLaConsola(`Votación del dato de la quincena: no se pudo calcular el cierre de la edición ${fila.edicion_id}:`, error);
       falla(resultado, fila.edicion_id, MENSAJE_AL_SELLAR);
     }
   }
   if (tocan.length === 0) return;
-  const votaciones = await leerVotaciones(tocan.map(({ fila }) => fila.edicion_id));
+  const votaciones = await leerVotaciones(tocan.map((fila) => fila.edicion_id));
   let contexto = null;
   const aviso = async () => {
     if (contexto === null) {
@@ -168,10 +175,11 @@ const correr = async ({ ahora, calendario, enviar }, resultado) => {
     }
     return contexto;
   };
-  for (const { fila, cierre } of tocan) {
+  for (const fila of tocan) {
     const votacion = votaciones.get(fila.edicion_id);
     if (votacion === undefined) continue;
     try {
+      const cierre = cierreQueSeGuarda(votacion, { ahora, calendario });
       await sellarUna({ fila, votacion, cierre }, { ahora, calendario, enviar, aviso }, resultado);
     } catch (error) {
       aLaConsola(`Votación del dato de la quincena: no se pudo sellar la edición ${fila.edicion_id}:`, error);

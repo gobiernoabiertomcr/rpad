@@ -1,7 +1,8 @@
 // La votación de la principal del equipo (spec 2026-11-23-dato-quincena-principal-votacion, 3), contra una base de prueba propia y la
 // app real: al llegar una edición por el POST de Datito nacen su votación y la foto de quienes votan (las personas activas de la lista);
 // el PUT del voto, con sus controles en orden, una fila por cada orden guardado y dos pedidos a la vez sin cruzarse; el detalle y la
-// lista con la votación (lo de quien mira, para cada uno); la elección a mano, que ya no escribe; y sin las tablas, 500.
+// lista con la votación (lo de quien mira, para cada uno); la elección a mano, que ya no escribe; y sin las tablas, 500. Y el cierre
+// cuando votaron todos (spec 2026-11-23-dato-quincena-votacion-cierre-anticipado): el voto que completa la foto la cierra en ese momento.
 // La hora del servidor no se fija: una votación abierta es una que llegó recién (su cierre es posterior), una cerrada es una sellada a
 // mano o una cuya llegada se corrió al pasado. El cierre esperado se calcula con las reglas y el calendario de la base de prueba, sin
 // filas de feriados (los 9 fijos). Las personas se llaman Persona A, B, C…: inventadas.
@@ -9,10 +10,10 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, cerrarDb, query, mailpit } from './helpers.js';
+import { crearBaseDePrueba, iniciarServidor, crearCliente, crearUsuariosPrueba, cerrarDb, query, db, mailpit } from './helpers.js';
 import { FECHA_DE_PRUEBA, edicionDePrueba, pilotoDePrueba, partesDePrueba } from './dato-quincena-fixtures.js';
 import {
-  MENSAJES_VOTACION, cierreDeLaVotacion, llegadaDe, cierreLargo, cierreMedio, cierreCorto
+  MENSAJES_VOTACION, cierreDeLaVotacion, llegadaDe, cierreLargo, cierreMedio, cierreCorto, estadoDeLaVotacionLeida
 } from '../services/datoQuincenaVotacionReglas.js';
 import { calendarioCon } from '../services/feriadosReglas.js';
 import { ahoraArgentina } from '../services/notasDigitalesCalendario.js';
@@ -23,6 +24,8 @@ const RESPUESTAS = JSON.parse(fs.readFileSync(new URL('./fixtures/dato-quincena-
 const NO_EXISTE = { success: false, error: 'No existe esa edición.' };
 const error = (clave) => ({ success: false, error: MENSAJES_VOTACION[clave] });
 const NADIE_VOTA = 'No había nadie en la lista para votar.';
+const CERRO = 'Guardamos tu orden. Votaron todos: la votación cerró.';
+const AVISO_DE_CIERRE = 'Sos la última persona en votar: al guardar, la votación cierra y nadie puede cambiar su orden.';
 const SIN_CALENDARIO = 'No se pudo leer el calendario: el cierre se confirma en unos minutos.';
 
 // La forma de una respuesta (la de tests/dato-quincena-api.test.js): de cada objeto, sus claves en orden con la forma de cada valor;
@@ -141,6 +144,15 @@ const cierreDe = async (id) => {
 };
 const sellar = (id, cierre) => query('UPDATE dato_quincena_votaciones SET cierre_at = ?, sellada_at = ? WHERE edicion_id = ?',
   [cierre, ahoraArgentina(), id]);
+
+// El servicio de las consultas, para llamar a guardarVoto directo. El pool del servicio nace al importarlo: solo con DB_NAME en la base
+// de prueba, nunca en la del .env
+const elServicio = async () => {
+  assert.equal(process.env.DB_NAME, base.nombre);
+  const servicio = await import('../services/datoQuincenaVotacionDatos.js');
+  poolDelServicio = (await import('../config/database.js')).default;
+  return servicio;
+};
 
 describe('al llegar la edición', () => {
   before(async () => {
@@ -292,7 +304,7 @@ describe('votar: PUT /api/dato-quincena/ediciones/:id/voto', () => {
     const despues = ahoraArgentina();
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.deepEqual(res.body, {
-      success: true, data: { cambio: true }, message: `Guardamos tu orden. Lo podés cambiar hasta ${cierreMedio(cierre)}.`
+      success: true, data: { cambio: true }, message: `Guardamos tu orden. Lo podés cambiar hasta ${cierreMedio(cierre)}, o hasta que voten todas las personas de la lista.`
     });
     const votos = await votosDe(ed.regular);
     assert.equal(votos.length, 1);
@@ -355,20 +367,17 @@ describe('votar: PUT /api/dato-quincena/ediciones/:id/voto', () => {
   // guardarVoto llamado directo (lo que el PUT no puede forzar): si el cierre se mira adentro y ya cerró, no escribe; si mirarlo tira,
   // rechaza sin escribir y la transacción se deshace (después, la fila de la votación se puede volver a bloquear)
   it('guardarVoto: cerrada adentro de la transacción, { cerrada: true } sin escribir; si el cierre tira, rechaza sin escribir', async () => {
-    // El pool del servicio nace al importarlo: solo con DB_NAME en la base de prueba, nunca en la del .env
-    assert.equal(process.env.DB_NAME, base.nombre);
-    const { guardarVoto } = await import('../services/datoQuincenaVotacionDatos.js');
-    poolDelServicio = (await import('../config/database.js')).default;
+    const { guardarVoto } = await elServicio();
     const antes = await todosLosVotos();
-    const pedido = { edicionId: ed.regular, usuarioId: personas.a.id, orden: '3,4,1,2', ahora: ahoraArgentina() };
+    const pedido = { edicionId: ed.regular, usuarioId: personas.a.id, orden: '3,4,1,2' };
     assert.deepEqual(await guardarVoto({ ...pedido, estaCerrada: () => true }),
-      { votacion: true, persona: true, cerrada: true, cambio: false });
+      { votacion: true, persona: true, cerrada: true, cambio: false, cerro: false });
     assert.deepEqual(await todosLosVotos(), antes);
     await assert.rejects(guardarVoto({ ...pedido, estaCerrada: () => { throw new Error('Sin el calendario'); } }), /Sin el calendario/);
     assert.deepEqual(await todosLosVotos(), antes);
     // El último orden de A es 1,2,3,4: con el candado suelto, el mismo orden contesta sin escribir
     assert.deepEqual(await guardarVoto({ ...pedido, orden: '1,2,3,4', estaCerrada: () => false }),
-      { votacion: true, persona: true, cerrada: false, cambio: false });
+      { votacion: true, persona: true, cerrada: false, cambio: false, cerro: false });
     assert.deepEqual(await todosLosVotos(), antes);
   });
 
@@ -403,7 +412,7 @@ describe('el detalle y la lista', () => {
 
   const participacion = 'Ya votaron 2 de 3: Persona A y Persona C. Falta el voto de Persona B.';
   const dialogo = () => 'Tocá las propuestas en orden, de la que más querés trabajar como principal a la que menos. '
-    + `Lo podés cambiar hasta ${cierreMedio(cierre)}.`;
+    + `Lo podés cambiar hasta ${cierreMedio(cierre)}, o hasta que voten todas las personas de la lista.`;
 
   it('abierta, para quien está en la foto y no votó: puede votar y le falta, sin el orden de nadie', async () => {
     const res = await detalle(ed.regular, 'b');
@@ -417,6 +426,8 @@ describe('el detalle y la lista', () => {
       falta_tu_voto: true,
       tu_orden: null,
       dialogo: dialogo(),
+      // B es la única que falta: su voto cierra la votación
+      aviso_de_cierre: AVISO_DE_CIERRE,
       resultado: null
     });
     assert.deepEqual(res.data.principal_equipo, {
@@ -433,6 +444,8 @@ describe('el detalle y la lista', () => {
 
     const fuera = (await detalle(ed.regular, 'e')).data.votacion;
     assert.deepEqual([fuera.puede_votar, fuera.falta_tu_voto, fuera.tu_orden, fuera.dialogo], [false, false, null, null]);
+    // El aviso del diálogo es solo para B, la única que falta: ni para quien ya votó y cambia, ni para quien no está en la foto
+    assert.deepEqual([conVoto.data.votacion.aviso_de_cierre, fuera.aviso_de_cierre], [null, null]);
     assert.equal(fuera.participacion, participacion);
     assert.equal(conVoto.data.votacion.participacion, participacion);
   });
@@ -507,6 +520,217 @@ describe('el detalle y la lista', () => {
     const deAntes = await enLaLista(ed.deAntes, 'b');
     assert.deepEqual(deAntes.principal, { titulo: TITULOS[1], cifra_clave: '56 casos · septiembre de 2026', rotulo: 'Principal del equipo' });
     assert.equal(deAntes.votacion, null);
+  });
+});
+
+// La votación cierra cuando votaron todos (spec 2026-11-23-dato-quincena-votacion-cierre-anticipado): el voto que completa la foto la
+// cierra en ese momento, con la hora de ese voto; después nadie cambia su orden (409, sin fila nueva), y mientras falta alguien, sí. Cada
+// test con ediciones nuevas, con la foto de A, B y C, que llegan recién: su cierre de las 12:00 todavía no pasó
+describe('cierra cuando votaron todos', () => {
+  const nueva = async (fecha) => {
+    const res = await enviar(partesDePrueba(regularDeCuatro(fecha)));
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    return res.body.data.id;
+  };
+  const hastaCuando = async (id) => `Guardamos tu orden. Lo podés cambiar hasta ${cierreMedio(await cierreDe(id))}, `
+    + 'o hasta que voten todas las personas de la lista.';
+  const guardado = (message) => ({ success: true, data: { cambio: true }, message });
+  // De cada propuesta, de la ganadora a la última: [orden, puntos]
+  const puntosDe = (votacion) => votacion.resultado.tabla.filas.map((fila) => [fila.orden, fila.puntos]);
+  // Cuántos pedidos esperan el FOR UPDATE de guardarVoto en la base de prueba (los hilos del mismo usuario de la base, sin esta conexión)
+  const esperandoElCandado = async (conexion) => Number((await conexion.query(
+    `SELECT COUNT(*) AS n FROM information_schema.PROCESSLIST
+     WHERE DB = DATABASE() AND ID <> CONNECTION_ID() AND INFO LIKE '%dato_quincena_votaciones%FOR UPDATE%'`
+  ))[0][0].n);
+  // Fuerza el choque en el candado: toma la fila de la votación de `id` con FOR UPDATE en otra conexión, con la transacción abierta,
+  // lanza los pedidos y, cuando los dos esperan ese candado (o pasados dos segundos), hace el rollback. Así los dos llegan al FOR UPDATE de
+  // guardarVoto antes de que alguno se guarde, y no uno después del otro. Devuelve las respuestas y cuántos esperaron
+  const chocanEnElCandado = async (id, pedidos) => {
+    const conexion = await db().getConnection();
+    let respuestas = null;
+    let esperando = 0;
+    try {
+      await conexion.beginTransaction();
+      await conexion.query('SELECT edicion_id FROM dato_quincena_votaciones WHERE edicion_id = ? FOR UPDATE', [id]);
+      respuestas = Promise.all(pedidos());
+      for (let vuelta = 0; vuelta < 100 && esperando < 2; vuelta++) {
+        await new Promise((listo) => setTimeout(listo, 20));
+        esperando = await esperandoElCandado(conexion);
+      }
+    } finally {
+      await conexion.rollback();
+      conexion.release();
+    }
+    return { respuestas: await respuestas, esperando };
+  };
+
+  before(async () => {
+    await ponerLaLista(['a', 'b', 'c']);
+  });
+
+  it('el voto que completa la foto: 200 con «Votaron todos…» y la edición cerrada para todos, con la hora de ese voto', async () => {
+    ed.porTodos = await nueva('2026-11-10');
+    const id = ed.porTodos;
+    const normal = await hastaCuando(id);
+    assert.deepEqual((await votar(id, { orden: [2, 1, 4, 3] }, 'a')).body, guardado(normal));
+    // Faltan B y C: el aviso no es para nadie
+    for (const clave of ['a', 'b', 'c']) assert.equal((await detalle(id, clave)).data.votacion.aviso_de_cierre, null, clave);
+    assert.deepEqual((await votar(id, { orden: [3, 1, 2, 4] }, 'b')).body, guardado(normal));
+    // Falta C: el aviso es solo para C
+    assert.equal((await detalle(id, 'c')).data.votacion.aviso_de_cierre, AVISO_DE_CIERRE);
+    for (const clave of ['a', 'b', 'e']) assert.equal((await detalle(id, clave)).data.votacion.aviso_de_cierre, null, clave);
+    // Mientras falta C, A cambia su orden: 200, como siempre (Review Focus 2)
+    assert.deepEqual((await votar(id, { orden: [1, 2, 3, 4] }, 'a')).body, guardado(normal));
+
+    const antes = ahoraArgentina();
+    const res = await votar(id, { orden: [4, 1, 2, 3] }, 'c');
+    const despues = ahoraArgentina();
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body, guardado(CERRO));
+    const votos = await votosDe(id);
+    assert.deepEqual(votos.map((v) => [v.usuario_id, v.orden]), [[personas.a.id, '2,1,4,3'], [personas.b.id, '3,1,2,4'],
+      [personas.a.id, '1,2,3,4'], [personas.c.id, '4,1,2,3']]);
+    const hora = votos.at(-1).votado_at;
+    assert.ok(antes <= hora && hora <= despues, `${antes} ≤ ${hora} ≤ ${despues}`);
+
+    for (const clave of ['a', 'c', 'e']) {
+      const { votacion, principal_equipo } = (await detalle(id, clave)).data;
+      assert.deepEqual(
+        [votacion.estado, votacion.resumen, votacion.cierre, votacion.participacion, votacion.puede_votar, votacion.falta_tu_voto,
+          votacion.tu_orden, votacion.dialogo, votacion.aviso_de_cierre],
+        ['cerrada', null, `La votación cerró ${cierreLargo(hora.slice(0, 16))}, cuando votaron todos.`, 'Votaron 3 de 3.', false, false,
+          null, null, null],
+        clave
+      );
+      // Cuenta el cambio de A (con su primer orden, ganaba la 1 por 9 a 8)
+      assert.equal(votacion.resultado.texto, 'Ganó por puntos: 10, contra 7 de la que siguió.', clave);
+      assert.deepEqual(votacion.resultado.tabla.votantes, ['Persona A', 'Persona B', 'Persona C'], clave);
+      assert.deepEqual(puntosDe(votacion), [[1, 10], [2, 7], [3, 7], [4, 6]], clave);
+      assert.equal(principal_equipo.orden, 1, clave);
+    }
+    const enLista = await enLaLista(id, 'b');
+    assert.equal(enLista.votacion, null);
+    assert.equal(enLista.principal.rotulo, 'Principal del equipo');
+  });
+
+  it('después del voto que cierra nadie cambia su orden: 409 «La votación ya cerró.» sin fila nueva, ni con el mismo orden', async () => {
+    const antes = await votosDe(ed.porTodos);
+    for (const [clave, orden] of [['a', [4, 3, 2, 1]], ['b', [1, 2, 3, 4]], ['c', [1, 2, 3, 4]], ['c', [4, 1, 2, 3]]]) {
+      const res = await votar(ed.porTodos, { orden }, clave);
+      assert.equal(res.status, 409, `${clave} ${orden}`);
+      assert.deepEqual(res.body, error('cerro'), `${clave} ${orden}`);
+    }
+    // Quien no está en la foto sigue con su 403
+    assert.deepEqual((await votar(ed.porTodos, { orden: [1, 2, 3, 4] }, 'e')).body, error('noEstas'));
+    assert.deepEqual(await votosDe(ed.porTodos), antes);
+  });
+
+  // Review Focus 2, justo después: el control de afuera del PUT pasó antes de que se guardara el voto que cierra, y el pedido esperó el
+  // candado. Adentro de la transacción, guardarVoto le pasa a estaCerrada la foto, los votos y las propuestas de ese momento: ya cerró
+  it('guardarVoto, justo después del voto que cierra: adentro de la transacción ve que votaron todos y no escribe', async () => {
+    const { guardarVoto } = await elServicio();
+    const antes = await votosDe(ed.porTodos);
+    const calendario = calendarioCon([]);
+    const estaCerrada = (leida) => !estadoDeLaVotacionLeida(leida, { ahora: leida.ahora, calendario }).abierta;
+    for (const [clave, orden] of [['a', '4,3,2,1'], ['b', '1,2,3,4']]) {
+      assert.deepEqual(await guardarVoto({ edicionId: ed.porTodos, usuarioId: personas[clave].id, orden, estaCerrada }),
+        { votacion: true, persona: true, cerrada: true, cambio: false, cerro: false }, clave);
+    }
+    assert.deepEqual(await votosDe(ed.porTodos), antes);
+  });
+
+  // La hora del voto la da reloj(), con la votación ya bloqueada: la misma con la que estaCerrada mira el cierre y la que se guarda
+  it('guardarVoto: estaCerrada recibe la foto, los votos, las propuestas y la hora de reloj(); cerro, solo el voto que completa la foto', async () => {
+    const { guardarVoto } = await elServicio();
+    const id = await nueva('2026-11-17');
+    const recibido = [];
+    const estaCerrada = (leida) => {
+      recibido.push(structuredClone(leida));
+      return false;
+    };
+    const vota = (clave, orden, hora) => guardarVoto({
+      edicionId: id, usuarioId: personas[clave].id, orden, reloj: () => hora, estaCerrada
+    });
+    const sinCerrar = { votacion: true, persona: true, cerrada: false, cambio: true, cerro: false };
+    assert.deepEqual(await vota('a', '2,1,4,3', '2026-11-23 21:30:15'), sinCerrar);
+    assert.deepEqual(Object.keys(recibido[0]).sort(),
+      ['ahora', 'cierre_at', 'fecha_edicion', 'ordenes', 'personas', 'recibida_ts', 'votos']);
+    assert.deepEqual({ ...recibido[0], recibida_ts: '·', personas: recibido[0].personas.map((p) => p.usuario_id) }, {
+      cierre_at: null, fecha_edicion: '2026-11-17', recibida_ts: '·', personas: lista(['a', 'b', 'c']), votos: [], ordenes: [1, 2, 3, 4],
+      ahora: '2026-11-23 21:30:15'
+    });
+    assert.ok(Number.isSafeInteger(recibido[0].recibida_ts));
+    assert.deepEqual(await vota('b', '1,2,3,4', '2026-11-23 21:35:00'), sinCerrar);
+    // Con los votos de ese momento, ya guardados, y su hora
+    assert.deepEqual(recibido[1].votos.map((v) => [v.persona_id, v.orden, v.votado_at]),
+      [[recibido[0].personas[0].persona_id, '2,1,4,3', '2026-11-23 21:30:15']]);
+    assert.equal(recibido[1].ahora, '2026-11-23 21:35:00');
+    // C completa la foto
+    assert.deepEqual(await vota('c', '4,3,2,1', '2026-11-23 21:40:00'), { ...sinCerrar, cerro: true });
+    assert.deepEqual((await votosDe(id)).map((v) => [v.usuario_id, v.orden, v.votado_at]), [
+      [personas.a.id, '2,1,4,3', '2026-11-23 21:30:15'], [personas.b.id, '1,2,3,4', '2026-11-23 21:35:00'],
+      [personas.c.id, '4,3,2,1', '2026-11-23 21:40:00']
+    ]);
+    // Con estaCerrada en false a la fuerza, otro voto se guarda, pero no es el que completa la foto: cerro false; el mismo orden, sin fila
+    assert.deepEqual(await vota('a', '1,2,3,4', '2026-11-23 21:41:00'), sinCerrar);
+    assert.deepEqual(await vota('a', '1,2,3,4', '2026-11-23 21:42:00'), { ...sinCerrar, cambio: false });
+    assert.equal((await votosDe(id)).length, 4);
+  });
+
+  // Review Focus 1: B y C faltan y votan a la vez, y chocan en el candado (chocanEnElCandado). El candado los ordena: los dos se guardan, el
+  // segundo en guardarse es el que cierra, y el resultado cuenta los dos. Tres rondas: cuál toma el candado primero depende del momento
+  it('dos que faltan votan a la vez: 200 los dos, solo el segundo en guardarse trae «Votaron todos…» y el resultado cuenta los dos', async () => {
+    for (const [ronda, fecha] of ['2026-11-11', '2026-11-12', '2026-11-13'].entries()) {
+      const id = await nueva(fecha);
+      const normal = await hastaCuando(id);
+      assert.deepEqual((await votar(id, { orden: [1, 2, 3, 4] }, 'a')).body, guardado(normal), `ronda ${ronda}`);
+      const { respuestas: [deB, deC], esperando } = await chocanEnElCandado(id,
+        () => [votar(id, { orden: [2, 1, 3, 4] }, 'b'), votar(id, { orden: [3, 1, 2, 4] }, 'c')]);
+      assert.equal(esperando, 2, `ronda ${ronda}: los dos esperaron el candado`);
+      const votos = await votosDe(id);
+      assert.deepEqual(votos.map((v) => v.usuario_id).slice(0, 1), [personas.a.id], `ronda ${ronda}`);
+      assert.deepEqual(votos.map((v) => v.usuario_id).slice(1).sort(), [personas.b.id, personas.c.id].sort(), `ronda ${ronda}`);
+      const cerroB = votos.at(-1).usuario_id === personas.b.id;
+      assert.deepEqual((cerroB ? deB : deC).body, guardado(CERRO), `ronda ${ronda}`);
+      assert.deepEqual((cerroB ? deC : deB).body, guardado(normal), `ronda ${ronda}`);
+      const { votacion } = (await detalle(id, 'e')).data;
+      assert.equal(votacion.estado, 'cerrada', `ronda ${ronda}`);
+      assert.equal(votacion.cierre, `La votación cerró ${cierreLargo(votos.at(-1).votado_at.slice(0, 16))}, cuando votaron todos.`);
+      assert.equal(votacion.participacion, 'Votaron 3 de 3.', `ronda ${ronda}`);
+      // Sin el voto de B, la 1 ganaría 7 a 6; sin el de C, empatarían la 1 y la 2
+      assert.equal(votacion.resultado.texto, 'Ganó por puntos: 10, contra 9 de la que siguió.', `ronda ${ronda}`);
+      assert.deepEqual(puntosDe(votacion), [[1, 10], [2, 9], [3, 8], [4, 3]], `ronda ${ronda}`);
+    }
+  });
+
+  // Review Focus 2, a la vez: A ya votó y cambia su orden en el mismo momento en que C, la única que falta, vota, y chocan en el candado
+  // (chocanEnElCandado). O el cambio entra antes (200 y cuenta) o después (409 y sin fila); el voto de C cierra siempre. Tres rondas: cuál
+  // toma el candado primero depende del momento
+  it('un cambio a la vez que el voto que cierra: o entra antes y cuenta, o da 409 sin fila; el que cierra, siempre 200', async () => {
+    for (const [ronda, fecha] of ['2026-11-14', '2026-11-15', '2026-11-16'].entries()) {
+      const id = await nueva(fecha);
+      const normal = await hastaCuando(id);
+      assert.deepEqual((await votar(id, { orden: [1, 2, 3, 4] }, 'a')).body, guardado(normal), `ronda ${ronda}`);
+      assert.deepEqual((await votar(id, { orden: [2, 1, 3, 4] }, 'b')).body, guardado(normal), `ronda ${ronda}`);
+      const { respuestas: [deA, deC], esperando } = await chocanEnElCandado(id,
+        () => [votar(id, { orden: [4, 3, 2, 1] }, 'a'), votar(id, { orden: [3, 1, 2, 4] }, 'c')]);
+      assert.equal(esperando, 2, `ronda ${ronda}: los dos esperaron el candado`);
+      assert.deepEqual(deC.body, guardado(CERRO), `ronda ${ronda}`);
+      const votos = (await votosDe(id)).map((v) => [v.usuario_id, v.orden]);
+      const { votacion } = (await detalle(id, 'e')).data;
+      if (deA.status === 200) {
+        assert.deepEqual(deA.body, guardado(normal), `ronda ${ronda}`);
+        assert.deepEqual(votos, [[personas.a.id, '1,2,3,4'], [personas.b.id, '2,1,3,4'], [personas.a.id, '4,3,2,1'],
+          [personas.c.id, '3,1,2,4']], `ronda ${ronda}`);
+        assert.equal(votacion.resultado.texto, 'Ganó por puntos: 9, contra 8 de la que siguió.', `ronda ${ronda}`);
+      } else {
+        assert.equal(deA.status, 409, `ronda ${ronda}`);
+        assert.deepEqual(deA.body, error('cerro'), `ronda ${ronda}`);
+        assert.deepEqual(votos, [[personas.a.id, '1,2,3,4'], [personas.b.id, '2,1,3,4'], [personas.c.id, '3,1,2,4']], `ronda ${ronda}`);
+        assert.equal(votacion.resultado.texto, 'Ganó por puntos: 10, contra 9 de la que siguió.', `ronda ${ronda}`);
+      }
+      assert.equal(votacion.participacion, 'Votaron 3 de 3.', `ronda ${ronda}`);
+    }
   });
 });
 

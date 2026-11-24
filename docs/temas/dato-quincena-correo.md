@@ -205,7 +205,7 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
 - Pestañas «Ediciones» y «Envío y votación» para administración (`tablist`, flechas, Home y End; `#correo` en la dirección, junto a `?id`, `&vista`, `&propuesta`, `?anio` y `&pagina`); los demás roles ven la página sin ellas.
   La lista en tarjetas «tipo diario» y sus páginas de a 18 están en `docs/temas/dato-quincena.md`; la pastilla la ven todos y administración ve además si a alguien no le llegó.
 - Envío y votación: «Envío por correo», con el interruptor «Envío automático» (se guarda al cambiarlo; al prenderlo, una confirmación que dice qué va a pasar), la regla en dos oraciones y «Las próximas ediciones»;
-  «La votación de la principal del equipo», con la regla en dos párrafos (el cierre; los puntos y el desempate; lo que se ve; el mail de las 14:00 y los pilotos);
+  «La votación de la principal del equipo», con la regla en dos párrafos (el cierre, a las 12:00 del día del mail o cuando votaron todas las personas de la lista, lo que pase primero; los puntos y el desempate; lo que se ve; el mail de las 14:00 y los pilotos);
   y «Las personas», con «Recibe el mail: …» y «Vota: …» arriba y la tabla de personas activas (persona y cargo, rol, correo, «Recibe el mail» y «Vota», una casilla en cada una), `reciben_texto` y `votan_texto` al pie (`textoDeLosQueReciben` y `textoDeLosQueVotan`, con copias en la página atadas por un test de paridad para el conteo en vivo) y un solo «Guardar».
   El mensaje al guardar: «Guardamos la lista: lo reciben 4 personas y votan 3.».
   Cambiar la lista no cambia las votaciones abiertas: cada edición vota con su foto (`docs/temas/dato-quincena-principal-equipo.md`).

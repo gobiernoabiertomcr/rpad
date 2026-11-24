@@ -122,7 +122,7 @@ const VERSION_MI_ESPACIO = '20261234';
 // 2026-11-14-dato-quincena-agenda-grupos; el detalle en tres pestañas, spec 2026-11-18-dato-quincena-detalle-pestanas; la principal
 // del equipo —la franja, las marcas, el diálogo y el rótulo de la tarjeta—, spec 2026-11-21-dato-quincena-principal-equipo, 4). Su
 // versión es propia
-const VERSION_DATO_QUINCENA = '20261238';
+const VERSION_DATO_QUINCENA = '20261239';
 const DIRECTORIO = new URL('../public/', import.meta.url);
 const paginas = fs.readdirSync(DIRECTORIO).filter(nombre => nombre.endsWith('.html'));
 const leer = (pagina) => fs.readFileSync(new URL(pagina, DIRECTORIO), 'utf8');

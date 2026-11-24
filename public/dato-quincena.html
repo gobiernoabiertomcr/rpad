@@ -493,6 +493,8 @@
         .dq-tocar-pie { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 10px 0 0; }
         .dq-falta-tocar { margin: 0; font-size: 0.88rem; color: var(--sg-suave); }
         .dq-de-nuevo { font-size: 0.88rem; font-weight: 700; }
+        .dq-voto-aviso { margin: 14px 0 0; padding: 10px 14px; border-radius: 12px; background: var(--sg-sol); border: 1px solid var(--sg-ambar); border-left: 5px solid var(--sg-ambar); color: var(--sg-ambar); font-size: 0.9rem; font-weight: 700; line-height: 1.5; overflow-wrap: anywhere; }
+        .dq-voto-aviso[hidden] { display: none; }
         #dq-voto-guardar:disabled { opacity: 0.55; }
 
         /* «Ver»: el texto del correo o los cálculos, en un <pre> */
@@ -765,6 +767,7 @@
                 <p class="dq-dialogo-texto" id="dq-voto-texto"></p>
                 <div id="dq-voto-cuerpo"></div>
                 <p class="visualmente-oculto" id="dq-voto-anuncio" role="status"></p>
+                <p class="dq-voto-aviso" id="dq-voto-aviso" hidden></p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="dq-btn dq-btn-borde" data-cerrar>Cancelar</button>
@@ -778,6 +781,6 @@
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/dato-quincena.js?v=20261238"></script>
+    <script src="js/dato-quincena.js?v=20261239"></script>
 </body>
 </html>

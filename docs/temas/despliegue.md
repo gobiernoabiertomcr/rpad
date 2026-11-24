@@ -100,6 +100,7 @@ Lo que cambie esos textos o el calendario de Métricas, del Ciclo de vida o del 
 
 Se borran al cumplirse.
 
+- **Entre el martes 24/11/2026 a las 14:10 y el lunes 07/12/2026:** la votación cierra cuando votaron todos (spec 2026-11-23-dato-quincena-votacion-cierre-anticipado), sin SQL, con todas las votaciones selladas antes de subir (`sellada_at` no null en `dato_quincena_votaciones`): una sin sellar pasaría a la regla nueva al leerla.
 - **Antes del 10/01/2027:** las notas DGMIT de 2026 cargadas a mano desde el Seguimiento (decisión del usuario, 25/10/2026: no hay SQL de importación) y `database/privado/metricas-recibido-datos-25-38-39.sql`.
 - **Antes del 10/01/2027:** «Editar notas DGMIT», la regla del ciclo y la nota anterior al primer ciclo (spec 2026-11-06-editar-notas-dgmit): si no, una nota vieja puede inflar «Respuesta del área» en la foto de 2026.
 - **Antes del 10/01/2027:** la frase en «Los casos» de Métricas (spec 2026-11-05-metricas-frase-en-los-casos, 7): si no, la foto de 2026 guarda el número solo.

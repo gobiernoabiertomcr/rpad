@@ -7,7 +7,7 @@ import {
   HORA_DEL_CIERRE, HORA_DEL_SELLADO, NOMBRE_SIN_CUENTA, MENSAJES_VOTACION, llegadaDe, cierreDeLaVotacion, estadoDeLaVotacion,
   ordenDelVoto, ordenDeTexto, votosVigentes, resultadoDeLaVotacion, debeSellar, textoDeLosQueVotan, textoDeLasListasGuardadas,
   cierreLargo, cierreMedio, cierreCorto, votacionDelDetalle, votacionDeLaLista, itemsDeLaVotacionEnMiEspacio, modeloDelMailDeLaVotacion,
-  estadoDeLaVotacionLeida, mensajeDelVoto, votacionParaElDetalle, votacionParaLaLista
+  estadoDeLaVotacionLeida, mensajeDelVoto, votacionParaElDetalle, votacionParaLaLista, cierreAnticipado
 } from '../services/datoQuincenaVotacionReglas.js';
 import { calendarioCon } from '../services/feriadosReglas.js';
 import { FILAS_PRECARGA } from './fixtures/feriados-precarga.js';
@@ -55,19 +55,142 @@ describe('cierreDeLaVotacion', () => {
   it('una edición atrasada cuenta desde la llegada', () => assert.equal(cierre('2026-11-02', '2026-11-30 09:00'), '2026-12-01 12:00'));
 });
 
+// El estado entero: `cierre_nominal` es el cierre de siempre (las 12:00, null si no se sabe), `por_todos` y `hasta_id` dicen si cerró
+// porque votaron todos y cuál fue el voto que cerró (spec 2026-11-23-dato-quincena-votacion-cierre-anticipado)
+const estadoDe = (abierta, cierre, cambios = {}) => ({
+  abierta, cierre, cierre_nominal: cierre, por_todos: false, hasta_id: null, sin_calendario: false, ...cambios
+});
+const ESTADO_SIN_CALENDARIO = estadoDe(true, null, { sin_calendario: true });
+
 describe('estadoDeLaVotacion', () => {
   const base = { fecha_edicion: '2026-11-23', llegada: '2026-11-23 09:45', calendario: CALENDARIO };
   it('abierta hasta las 12:00 y cerrada desde ahí', () => {
-    assert.deepEqual(estadoDeLaVotacion({ ...base, cierre_at: null, ahora: '2026-11-24 11:59:59' }), { abierta: true, cierre: '2026-11-24 12:00', sin_calendario: false });
-    assert.deepEqual(estadoDeLaVotacion({ ...base, cierre_at: null, ahora: '2026-11-24 12:00:00' }), { abierta: false, cierre: '2026-11-24 12:00', sin_calendario: false });
+    assert.deepEqual(estadoDeLaVotacion({ ...base, cierre_at: null, ahora: '2026-11-24 11:59:59' }), estadoDe(true, '2026-11-24 12:00'));
+    assert.deepEqual(estadoDeLaVotacion({ ...base, cierre_at: null, ahora: '2026-11-24 12:00:00' }), estadoDe(false, '2026-11-24 12:00'));
+    assert.deepEqual(Object.keys(estadoDeLaVotacion({ ...base, cierre_at: null, ahora: '2026-11-24 11:59:59' })),
+      ['abierta', 'cierre', 'cierre_nominal', 'por_todos', 'hasta_id', 'sin_calendario']);
   });
   it('sellada queda cerrada aunque el calendario falle', () => {
     const r = estadoDeLaVotacion({ ...base, calendario: CALENDARIO_CAIDO, cierre_at: '2026-11-24 12:00:00', ahora: '2026-11-24 09:00:00' });
-    assert.deepEqual(r, { abierta: false, cierre: '2026-11-24 12:00', sin_calendario: false });
+    assert.deepEqual(r, estadoDe(false, '2026-11-24 12:00', { cierre_nominal: null }));
+  });
+  it('sellada con el calendario: el cierre guardado, sin cierre_nominal (lo sellado no vuelve a tocar el calendario)', () => {
+    const r = estadoDeLaVotacion({ ...base, cierre_at: '2026-11-24 12:00:00', ahora: '2026-11-25 09:00:00' });
+    assert.deepEqual(r, estadoDe(false, '2026-11-24 12:00', { cierre_nominal: null }));
+    // Un calendario que tiraría (el tope de proximoDiaHabil): sellada, no se lo llama
+    const queTira = { ...CALENDARIO, proximoDiaHabil: () => { throw new RangeError('Sin día hábil en el tope'); } };
+    assert.deepEqual(estadoDeLaVotacion({ ...base, calendario: queTira, cierre_at: '2026-11-24 12:00:00', ahora: '2026-11-25 09:00:00' }),
+      estadoDe(false, '2026-11-24 12:00', { cierre_nominal: null }));
+    assert.throws(() => estadoDeLaVotacion({ ...base, calendario: queTira, cierre_at: null, ahora: '2026-11-25 09:00:00' }), RangeError);
   });
   it('sin sellar y sin calendario: abierta y sin cierre', () => {
     const r = estadoDeLaVotacion({ ...base, calendario: CALENDARIO_CAIDO, cierre_at: null, ahora: '2026-11-24 13:00:00' });
-    assert.deepEqual(r, { abierta: true, cierre: null, sin_calendario: true });
+    assert.deepEqual(r, ESTADO_SIN_CALENDARIO);
+  });
+});
+
+// El cierre anticipado (spec 2026-11-23-dato-quincena-votacion-cierre-anticipado): el voto que completa la foto es el primer voto válido
+// de la última persona que faltaba. Personas y horas inventadas; los votos solo se agregan y su id crece en el orden en que se guardaron
+const FOTO = [
+  { persona_id: 1, usuario_id: 901, nombre: 'Persona Uno' },
+  { persona_id: 2, usuario_id: 902, nombre: 'Persona Dos' },
+  { persona_id: 3, usuario_id: 903, nombre: 'Persona Tres' }
+];
+const votoCon = (id, persona_id, orden, votado_at) => ({ id, persona_id, orden, votado_at });
+// Las tres votan el lunes 23/11 (feriado en la precarga): la 3 es la última y su primer voto, el 5, cierra a las 21:40; después la 1
+// cambia (el 6, que ya no cuenta)
+const VOTOS_DE_TODOS = [
+  votoCon(1, 2, '1,2', '2026-11-23 18:05:00'),
+  votoCon(2, 1, '1,2', '2026-11-23 19:30:00'),
+  votoCon(3, 2, '2,1', '2026-11-23 20:10:00'),
+  votoCon(4, 1, '1,2', '2026-11-23 21:00:00'),
+  votoCon(5, 3, '2,1', '2026-11-23 21:40:12'),
+  votoCon(6, 1, '2,1', '2026-11-23 21:55:00')
+];
+
+describe('cierreAnticipado', () => {
+  const anticipado = (cambios = {}) => cierreAnticipado({ personas: FOTO, votos: VOTOS_DE_TODOS, ordenes: [1, 2], cierreNominal: '2026-11-24 12:00', ...cambios });
+  it('foto vacía: nunca cierra antes', () => {
+    assert.equal(anticipado({ personas: [] }), null);
+    assert.equal(anticipado({ personas: [], votos: [] }), null);
+  });
+  it('falta una persona: null', () => {
+    assert.equal(anticipado({ votos: VOTOS_DE_TODOS.filter((v) => v.persona_id !== 3) }), null);
+    assert.equal(anticipado({ votos: [] }), null);
+  });
+  it('votaron todos: el primer voto de la última, aunque otras hayan cambiado antes o después', () => {
+    assert.deepEqual(anticipado(), { id: 5, votado_at: '2026-11-23 21:40:12' });
+    assert.deepEqual(Object.keys(anticipado()), ['id', 'votado_at']);
+    // Si la última cambia después, cierra igual su primer voto
+    assert.deepEqual(anticipado({ votos: [...VOTOS_DE_TODOS, votoCon(7, 3, '1,2', '2026-11-23 22:00:00')] }), { id: 5, votado_at: '2026-11-23 21:40:12' });
+  });
+  it('cierra el de mayor id, no el de hora más tardía', () => {
+    const votos = [votoCon(1, 1, '1,2', '2026-11-23 10:00:00'), votoCon(2, 2, '1,2', '2026-11-23 10:00:30'), votoCon(3, 3, '1,2', '2026-11-23 10:00:10')];
+    assert.deepEqual(anticipado({ votos }), { id: 3, votado_at: '2026-11-23 10:00:10' });
+  });
+  it('un voto inválido no cuenta: cierra el primer voto válido de esa persona', () => {
+    const votos = [votoCon(1, 1, '1,2', '2026-11-23 10:00:00'), votoCon(2, 2, '1,2', '2026-11-23 10:05:00'), votoCon(3, 3, '1,2,3', '2026-11-23 10:10:00')];
+    assert.equal(anticipado({ votos }), null);
+    assert.deepEqual(anticipado({ votos: [...votos, votoCon(4, 3, '2,1', '2026-11-23 10:20:00')] }), { id: 4, votado_at: '2026-11-23 10:20:00' });
+  });
+  it('un voto desde el cierre de siempre no cuenta; sin cierre de siempre, cualquiera', () => {
+    const votos = [votoCon(1, 1, '1,2', '2026-11-24 09:00:00'), votoCon(2, 2, '1,2', '2026-11-24 10:00:00'), votoCon(3, 3, '1,2', '2026-11-24 12:00:00')];
+    assert.equal(anticipado({ votos }), null);
+    assert.deepEqual(anticipado({ votos: votos.map((v) => (v.id === 3 ? { ...v, votado_at: '2026-11-24 11:59:59' } : v)) }), { id: 3, votado_at: '2026-11-24 11:59:59' });
+    assert.deepEqual(anticipado({ votos, cierreNominal: null }), { id: 3, votado_at: '2026-11-24 12:00:00' });
+    assert.deepEqual(anticipado({ votos, cierreNominal: undefined }), { id: 3, votado_at: '2026-11-24 12:00:00' });
+  });
+  it('los votos de alguien fuera de la foto no completan nada', () => {
+    const votos = [votoCon(1, 1, '1,2', '2026-11-23 10:00:00'), votoCon(2, 2, '1,2', '2026-11-23 10:05:00'), votoCon(3, 99, '1,2', '2026-11-23 10:10:00')];
+    assert.equal(anticipado({ votos }), null);
+  });
+  it('una sola persona: su primer voto válido cierra', () => {
+    assert.deepEqual(anticipado({ personas: FOTO.slice(0, 1), votos: [votoCon(8, 1, '2,1', '2026-11-23 10:00:00')] }), { id: 8, votado_at: '2026-11-23 10:00:00' });
+  });
+  it('no cambia lo que recibe', () => {
+    const votos = structuredClone(VOTOS_DE_TODOS);
+    anticipado({ votos });
+    assert.deepEqual(votos, VOTOS_DE_TODOS);
+  });
+});
+
+describe('estadoDeLaVotacion: cerrada porque votaron todos', () => {
+  const base = { fecha_edicion: '2026-11-23', llegada: '2026-11-23 09:45', calendario: CALENDARIO, personas: FOTO, votos: VOTOS_DE_TODOS, ordenes: [1, 2] };
+  const POR_TODOS = estadoDe(false, '2026-11-23 21:40', { cierre_nominal: '2026-11-24 12:00', por_todos: true, hasta_id: 5 });
+  it('antes de las 12:00: cerrada con la hora del voto que cerró, el cierre de siempre y su id', () => {
+    assert.deepEqual(estadoDeLaVotacion({ ...base, cierre_at: null, ahora: '2026-11-23 21:41:00' }), POR_TODOS);
+    assert.deepEqual(estadoDeLaVotacion({ ...base, cierre_at: null, ahora: '2026-11-24 15:00:00' }), POR_TODOS);
+  });
+  it('mientras falta alguien, abierta como siempre', () => {
+    const r = estadoDeLaVotacion({ ...base, votos: VOTOS_DE_TODOS.slice(0, 4), cierre_at: null, ahora: '2026-11-23 21:30:00' });
+    assert.deepEqual(r, estadoDe(true, '2026-11-24 12:00'));
+  });
+  it('sellada por todos (el sellado guarda la hora del voto que cerró): igual, con o sin calendario, y sin cierre_nominal', () => {
+    for (const calendario of [CALENDARIO, CALENDARIO_CAIDO]) {
+      const r = estadoDeLaVotacion({ ...base, calendario, cierre_at: '2026-11-23 21:40:00', ahora: '2026-11-25 09:00:00' });
+      assert.deepEqual(r, { ...POR_TODOS, cierre_nominal: null });
+    }
+  });
+  it('sellada al cierre de siempre: queda como se selló, aunque los votos completen la foto (una votación de antes de esta regla)', () => {
+    const r = estadoDeLaVotacion({ ...base, cierre_at: '2026-11-24 12:00:00', ahora: '2026-11-25 09:00:00' });
+    assert.deepEqual(r, estadoDe(false, '2026-11-24 12:00', { cierre_nominal: null }));
+  });
+  it('sin calendario: los votos alcanzan', () => {
+    const r = estadoDeLaVotacion({ ...base, calendario: CALENDARIO_CAIDO, cierre_at: null, ahora: '2026-11-23 22:00:00' });
+    assert.deepEqual(r, { ...POR_TODOS, cierre_nominal: null });
+  });
+  it('sin la foto, los votos o las propuestas (los de antes): como siempre', () => {
+    const { personas, votos, ordenes, ...sinNada } = base;
+    assert.deepEqual(estadoDeLaVotacion({ ...sinNada, cierre_at: null, ahora: '2026-11-24 11:00:00' }), estadoDe(true, '2026-11-24 12:00'));
+    assert.deepEqual(estadoDeLaVotacion({ ...base, ordenes: [], cierre_at: null, ahora: '2026-11-24 11:00:00' }), estadoDe(true, '2026-11-24 12:00'));
+  });
+  it('foto vacía: cierra a las 12:00, nunca antes', () => {
+    assert.deepEqual(estadoDeLaVotacion({ ...base, personas: [], votos: [], cierre_at: null, ahora: '2026-11-24 11:59:59' }), estadoDe(true, '2026-11-24 12:00'));
+    assert.deepEqual(estadoDeLaVotacion({ ...base, personas: [], votos: [], cierre_at: null, ahora: '2026-11-24 12:00:00' }), estadoDe(false, '2026-11-24 12:00'));
+  });
+  it('alguien que nunca vota: cierra a las 12:00', () => {
+    const votos = VOTOS_DE_TODOS.filter((v) => v.persona_id !== 2);
+    assert.deepEqual(estadoDeLaVotacion({ ...base, votos, cierre_at: null, ahora: '2026-11-24 12:00:00' }), estadoDe(false, '2026-11-24 12:00'));
   });
 });
 
@@ -78,37 +201,49 @@ describe('estadoDeLaVotacionLeida', () => {
   // 2026-11-23 12:45 UTC = 09:45 en Argentina
   const leida = (cambios = {}) => ({ cierre_at: null, fecha_edicion: '2026-11-23', recibida_ts: Date.UTC(2026, 10, 23, 12, 45) / 1000, ...cambios });
   it('con la llegada, el cierre de estadoDeLaVotacion', () => {
-    assert.deepEqual(estadoDeLaVotacionLeida(leida(), { ahora: '2026-11-24 11:59:59', calendario: CALENDARIO }),
-      { abierta: true, cierre: '2026-11-24 12:00', sin_calendario: false });
-    assert.deepEqual(estadoDeLaVotacionLeida(leida(), { ahora: '2026-11-24 12:00:00', calendario: CALENDARIO }),
-      { abierta: false, cierre: '2026-11-24 12:00', sin_calendario: false });
+    assert.deepEqual(estadoDeLaVotacionLeida(leida(), { ahora: '2026-11-24 11:59:59', calendario: CALENDARIO }), estadoDe(true, '2026-11-24 12:00'));
+    assert.deepEqual(estadoDeLaVotacionLeida(leida(), { ahora: '2026-11-24 12:00:00', calendario: CALENDARIO }), estadoDe(false, '2026-11-24 12:00'));
   });
   it('sellada: cerrada con su cierre, aunque falten la llegada o el calendario', () => {
     for (const calendario of [CALENDARIO, CALENDARIO_CAIDO]) {
       assert.deepEqual(estadoDeLaVotacionLeida(leida({ cierre_at: '2026-11-24 12:00:00', recibida_ts: null }), { ahora: '2026-11-24 09:00:00', calendario }),
-        { abierta: false, cierre: '2026-11-24 12:00', sin_calendario: false });
+        estadoDe(false, '2026-11-24 12:00', { cierre_nominal: null }));
     }
   });
   it('sin una llegada que se pueda leer y sin sellar: como sin calendario', () => {
     for (const recibida_ts of [null, undefined, 'no es un instante']) {
-      assert.deepEqual(estadoDeLaVotacionLeida(leida({ recibida_ts }), { ahora: '2026-11-30 13:00:00', calendario: CALENDARIO }),
-        { abierta: true, cierre: null, sin_calendario: true });
+      assert.deepEqual(estadoDeLaVotacionLeida(leida({ recibida_ts }), { ahora: '2026-11-30 13:00:00', calendario: CALENDARIO }), ESTADO_SIN_CALENDARIO);
     }
   });
   it('sin calendario y sin sellar: abierta y sin cierre', () => {
-    assert.deepEqual(estadoDeLaVotacionLeida(leida(), { ahora: '2026-11-30 13:00:00', calendario: CALENDARIO_CAIDO }),
-      { abierta: true, cierre: null, sin_calendario: true });
+    assert.deepEqual(estadoDeLaVotacionLeida(leida(), { ahora: '2026-11-30 13:00:00', calendario: CALENDARIO_CAIDO }), ESTADO_SIN_CALENDARIO);
+  });
+  it('con la foto, los votos y las propuestas de la leída: cierra cuando votaron todos', () => {
+    const conVotos = leida({ personas: FOTO, votos: VOTOS_DE_TODOS, ordenes: [1, 2] });
+    const POR_TODOS = estadoDe(false, '2026-11-23 21:40', { cierre_nominal: '2026-11-24 12:00', por_todos: true, hasta_id: 5 });
+    assert.deepEqual(estadoDeLaVotacionLeida(conVotos, { ahora: '2026-11-23 22:00:00', calendario: CALENDARIO }), POR_TODOS);
+    assert.deepEqual(estadoDeLaVotacionLeida(conVotos, { ahora: '2026-11-23 22:00:00', calendario: CALENDARIO_CAIDO }), { ...POR_TODOS, cierre_nominal: null });
+    // Sin una llegada que se pueda leer, también: los votos alcanzan
+    assert.deepEqual(estadoDeLaVotacionLeida({ ...conVotos, recibida_ts: null }, { ahora: '2026-11-23 22:00:00', calendario: CALENDARIO }),
+      { ...POR_TODOS, cierre_nominal: null });
+    // Falta alguien: como siempre
+    assert.deepEqual(estadoDeLaVotacionLeida({ ...conVotos, votos: VOTOS_DE_TODOS.slice(0, 4) }, { ahora: '2026-11-23 22:00:00', calendario: CALENDARIO }),
+      estadoDe(true, '2026-11-24 12:00'));
   });
 });
 
 // El mensaje del PUT del voto (spec 3, «Votar»)
 describe('mensajeDelVoto', () => {
   it('guardado: hasta cuándo se puede cambiar', () => {
-    assert.equal(mensajeDelVoto({ cambio: true, cierre: '2026-11-24 12:00' }), 'Guardamos tu orden. Lo podés cambiar hasta el martes 24/11 a las 12:00.');
-    assert.equal(mensajeDelVoto({ cambio: true, cierre: '2026-12-09 12:00' }), 'Guardamos tu orden. Lo podés cambiar hasta el miércoles 09/12 a las 12:00.');
+    assert.equal(mensajeDelVoto({ cambio: true, cierre: '2026-11-24 12:00' }), 'Guardamos tu orden. Lo podés cambiar hasta el martes 24/11 a las 12:00, o hasta que voten todas las personas de la lista.');
+    assert.equal(mensajeDelVoto({ cambio: true, cierre: '2026-12-09 12:00' }), 'Guardamos tu orden. Lo podés cambiar hasta el miércoles 09/12 a las 12:00, o hasta que voten todas las personas de la lista.');
   });
   it('el mismo orden: «Tu orden ya era ese.»', () => {
     assert.equal(mensajeDelVoto({ cambio: false, cierre: '2026-11-24 12:00' }), 'Tu orden ya era ese.');
+  });
+  it('el voto que cierra: «Votaron todos»', () => {
+    assert.equal(mensajeDelVoto({ cambio: true, cierre: '2026-11-24 12:00', cerro: true }), 'Guardamos tu orden. Votaron todos: la votación cerró.');
+    assert.equal(mensajeDelVoto({ cambio: true, cierre: '2026-11-24 12:00', cerro: false }), 'Guardamos tu orden. Lo podés cambiar hasta el martes 24/11 a las 12:00, o hasta que voten todas las personas de la lista.');
   });
 });
 
@@ -149,6 +284,25 @@ describe('votosVigentes', () => {
   it('sin cierre cuentan todos', () => {
     const r = votosVigentes({ personas, votos: [voto(1, 12, '2,3,1', '2030-01-01 00:00:00')], cierre: null, ordenes });
     assert.deepEqual(r.get(12), [2, 3, 1]);
+  });
+  // Cerrada porque votaron todos: cuentan el voto que cerró y los anteriores (por id), sin mirar la hora
+  it('con hastaId: cuentan los de id hasta ese, y un cambio de id mayor no cuenta', () => {
+    const votos = [
+      voto(1, 10, '1,2,3', '2026-11-23 21:00:00'),
+      voto(2, 11, '2,1,3', '2026-11-23 21:30:00'),
+      voto(3, 12, '3,1,2', '2026-11-23 21:40:30'),
+      voto(4, 10, '3,2,1', '2026-11-23 21:40:50'),
+      voto(5, 11, '1,3,2', '2026-11-23 21:41:00')
+    ];
+    const r = votosVigentes({ personas, votos, cierre: '2026-11-23 21:40', ordenes, hastaId: 3 });
+    assert.deepEqual([...r], [[10, [1, 2, 3]], [11, [2, 1, 3]], [12, [3, 1, 2]]]);
+    // Un cambio de id menor que el que cerró sí cuenta, aunque sea del mismo minuto
+    const conCambio = [voto(1, 10, '1,2,3', '2026-11-23 21:00:00'), voto(2, 10, '2,3,1', '2026-11-23 21:40:05'), voto(3, 11, '1,2,3', '2026-11-23 21:40:10'),
+      voto(4, 12, '1,2,3', '2026-11-23 21:40:20')];
+    assert.deepEqual(votosVigentes({ personas, votos: conCambio, cierre: '2026-11-23 21:40', ordenes, hastaId: 4 }).get(10), [2, 3, 1]);
+    // Sin hastaId (null o sin la clave), como siempre: por la hora
+    assert.deepEqual([...votosVigentes({ personas, votos, cierre: '2026-11-23 21:40', ordenes, hastaId: null }).keys()], [10, 11]);
+    assert.deepEqual([...votosVigentes({ personas, votos, cierre: '2026-11-23 21:40', ordenes }).keys()], [10, 11]);
   });
 });
 
@@ -228,13 +382,13 @@ const PERSONAS = [
   { persona_id: 2, usuario_id: 902, nombre: 'Persona Dos' },
   { persona_id: 3, usuario_id: 903, nombre: 'Persona Tres' }
 ];
-const ABIERTA = { abierta: true, cierre: '2026-11-24 12:00', sin_calendario: false };
-const CERRADA = { abierta: false, cierre: '2026-11-24 12:00', sin_calendario: false };
-const SIN_CALENDARIO = { abierta: true, cierre: null, sin_calendario: true };
+const ABIERTA = estadoDe(true, '2026-11-24 12:00');
+const CERRADA = estadoDe(false, '2026-11-24 12:00');
+const SIN_CALENDARIO = ESTADO_SIN_CALENDARIO;
 let siguienteId = 1;
 const votoDe = (persona_id, orden, votado_at = '2026-11-24 09:00:00') => ({ id: siguienteId++, persona_id, orden: orden.join(','), votado_at });
 const detalleVot = (cambios) => votacionDelDetalle({ propuestas: PROPUESTAS, deDatito: 1, estado: ABIERTA, personas: PERSONAS, votos: [], quienMira: 901, ...cambios });
-const CLAVES = ['estado', 'resumen', 'cierre', 'participacion', 'puede_votar', 'falta_tu_voto', 'tu_orden', 'dialogo', 'resultado'];
+const CLAVES = ['estado', 'resumen', 'cierre', 'participacion', 'puede_votar', 'falta_tu_voto', 'tu_orden', 'dialogo', 'aviso_de_cierre', 'resultado'];
 const REGLA_2 = 'Cada puesto da puntos: con 2 propuestas, el 1.º da 2 y el último, 1. Si empatan, gana la de Datito; si no está entre las empatadas, la de número más bajo.';
 
 describe('votacionDelDetalle: abierta', () => {
@@ -248,7 +402,8 @@ describe('votacionDelDetalle: abierta', () => {
       puede_votar: true,
       falta_tu_voto: true,
       tu_orden: null,
-      dialogo: 'Tocá las propuestas en orden, de la que más querés trabajar como principal a la que menos. Lo podés cambiar hasta el martes 24/11 a las 12:00.',
+      dialogo: 'Tocá las propuestas en orden, de la que más querés trabajar como principal a la que menos. Lo podés cambiar hasta el martes 24/11 a las 12:00, o hasta que voten todas las personas de la lista.',
+      aviso_de_cierre: null,
       resultado: null
     });
     assert.deepEqual(Object.keys(v), CLAVES);
@@ -315,6 +470,7 @@ describe('votacionDelDetalle: sin calendario', () => {
       falta_tu_voto: false,
       tu_orden: null,
       dialogo: null,
+      aviso_de_cierre: null,
       resultado: null
     });
   });
@@ -333,6 +489,7 @@ describe('votacionDelDetalle: cerrada', () => {
       falta_tu_voto: false,
       tu_orden: null,
       dialogo: null,
+      aviso_de_cierre: null,
       resultado: {
         orden: 2,
         como: 'puntos',
@@ -416,6 +573,87 @@ describe('votacionDelDetalle: cerrada', () => {
   });
 });
 
+// Cerrada porque votaron todos (spec 2026-11-23-dato-quincena-votacion-cierre-anticipado): el voto 5, de la Persona Tres, cerró el lunes
+// 23/11 a las 21:40; el 6 (la Persona Uno cambia a 2,1) ya no cuenta. Con él ganaría la 2 por 6 a 3
+const POR_TODOS = estadoDe(false, '2026-11-23 21:40', { cierre_nominal: '2026-11-24 12:00', por_todos: true, hasta_id: 5 });
+
+describe('votacionDelDetalle: cerrada porque votaron todos', () => {
+  it('el cierre con la hora del voto que cerró, «cuando votaron todos», y el resultado con los votos hasta ese', () => {
+    const v = detalleVot({ estado: POR_TODOS, personas: FOTO, votos: VOTOS_DE_TODOS });
+    assert.deepEqual(v, {
+      estado: 'cerrada',
+      resumen: null,
+      cierre: 'La votación cerró el lunes 23/11/2026 a las 21:40, cuando votaron todos.',
+      participacion: 'Votaron 3 de 3.',
+      puede_votar: false,
+      falta_tu_voto: false,
+      tu_orden: null,
+      dialogo: null,
+      aviso_de_cierre: null,
+      resultado: {
+        orden: 2,
+        como: 'puntos',
+        texto: 'Ganó por puntos: 5, contra 4 de la que siguió.',
+        regla: REGLA_2,
+        tabla: {
+          votantes: ['Persona Uno', 'Persona Dos', 'Persona Tres'],
+          filas: [
+            { orden: 2, texto: 'Propuesta 2 · Otro título inventado', de_datito: false, puestos: ['2.º', '1.º', '1.º'], puntos: 5, gana: true },
+            { orden: 1, texto: 'Propuesta 1 · Un título inventado', de_datito: true, puestos: ['1.º', '2.º', '2.º'], puntos: 4, gana: false }
+          ]
+        }
+      }
+    });
+    assert.deepEqual(Object.keys(v), CLAVES);
+  });
+
+  it('para quien está en la foto, lo mismo: ya no vota ni ve su orden', () => {
+    for (const quienMira of [901, 903, 777, null]) {
+      const v = detalleVot({ estado: POR_TODOS, personas: FOTO, votos: VOTOS_DE_TODOS, quienMira });
+      assert.deepEqual([v.puede_votar, v.falta_tu_voto, v.tu_orden, v.dialogo, v.aviso_de_cierre], [false, false, null, null, null], String(quienMira));
+    }
+  });
+
+  it('el cierre de las 12:00, sin «cuando votaron todos»', () => {
+    assert.equal(detalleVot({ estado: CERRADA }).cierre, 'La votación cerró el martes 24/11/2026 a las 12:00.');
+  });
+});
+
+// El aviso del diálogo (spec 2026-11-23-dato-quincena-votacion-cierre-anticipado, «La regla»): solo para quien es la única que falta
+describe('votacionDelDetalle: aviso_de_cierre', () => {
+  const AVISO = 'Sos la última persona en votar: al guardar, la votación cierra y nadie puede cambiar su orden.';
+  const votaronUnoYDos = () => [votoDe(1, [1, 2]), votoDe(2, [2, 1])];
+  it('quien mira es la única que falta: el aviso, después del diálogo', () => {
+    const v = detalleVot({ votos: votaronUnoYDos(), quienMira: 903 });
+    assert.equal(v.aviso_de_cierre, AVISO);
+    assert.equal(v.puede_votar, true);
+    assert.equal(v.falta_tu_voto, true);
+    assert.equal(v.participacion, 'Ya votaron 2 de 3: Persona Uno y Persona Dos. Falta el voto de Persona Tres.');
+    assert.deepEqual(Object.keys(v), CLAVES);
+  });
+  it('sola en la foto y sin votar, también: su voto cierra', () => {
+    assert.equal(detalleVot({ personas: PERSONAS.slice(0, 1), quienMira: 901 }).aviso_de_cierre, AVISO);
+  });
+  it('un voto inválido no cuenta: sigue siendo la única que falta', () => {
+    assert.equal(detalleVot({ votos: [...votaronUnoYDos(), votoDe(3, [1, 2, 3])], quienMira: 903 }).aviso_de_cierre, AVISO);
+  });
+  it('null para quien ya votó y cambia mientras falta otra persona', () => {
+    assert.equal(detalleVot({ votos: votaronUnoYDos(), quienMira: 901 }).aviso_de_cierre, null);
+    assert.equal(detalleVot({ votos: votaronUnoYDos(), quienMira: 902 }).aviso_de_cierre, null);
+  });
+  it('null si falta alguien más', () => {
+    assert.equal(detalleVot({ votos: [votoDe(1, [1, 2])], quienMira: 903 }).aviso_de_cierre, null);
+    assert.equal(detalleVot({ quienMira: 901 }).aviso_de_cierre, null);
+  });
+  it('null para quien no está en la foto y sin quien mira', () => {
+    for (const quienMira of [777, null]) assert.equal(detalleVot({ votos: votaronUnoYDos(), quienMira }).aviso_de_cierre, null, String(quienMira));
+  });
+  it('null con la votación cerrada o sin calendario', () => {
+    assert.equal(detalleVot({ estado: CERRADA, votos: votaronUnoYDos(), quienMira: 903 }).aviso_de_cierre, null);
+    assert.equal(detalleVot({ estado: SIN_CALENDARIO, votos: votaronUnoYDos(), quienMira: 903 }).aviso_de_cierre, null);
+  });
+});
+
 describe('votacionDeLaLista', () => {
   const lista = (cambios) => votacionDeLaLista({ estado: ABIERTA, personas: PERSONAS, votos: [], quienMira: 901, ordenes: [1, 2], ...cambios });
   it('abierta: hasta cuándo y, si no votó, que le falta', () => {
@@ -434,6 +672,9 @@ describe('votacionDeLaLista', () => {
     assert.equal(lista({ personas, quienMira: null }).falta_tu_voto, false);
   });
   it('cerrada: null', () => assert.equal(lista({ estado: CERRADA }), null));
+  it('cerrada porque votaron todos: null, sin «Se vota hasta…»', () => {
+    assert.equal(lista({ estado: POR_TODOS, personas: FOTO, votos: VOTOS_DE_TODOS }), null);
+  });
 });
 
 // Lo que leen el detalle y la lista (datoQuincenaController.js) y el mail del sellado: la votación como la lee leerVotaciones (la llegada
@@ -466,7 +707,7 @@ describe('votacionParaElDetalle y votacionParaLaLista', () => {
     const votos = [votoDe(2, [1, 2])];
     assert.deepEqual(detalle(leida({ votos })), votacionDelDetalle({
       propuestas: [{ orden: 1, titulo: 'Un título inventado' }, { orden: 2, titulo: 'Otro título inventado' }], deDatito: 2,
-      estado: { abierta: true, cierre: '2026-11-24 12:00', sin_calendario: false }, personas: PERSONAS, votos, quienMira: 901
+      estado: estadoDe(true, '2026-11-24 12:00'), personas: PERSONAS, votos, quienMira: 901
     }));
     // Cerrada sin votos queda la de Datito; sellada, su cierre guardado manda, aunque el calendario no se pueda leer
     assert.equal(detalle(leida(), DESPUES).resultado.orden, 2);
@@ -490,6 +731,36 @@ describe('votacionParaElDetalle y votacionParaLaLista', () => {
     // Un voto de las 12:00 ya no cuenta: sin él empatan y gana la de Datito (con él ganaría la 1)
     const tardio = [votoDe(1, [2, 1]), votoDe(2, [1, 2]), votoDe(3, [1, 2], '2026-11-24 12:00:00')];
     assert.equal(enLaLista(leida({ votos: tardio }), DESPUES).orden_ganadora, 2);
+  });
+
+  // Votaron todos el lunes 23/11: la 3 cerró a las 21:40 (el voto 3) y los cambios de después (4 y 5) no cuentan. Hasta el 3 gana la 1
+  // por 5 a 4; con los cambios ganaría la 2, la de Datito
+  const VOTOS_QUE_CIERRAN = [
+    votoCon(1, 1, '1,2', '2026-11-23 21:00:00'),
+    votoCon(2, 2, '1,2', '2026-11-23 21:10:00'),
+    votoCon(3, 3, '2,1', '2026-11-23 21:40:12'),
+    votoCon(4, 1, '2,1', '2026-11-23 21:50:00'),
+    votoCon(5, 2, '2,1', '2026-11-23 21:55:00')
+  ];
+
+  it('cerrada porque votaron todos: el detalle y la lista lo toman de los votos de la leída, antes de las 12:00', () => {
+    const votacion = leida({ votos: VOTOS_QUE_CIERRAN });
+    const d = detalle(votacion);
+    assert.deepEqual([d.estado, d.cierre, d.resultado.orden, d.resultado.texto],
+      ['cerrada', 'La votación cerró el lunes 23/11/2026 a las 21:40, cuando votaron todos.', 1, 'Ganó por puntos: 5, contra 4 de la que siguió.']);
+    assert.deepEqual(enLaLista(votacion), { abierta: false, orden_ganadora: 1, de_la_lista: null });
+    // Pasadas las 12:00, igual; y sellada con la hora del voto que cerró, aunque el calendario no se pueda leer
+    assert.deepEqual(enLaLista(votacion, DESPUES), { abierta: false, orden_ganadora: 1, de_la_lista: null });
+    const sellada = leida({ votos: VOTOS_QUE_CIERRAN, cierre_at: '2026-11-23 21:40:00' });
+    assert.deepEqual(enLaLista(sellada, { calendario: CALENDARIO_CAIDO }), { abierta: false, orden_ganadora: 1, de_la_lista: null });
+    assert.equal(detalle(sellada, { calendario: CALENDARIO_CAIDO }).cierre, 'La votación cerró el lunes 23/11/2026 a las 21:40, cuando votaron todos.');
+  });
+
+  it('sellada al cierre de las 12:00 (antes de esta regla): cuenta como se selló, con todos los votos anteriores', () => {
+    const sellada = leida({ votos: VOTOS_QUE_CIERRAN, cierre_at: '2026-11-24 12:00:00' });
+    assert.deepEqual(enLaLista(sellada, DESPUES), { abierta: false, orden_ganadora: 2, de_la_lista: null });
+    const d = detalle(sellada, DESPUES);
+    assert.deepEqual([d.cierre, d.resultado.orden], ['La votación cerró el martes 24/11/2026 a las 12:00.', 2]);
   });
 });
 
@@ -518,6 +789,14 @@ describe('itemsDeLaVotacionEnMiEspacio', () => {
     assert.deepEqual(items({ estado: CERRADA }), []);
     assert.deepEqual(items({ estado: SIN_CALENDARIO }), []);
   });
+  it('no aparece si cerró porque votaron todos', () => {
+    assert.deepEqual(items({ estado: POR_TODOS, personas: FOTO, votos: VOTOS_DE_TODOS }), []);
+    // Con el estado de la leída, como lo arma Mi espacio: el mismo día del cierre de siempre, sin ítem
+    const estado = estadoDeLaVotacionLeida({
+      cierre_at: null, fecha_edicion: '2026-11-23', recibida_ts: Date.UTC(2026, 10, 23, 12, 45) / 1000, personas: FOTO, votos: VOTOS_DE_TODOS, ordenes: [1, 2]
+    }, { ahora: '2026-11-23 22:00:00', calendario: CALENDARIO });
+    assert.deepEqual(items({ estado, personas: FOTO, votos: VOTOS_DE_TODOS }), []);
+  });
   it('no aparece fuera del rango, y el rango es inclusivo', () => {
     assert.deepEqual(items({}, { desde: '2026-11-25', hasta: '2026-11-30' }), []);
     assert.deepEqual(items({}, { desde: '2026-11-01', hasta: '2026-11-23' }), []);
@@ -525,7 +804,7 @@ describe('itemsDeLaVotacionEnMiEspacio', () => {
   });
   it('una por votación', () => {
     const r = itemsDeLaVotacionEnMiEspacio({
-      votaciones: [votacion(), votacion({ edicion_id: 26, fecha_edicion: '2026-11-30', estado: { abierta: true, cierre: '2026-12-01 12:00', sin_calendario: false } })],
+      votaciones: [votacion(), votacion({ edicion_id: 26, fecha_edicion: '2026-11-30', estado: estadoDe(true, '2026-12-01 12:00') })],
       usuarioId: 902, desde: '2026-11-01', hasta: '2026-12-31'
     });
     assert.deepEqual(r.map((i) => [i.fecha, i.enlace, i.detalle]), [

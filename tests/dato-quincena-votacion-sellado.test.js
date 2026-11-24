@@ -3,7 +3,8 @@
 // feriado). Se llama al servicio con un ahora y un calendario fijos (nunca a /api/cron/*) y los mails van a un `enviar` falso que junta lo
 // que le llega: no sale ninguno, ni a Mailpit. Las corridas enteras (el controlador) se llaman con el reloj fijo y sin nadie de
 // administración en la base, así tampoco mandan nada. Las personas («PruebaUno Ejemplo») y sus casillas (@ejemplo.test) son inventadas
-// y cambian en cada test; las ediciones salen de tests/dato-quincena-fixtures.js.
+// y cambian en cada test; las ediciones salen de tests/dato-quincena-fixtures.js. Si votaron todos, la votación cerró con ese voto (spec
+// 2026-11-23-dato-quincena-votacion-cierre-anticipado): se sella igual a las 14:00 del día del cierre de siempre, con la hora de ese voto.
 import { describe, it, before, after, beforeEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -148,7 +149,8 @@ const voto = async (edicionId, quien, orden, votadoAt) => {
   const [{ id }] = await query('SELECT id FROM dato_quincena_votacion_personas WHERE edicion_id = ? AND usuario_id = ?', [edicionId, quien.id]);
   await query('INSERT INTO dato_quincena_votos (persona_id, orden, votado_at) VALUES (?, ?, ?)', [id, orden, votadoAt]);
 };
-// Gana la 2 por puntos, 5 contra 4. El voto de la lectora de las 12:30 llegó después del cierre: no cuenta
+// Gana la 2 por puntos, 5 contra 4. Votan los tres antes de las 12:00: la votación cerró con el primer voto de la lectora, a las 11:59, y
+// el de las 12:30 (escrito a mano: el PUT lo rechaza) llegó después del cierre: no cuenta
 const votosDelMartes = async (id, { uno, dos, lectora }) => {
   await voto(id, uno, '2,1', '2026-11-23 10:00:00');
   await voto(id, dos, '2,1', '2026-11-24 09:00:00');
@@ -198,8 +200,9 @@ describe('cuándo se sella (spec, 6)', () => {
     assert.deepEqual(mails, []);
     assert.deepEqual(await votacionDe(id), SIN_SELLAR);
 
+    // Cerró a las 11:59, cuando votaron todos: se sella a las 14:00 del día del cierre, con la hora de ese voto
     assert.deepEqual(await corrida('2026-11-24 14:00:00', { enviar }), resultado({ selladas: 1, mails: 3 }));
-    assert.deepEqual(await votacionDe(id), sellada('2026-11-24 12:00:00', '2026-11-24 14:00:00', 'enviado'));
+    assert.deepEqual(await votacionDe(id), sellada('2026-11-24 11:59:00', '2026-11-24 14:00:00', 'enviado'));
     // Ni a la lectora (vota, pero no es de administración), ni a la inactiva, ni a la de licencia, ni a la que no tiene un email válido
     assert.deepEqual(casillasDe(mails), casillas(gente, DE_ADMINISTRACION));
     for (const mail of mails) {
@@ -224,7 +227,7 @@ describe('cuándo se sella (spec, 6)', () => {
     assert.ok(mail.text.includes('Otro título inventado'));
     assert.ok(mail.text.includes('56 casos · septiembre de 2026'));
     assert.ok(mail.text.includes('Votaron 3 de 3.'));
-    assert.ok(mail.text.includes('La votación cerró el martes 24/11/2026 a las 12:00.'));
+    assert.ok(mail.text.includes('La votación cerró el martes 24/11/2026 a las 11:59, cuando votaron todos.'), mail.text);
     assert.ok(mail.html.includes(`<a href="${RPAD_URL}/dato-quincena.html?id=${id}" style="display: inline-block; color: #FFFFFF;`));
     assert.ok(mail.text.includes(`Ver la edición en el RPAD: ${RPAD_URL}/dato-quincena.html?id=${id}`));
     assert.equal(mail.attachments, undefined, 'sin adjuntos');
@@ -269,7 +272,9 @@ describe('cuándo se sella (spec, 6)', () => {
   it('una sellada no se vuelve a abrir aunque el calendario cambie: el detalle la sigue mostrando cerrada, con su cierre', async () => {
     const gente = await laGente();
     const id = await llega('2026-11-23', '2026-11-23 09:45');
-    await votosDelMartes(id, gente);
+    // Votan la admin y el editor, la lectora no: si votaran todos, cerraría con el último voto, sin depender del calendario
+    await voto(id, gente.uno, '2,1', '2026-11-23 10:00:00');
+    await voto(id, gente.dos, '2,1', '2026-11-24 09:00:00');
     const detalle = async (calendario, ahora) => {
       const votacion = (await votacionDatos.leerVotaciones([id])).get(id);
       const edicion = JSON.parse((await datos.leerEdicion(id)).fila.metadata);
@@ -287,6 +292,91 @@ describe('cuándo se sella (spec, 6)', () => {
     assert.deepEqual(await corrida('2026-11-25 14:00:00', { calendario: CON_EL_24, enviar }), resultado());
     assert.deepEqual(await votacionDe(id), sellada('2026-11-24 12:00:00', '2026-11-24 14:00:00', 'enviado'));
     assert.equal(mails.length, 3);
+  });
+});
+
+describe('cuando votaron todos (spec 2026-11-23-dato-quincena-votacion-cierre-anticipado)', () => {
+  // El detalle de una votación como lo ve la página (y el mail), leído de la base
+  const detalleDe = async (id, { ahora, calendario }) => {
+    const votacion = (await votacionDatos.leerVotaciones([id])).get(id);
+    const edicion = JSON.parse((await datos.leerEdicion(id)).fila.metadata);
+    return votacionParaElDetalle({ votacion, edicion, quienMira: null, ahora, calendario });
+  };
+  const POR_TODOS = 'La votación cerró el lunes 23/11/2026 a las 21:40, cuando votaron todos.';
+
+  // Review Focus 3: el sellado no se adelanta. El cierre de siempre es el martes 24/11 a las 12:00 (llegó el lunes después de las 8:05)
+  it('cerró por todos el lunes 23/11 a las 21:40 (feriado): se sella recién a las 14:00 del martes 24/11, con la hora de ese voto', async () => {
+    const gente = await laGente();
+    const id = await llega('2026-11-23', '2026-11-23 09:45');
+    await voto(id, gente.uno, '2,1', '2026-11-23 10:00:00');
+    await voto(id, gente.dos, '1,2', '2026-11-23 15:00:00');
+    await voto(id, gente.lectora, '2,1', '2026-11-23 21:40:00');
+    // Escrito a mano después del voto que cerró (el PUT lo rechaza): no cuenta; con él, la 2 ganaría 6 a 3
+    await voto(id, gente.dos, '2,1', '2026-11-24 09:00:00');
+    const { mails, enviar } = transporte();
+    for (const ahora of ['2026-11-23 21:45:00', '2026-11-24 08:05:00', '2026-11-24 12:00:00', '2026-11-24 13:59:00']) {
+      assert.deepEqual(await corrida(ahora, { enviar }), resultado(), ahora);
+    }
+    assert.deepEqual(mails, []);
+    assert.deepEqual(await votacionDe(id), SIN_SELLAR);
+    // Sin sellar, la página ya la muestra cerrada, con la ganadora
+    assert.equal((await detalleDe(id, { ahora: '2026-11-24 08:05:00', calendario: CALENDARIO })).cierre, POR_TODOS);
+
+    assert.deepEqual(await corrida('2026-11-24 14:00:00', { enviar }), resultado({ selladas: 1, mails: 3 }));
+    assert.deepEqual(await votacionDe(id), sellada('2026-11-23 21:40:00', '2026-11-24 14:00:00', 'enviado'));
+    assert.deepEqual(casillasDe(mails), casillas(gente, DE_ADMINISTRACION));
+    for (const mail of mails) {
+      assert.ok(mail.text.includes(POR_TODOS), mail.text);
+      assert.ok(mail.html.includes(POR_TODOS));
+      assert.ok(mail.text.includes('Votaron 3 de 3.'));
+      assert.ok(mail.text.includes('Ganó por puntos: 5, contra 4 de la que siguió.'), mail.text);
+    }
+    // Sellada, sigue cerrada por todos y con la misma ganadora, también con otro calendario
+    for (const calendario of [CALENDARIO, CON_EL_24, CALENDARIO_CAIDO]) {
+      const detalle = await detalleDe(id, { ahora: '2026-11-25 15:00:00', calendario });
+      assert.equal(detalle.cierre, POR_TODOS);
+      assert.equal(detalle.resultado.texto, 'Ganó por puntos: 5, contra 4 de la que siguió.');
+    }
+    assert.deepEqual(await corrida('2026-11-25 08:05:00', { enviar }), resultado());
+    assert.equal(mails.length, 3);
+  });
+
+  // Review Focus 4: alguien que nunca vota (o la foto vacía) no cierra antes
+  it('alguien que nunca vota: cierra a las 12:00, como siempre, y se sella a las 14:00 de ese día; un voto suyo de después no cuenta', async () => {
+    const gente = await laGente();
+    const id = await llega('2026-11-23', '2026-11-23 09:45');
+    await voto(id, gente.uno, '2,1', '2026-11-23 10:00:00');
+    await voto(id, gente.dos, '1,2', '2026-11-23 15:00:00');
+    // La lectora, escrito a mano a las 12:30 (el PUT lo rechaza): no completa la foto ni cuenta; con él, la 2 ganaría 5 a 4
+    await voto(id, gente.lectora, '2,1', '2026-11-24 12:30:00');
+    const { mails, enviar } = transporte();
+    for (const ahora of ['2026-11-24 08:05:00', '2026-11-24 12:30:00', '2026-11-24 13:59:00']) {
+      assert.deepEqual(await corrida(ahora, { enviar }), resultado(), ahora);
+    }
+    assert.deepEqual(await votacionDe(id), SIN_SELLAR);
+    assert.deepEqual(await corrida('2026-11-24 14:00:00', { enviar }), resultado({ selladas: 1, mails: 3 }));
+    assert.deepEqual(await votacionDe(id), sellada('2026-11-24 12:00:00', '2026-11-24 14:00:00', 'enviado'));
+    for (const mail of mails) {
+      assert.ok(mail.text.includes('La votación cerró el martes 24/11/2026 a las 12:00.'), mail.text);
+      assert.ok(!mail.text.includes('cuando votaron todos'), mail.text);
+      assert.ok(mail.text.includes('Votaron 2 de 3: no votó PruebaLectora Ejemplo.'), mail.text);
+      assert.ok(mail.text.includes('Ganó por desempate: empató con la 2, con 3 puntos, y es la de Datito.'), mail.text);
+    }
+  });
+
+  it('con la foto vacía nunca cierra antes: se sella a las 14:00 del día del cierre, con el de las 12:00 y «nadie votó»', async () => {
+    const gente = await laGente();
+    await query('DELETE FROM dato_quincena_votantes');
+    const id = await llega('2026-11-23', '2026-11-23 09:45');
+    const { mails, enviar } = transporte();
+    for (const ahora of ['2026-11-23 21:45:00', '2026-11-24 08:05:00', '2026-11-24 13:59:00']) {
+      assert.deepEqual(await corrida(ahora, { enviar }), resultado(), ahora);
+    }
+    assert.deepEqual(await corrida('2026-11-24 14:00:00', { enviar }), resultado({ selladas: 1, mails: 3 }));
+    assert.deepEqual(await votacionDe(id), sellada('2026-11-24 12:00:00', '2026-11-24 14:00:00', 'enviado'));
+    assert.deepEqual(casillasDe(mails), casillas(gente, DE_ADMINISTRACION));
+    assert.ok(mails[0].text.includes('No había nadie en la lista para votar.'), mails[0].text);
+    assert.ok(mails[0].text.includes('La votación cerró el martes 24/11/2026 a las 12:00.'), mails[0].text);
   });
 });
 

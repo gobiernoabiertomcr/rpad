@@ -1,7 +1,7 @@
 # El dato de la quincena: la principal del equipo
 
 Datito marca una sola propuesta de cada edición como `Principal`; el equipo vota cuál es la suya, y las dos conviven en el RPAD.
-Las personas de una lista que arma administración ordenan todas las propuestas, gana la que suma más puntos y la votación cierra sola.
+Las personas de una lista que arma administración ordenan todas las propuestas, gana la que suma más puntos y la votación cierra sola: a las 12:00 del día del mail o antes, cuando votaron todas.
 Se ve en General, en Propuestas, en la lista y en Mi espacio, y el mail de las 8:05 aclara que su principal es la de Datito.
 El contrato con Datito y el archivo son los de `docs/temas/dato-quincena-contrato.md` y `docs/temas/dato-quincena.md`.
 La lista de quienes votan se arma en la pestaña «Envío y votación» (`docs/temas/dato-quincena-correo.md`).
@@ -10,6 +10,7 @@ La frase y el recuadro de la principal están en el correo (abajo, «El mail»).
 Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-21-dato-quincena-principal-equipo-design.md` (la elección a mano, que ya no existe)
 - `docs/superpowers/specs/2026-11-23-dato-quincena-principal-votacion-design.md` (la votación)
+- `docs/superpowers/specs/2026-11-23-dato-quincena-votacion-cierre-anticipado-design.md` (el cierre cuando votaron todos)
 
 ## Archivos
 
@@ -29,7 +30,7 @@ dato-quincena.html y dato-quincena.js (la franja, el diálogo «Tu orden», las 
 - En el RPAD conviven dos principales: la de Datito, la del JSON, y la del equipo.
   Son dos cosas distintas y no se mezclan: lo archivado de Datito no cambia nunca, y lo del equipo se calcula al leer con los votos.
 - Decisión: la ganadora no se escribe en ninguna tabla.
-  Se calcula al mirar, con los votos anteriores al cierre, y pasado el cierre el servidor rechaza votos: no hace falta un paso que cierre a las 12:00.
+  Se calcula al mirar, con los votos que cuentan hasta el cierre, y pasado el cierre el servidor rechaza votos: no hace falta un paso que cierre a las 12:00 ni cuando votan todos.
   Es el criterio del correo, que calcula «Sale el …» al leer.
 - Quién vota: la lista que arma administración (`dato_quincena_votantes`); entra cualquier usuario activo, de cualquier rol.
   Las dos personas de la Dirección están siempre, pero en el sistema son dos personas más de la lista: no hay marca de «la Dirección».
@@ -45,12 +46,27 @@ dato-quincena.html y dato-quincena.js (la franja, el diálogo «Tu orden», las 
 - Cierre: las 12:00 del primer día hábil en que la edición ya estaba en el RPAD a las 8:05, y nunca antes de su `fecha_edicion`.
   Con D el mayor entre `fecha_edicion` y el día de la llegada (hora argentina, de `recibida_at`): si llegó ese día a las 8:05 o después, D pasa al siguiente; cierra el primer día hábil desde D.
   Es independiente del envío real: un envío apagado, un mail que falló o un piloto cierran igual.
+- Cierre anticipado: la votación cierra en lo que pase primero, las 12:00 de arriba o el voto que completa la foto (`cierreAnticipado`).
+  El voto que cierra es el primer voto válido de la última persona que faltaba; cuentan él y los anteriores, y ningún voto posterior.
+  `estadoDeLaVotacion` lo da con `cierre_nominal` (las 12:00 de siempre, con las que se sella), `por_todos` y `hasta_id` (el id de ese voto).
+  Sellada, `cierre_nominal` es null: lo sellado no vuelve a tocar el calendario, y el sellado solo lo calcula para las votaciones sin sellar.
+  Se calcula al leer, de los votos guardados: no hay columna ni migración, y como los votos solo se agregan, una vez que votaron todos no se reabre.
+  El diálogo y el mensaje del voto lo dicen: «Lo podés cambiar hasta el martes 24/11 a las 12:00, o hasta que voten todas las personas de la lista.»; la pestaña «Envío y votación», que se vota hasta las 12:00 «o hasta que voten todas las personas de su lista, lo que pase primero».
+- Decisión: «votaron todos» es toda la foto de la edición.
+  Quien no puede votar (de licencia, con la cuenta desactivada o borrada) cuenta igual: si no vota, la votación cierra a las 12:00.
+  Una foto vacía nunca cierra antes: termina en «nadie votó» a las 12:00.
+- Decisión: qué votos cuentan lo decide el `id` (el orden en que se guardaron), no la hora: el voto que cierra es del minuto del cierre, y con la hora a segundos dos votos casi simultáneos se cruzarían.
+  Por eso `votosVigentes` recibe `hastaId` y, con él, no mira la hora.
+- Decisión: una votación sellada cuenta como «por todos» solo si su `cierre_at` es el minuto del voto que cierra.
+  Una sellada a las 12:00 antes de esta regla conserva su cierre y su ganadora aunque sus votos completen la foto: su resultado ya salió por mail y no cambia.
+- El sellado y el mail del resultado siguen a las 14:00 del día del cierre de siempre: si votaron todos la noche anterior, la página ya muestra la ganadora y el mail llega ese día.
 - Hasta el cierre cada persona cambia su orden cuando quiera.
   Mientras está abierta no se ve el orden de nadie ni cómo va, y nadie puede acomodar su voto al de otra persona.
   Cerrada, se ve para todos los roles quién votó qué: el Seguimiento ya muestra a todos quién propuso y quién aprobó cada cambio.
 - Decisión: sin calendario (`calendario.error !== null`) y sin sellar, el cierre no se puede saber con certeza.
   Con los 9 fijos podría dar cerrada un día que la tabla de feriados extiende, y al volver la tabla se reabriría.
   Las tres lecturas (detalle, lista y Mi espacio) la toman como abierta y sin resultado: `cierre` dice «No se pudo leer el calendario: el cierre se confirma en unos minutos.», `puede_votar` es false, el PUT no guarda y Mi espacio no muestra el ítem.
+  Salvo que ya hayan votado todos: los votos alcanzan sin el calendario y está cerrada igual, con su ganadora.
   Una llegada que no se puede leer, sin sellar, se trata igual (`estadoDeLaVotacionLeida`).
 - Decisión: el sellado deja guardado el cierre (`cierre_at`, `sellada_at`).
   Desde ahí la votación ya no depende del calendario: un feriado cargado después para un día que ya pasó no la reabre ni cambia su resultado.
@@ -62,10 +78,11 @@ dato-quincena.html y dato-quincena.js (la franja, el diálogo «Tu orden», las 
 
 Las cuatro tablas están en `docs/temas/base-de-datos.md`.
 - `dato_quincena_votos`: una fila por cada vez que alguien guarda su orden, como texto «2,1,4,3».
-  El RPAD nunca hace un UPDATE ni un DELETE: el vigente de cada persona es su voto de mayor `id` anterior al cierre y con un orden válido.
+  El RPAD nunca hace un UPDATE ni un DELETE: el vigente de cada persona es su voto de mayor `id` que cuenta (anterior al cierre, o hasta el voto que cerró por todos) y con un orden válido.
 - Decisión: el voto se ata a la fila de la foto, no al usuario.
   Si alguien borrara una cuenta con un SQL a mano (el RPAD no borra usuarios), la fila queda con `usuario_id` en null pero sigue juntando sus votos, y una votación cerrada no cambia; su nombre sale «Una persona que ya no está».
 - `votado_at` y el resto de las horas son hora argentina (`ahoraArgentina()`), no `NOW()`.
+  `guardarVoto` toma la hora con la fila de la votación ya bloqueada (`reloj`) y es la misma con la que mira el cierre y la que guarda en `votado_at`.
 - La migración es aditiva y repetible y va antes que el código: sin las tablas, la lista, el detalle y el POST de Datito dan error.
   Su vuelta atrás va antes que la de la principal del equipo y las del correo y del archivo (el orden, en `docs/temas/despliegue.md`).
 
@@ -77,13 +94,16 @@ Las cuatro tablas están en `docs/temas/base-de-datos.md`.
   1. un id que no pasa `idPositivo` o una edición que no existe: 404 «No existe esa edición.»;
   2. una edición sin votación: 409 «Esta edición no se vota.»;
   3. quien pide no está en la foto: 403 «No estás en la lista de quienes votan esta edición.»;
-  4. la votación ya cerró: 409 «La votación ya cerró.»;
+  4. la votación ya cerró, a las 12:00 o porque votaron todos: 409 «La votación ya cerró.» (el mismo texto en los dos casos);
   5. un `orden` que no es una lista con cada propuesta de la edición una sola vez: 400 «Ordená todas las propuestas de la edición.»;
   6. sin calendario y sin sellar: 500 «No se pudo guardar tu orden. Probá de nuevo en unos minutos.».
 - Todo va en una transacción con la fila de la votación bloqueada (`FOR UPDATE`): el cierre se mira adentro, con la hora de ese momento, y un voto aceptado siempre cuenta.
 - Si el orden es el último que guardó esa persona, no escribe; si no, inserta una fila.
   `guardarVoto` compara con el último voto de la persona (el de mayor `id`), no con el vigente: solo difieren si alguien metió un voto inválido por SQL, y entonces se inserta una fila más, que es inofensivo.
-- Responde 200 con `{ cambio }` y el texto ya armado: «Guardamos tu orden. Lo podés cambiar hasta el martes 24/11 a las 12:00.» o «Tu orden ya era ese.».
+- Responde 200 con `{ cambio }` y el texto ya armado: «Guardamos tu orden. Lo podés cambiar hasta el martes 24/11 a las 12:00, o hasta que voten todas las personas de la lista.» o «Tu orden ya era ese.».
+  Si el voto guardado es el que completa la foto, «Guardamos tu orden. Votaron todos: la votación cerró.».
+  Después de los controles, `guardarVoto` vuelve a leer la votación, la foto y los votos con la fila ya bloqueada: los votos a la vez de las dos últimas personas se ordenan por el candado, las dos reciben 200 y la segunda en guardarse es la que cierra.
+  El 409 es para un voto que llega después del que cerró.
 - Un 500 dice un mensaje fijo; en la consola, solo el código y el mensaje.
 - El sellado toma solo la fila de la votación, y `guardarVoto` toma esa y después la de la edición: el orden de los candados no se cruza.
 
@@ -97,9 +117,10 @@ Las cuatro tablas están en `docs/temas/base-de-datos.md`.
 - Decisión: `ver` mira a quien pide (`req.user`): el detalle deja de ser igual para todos los roles.
   Lo de quien mira va en la clave `votacion`; todo lo demás sigue igual para todos.
 - `votacion`, al final del detalle, es null en una edición de antes y, si no:
-  - `estado`, `abierta` o `cerrada`; `resumen`; `cierre`, «Se vota hasta el martes 24/11/2026 a las 12:00.» o «La votación cerró el …»;
+  - `estado`, `abierta` o `cerrada`; `resumen`; `cierre`, «Se vota hasta el martes 24/11/2026 a las 12:00.» o «La votación cerró el …», o, si cerró porque votaron todos, «La votación cerró el lunes 23/11/2026 a las 21:40, cuando votaron todos.»;
   - `participacion`, igual para todos: «Ya votó 1 de 3: <nombre>. Faltan los votos de <nombre> y <nombre>.», «Ya votaron 3 de 3.», «Todavía no votó nadie de 3.»; cerrada, «Votaron 2 de 3: no votó <nombre>.», «No votó nadie de 3.»; sin votantes, «No había nadie en la lista para votar.»;
-  - para quien mira: `puede_votar` (está en la foto y está abierta, con calendario), `falta_tu_voto`, `tu_orden` (`[{ puesto: '1.º', orden, texto }]` o null; null al cerrar) y `dialogo`, el texto del diálogo;
+  - para quien mira: `puede_votar` (está en la foto y está abierta, con calendario), `falta_tu_voto`, `tu_orden` (`[{ puesto: '1.º', orden, texto }]` o null; null al cerrar), `dialogo`, el texto del diálogo, y `aviso_de_cierre`, «Sos la última persona en votar: al guardar, la votación cierra y nadie puede cambiar su orden.», null salvo para quien puede votar, no tiene voto y es la única que falta (quien ya votó y cambia su orden no lo ve);
+  - `dialogo`: «Tocá las propuestas en orden, de la que más querés trabajar como principal a la que menos. Lo podés cambiar hasta el martes 24/11 a las 12:00, o hasta que voten todas las personas de la lista.»;
   - cerrada, `resultado`: `orden`, `como` (`puntos`, `desempate` o `nadie`), `texto`, la `regla` y la `tabla` (null sin votos; si no, `votantes` y `filas` de más a menos puntos, cada una `{ orden, texto, de_datito, puestos, puntos, gana }`).
 - Decisión: `falta_tu_voto` es `puede_votar` sin voto, y sin calendario es false, también en la lista: una pastilla «Falta tu voto» sin botón para votar confunde.
 - `resultado.texto`: «Ganó por puntos: 10, contra 7 de la que siguió.», «Ganó por desempate: empató con la 2, con 7 puntos, y es la de Datito.» (o «…y tiene el número más bajo.»), «Nadie votó: quedó la de Datito.».
@@ -129,7 +150,13 @@ Los textos los trae el servidor y la página los imprime, todos por `Utils.escap
 - «Ver las N propuestas» lleva a la del equipo si ya cerró y, si no, a la de Datito.
 - El diálogo «Tu orden» lo abren «Votar» y «Cambiar mi orden», de la franja y de cada propuesta.
   Es HTML estático de `dato-quincena.html`, como el de «Reenviar»: velo, Escape, foco, y Tab y Mayúscula+Tab no salen.
+  - Antes de abrirlo, la página vuelve a pedir la edición (`GET /api/dato-quincena/ediciones/:id`) y lo abre con la `votacion` recién llegada: el texto, el aviso y «Tu orden».
+    Mientras espera, el botón queda deshabilitado (un doble clic manda un solo pedido).
+    Si ya no se puede votar (cerró o `puede_votar` es false), vuelve a dibujar la edición con lo que llegó, sin «Votar», con el foco en su pestaña, y no abre.
+    Si el pedido falla, el error del servidor o «No se pudo guardar tu orden. Probá de nuevo en unos minutos.», y no abre; un 401, al login.
+  - Decisión: la votación pudo cambiar desde que se dibujó la página (otra persona votó, cerró o quien mira votó en otra pestaña); con lo dibujado, el aviso a la última persona podía faltar o sobrar y «Tu orden» arrancar con un orden viejo.
   - El texto es el `dialogo` del servidor.
+  - Con `aviso_de_cierre`, el aviso (`#dq-voto-aviso`) va arriba de «Guardar mi orden» y el diálogo lo suma a su `aria-describedby`.
   - Una fila por propuesta, en el orden de la edición: un botón con `aria-pressed`, su puesto («1.º» o un punto), «Propuesta N» y el título, y la marca de Datito en la suya.
     Tocar una sin puesto le da el siguiente; tocar una con puesto se lo saca y las de atrás suben; «Empezar de nuevo» saca todos.
   - Decisión: sin voto arranca sin ningún puesto, para no empujar a dejar el orden de Datito.
@@ -139,7 +166,7 @@ Los textos los trae el servidor y la página los imprime, todos por `Utils.escap
     Un 409 («La votación ya cerró.», «Esta edición no se vota.») o un 403 («No estás en la lista…») cierra el diálogo y vuelve a pedir y dibujar la edición, que ya no muestra «Votar», con el foco en su pestaña.
     Otro error (un 500, la red) deja el diálogo abierto, para volver a probar.
   - Después de guardar sale el `message`, se vuelve a pedir el detalle y se redibuja en la misma pestaña y propuesta, con el foco en el botón que lo abrió o su reemplazo.
-- Decisión: una acción por vez; mientras se guarda, el diálogo no se abre ni abre «Reenviar…» (el redibujo correría con un diálogo abierto y el foco iría detrás del velo).
+- Decisión: una acción por vez; mientras se guarda o mientras «Votar» espera la edición, el diálogo no se abre ni abre «Reenviar…» (el redibujo correría con un diálogo abierto y el foco iría detrás del velo), y si mientras tanto se abrió otro diálogo, «Tu orden» no abre encima.
 - Propuestas: con la votación abierta y `puede_votar`, cada propuesta suma en su cabecera «Tu N.º» (si votó) y «Votar» o «Cambiar mi orden»; el índice suma la marca «Tu N.º».
   Las marcas `Datito` y `Equipo` llevan cada una su ícono y un texto oculto «Principal de …»; la del equipo va en la ganadora cuando cierra.
   Sin `&propuesta=`, se abre la del equipo si cerró y, si no, la de Datito.
@@ -158,7 +185,8 @@ Los textos los trae el servidor y la página los imprime, todos por `Utils.escap
 ## El sellado y el mail del resultado
 
 - Un paso de las corridas de las 8:05 y de las 14:00 (`votacionDelDatoQuincenaAislada`, que nunca rechaza), con su candado `rpad_dato_quincena_votacion` (`docs/temas/calendario-y-corridas.md`).
-  Sella cada votación sin sellar cuyo cierre ya pasó, calculado con el calendario de la corrida.
+  Sella cada votación sin sellar cuyo cierre de siempre (`cierre_nominal`) ya pasó, calculado con el calendario de la corrida.
+  Una que cerró porque votaron todos se sella igual a las 14:00 del día del cierre de siempre, y `cierre_at` guarda la hora de ese voto, no las 12:00.
 - Cuándo sella: solo un día hábil, con el calendario leído (`calendario.error === null`) y desde las 14:00 del día del cierre.
   La corrida de las 14:00 de ese día sella; si no pudo, la de las 8:05 del siguiente día hábil.
   Las corridas a mano de administración (`/api/notificaciones/ejecutar` y `/api/notificaciones/cambios-pendientes`) comparten el controlador y la misma regla: antes de las 14:00 del día del cierre no sellan ni mandan nada.

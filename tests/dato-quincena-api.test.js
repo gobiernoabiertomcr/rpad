@@ -271,6 +271,7 @@ const votacionAbiertaSinVotantes = (cierre) => ({
   falta_tu_voto: false,
   tu_orden: null,
   dialogo: null,
+  aviso_de_cierre: null,
   resultado: null
 });
 const votacionAbiertaEnLaLista = (cierre) => ({ texto: `Se vota hasta el ${cierreCorto(cierre)}`, falta_tu_voto: false });

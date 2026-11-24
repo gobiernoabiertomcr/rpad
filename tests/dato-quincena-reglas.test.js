@@ -3217,24 +3217,37 @@ describe('detalleDeLaEdicion', () => {
     assert.deepEqual(sinElegir.propuestas.map((p) => [p.principal, p.etiquetas]), [[true, ['Principal', 'Validar']], [false, ['Agenda']]]);
   });
 
+  // Los estados de estadoDeLaVotacion: abierta o cerrada a las 12:00 del martes 03/11, o cerrada porque votaron todos (spec
+  // 2026-11-23-dato-quincena-votacion-cierre-anticipado): el voto 4, el primero de la Persona Tres, cerró el lunes 02/11 a las 21:40
+  const ESTADOS_DE_PRUEBA = {
+    abierta: { abierta: true, cierre: '2026-11-03 12:00', cierre_nominal: '2026-11-03 12:00', por_todos: false, hasta_id: null, sin_calendario: false },
+    cerrada: { abierta: false, cierre: '2026-11-03 12:00', cierre_nominal: '2026-11-03 12:00', por_todos: false, hasta_id: null, sin_calendario: false },
+    por_todos: { abierta: false, cierre: '2026-11-02 21:40', cierre_nominal: '2026-11-03 12:00', por_todos: true, hasta_id: 4, sin_calendario: false }
+  };
   // spec 2026-11-23-dato-quincena-principal-votacion, 3: con la votación (la salida de votacionDelDetalle, ya armada), la clave
   // `votacion` va al final y `principal_equipo` sale de ella, no de la elección a mano
   const votacionDePrueba = (estado, votos, quienMira = 901) => votacionDelDetalle({
     propuestas: [{ orden: 1, titulo: 'Un título inventado' }, { orden: 2, titulo: 'Otro título inventado' }], deDatito: 1,
-    estado: { abierta: estado === 'abierta', cierre: '2026-11-03 12:00', sin_calendario: false },
+    estado: ESTADOS_DE_PRUEBA[estado],
     personas: [
       { persona_id: 1, usuario_id: 901, nombre: 'Persona Uno' }, { persona_id: 2, usuario_id: 902, nombre: 'Persona Dos' },
       { persona_id: 3, usuario_id: 903, nombre: 'Persona Tres' }
     ],
-    votos: votos.map(([persona_id, orden], i) => ({ id: i + 1, persona_id, orden: orden.join(','), votado_at: '2026-11-03 09:00:00' })),
+    votos: votos.map(([persona_id, orden, votado_at = '2026-11-03 09:00:00'], i) => ({ id: i + 1, persona_id, orden: orden.join(','), votado_at })),
     quienMira
   });
   const CASOS_DE_LA_VOTACION = [
     ['detalle_votacion_abierta', 'abierta', [[2, [1, 2]]]],
     ['detalle_votacion_abierta_con_voto', 'abierta', [[1, [2, 1]], [2, [1, 2]]]],
+    // Votaron las Personas Dos y Tres: quien mira (la Uno) es la única que falta y la ve con el aviso
+    ['detalle_votacion_abierta_ultima', 'abierta', [[2, [1, 2]], [3, [2, 1]]]],
     ['detalle_votacion_cerrada_puntos', 'cerrada', [[1, [2, 1]], [2, [2, 1]], [3, [1, 2]]]],
     ['detalle_votacion_cerrada_desempate', 'cerrada', [[1, [2, 1]], [2, [1, 2]]]],
-    ['detalle_votacion_cerrada_nadie', 'cerrada', []]
+    ['detalle_votacion_cerrada_nadie', 'cerrada', []],
+    // La Persona Dos cambia antes del cierre (cuenta su 2,1) y la Tres vota última
+    ['detalle_votacion_cerrada_por_todos', 'por_todos', [
+      [2, [1, 2], '2026-11-02 18:05:00'], [1, [2, 1], '2026-11-02 19:30:00'], [2, [2, 1], '2026-11-02 20:10:00'], [3, [2, 1], '2026-11-02 21:40:12']
+    ]]
   ];
 
   for (const [clave, estado, votos] of CASOS_DE_LA_VOTACION) {
@@ -3244,8 +3257,20 @@ describe('detalleDeLaEdicion', () => {
       assert.deepEqual(ordenDeLasClaves(d), ordenDeLasClaves(RESPUESTAS[clave].data));
       assert.equal(RESPUESTAS[clave].success, true);
       assert.equal(Object.keys(d).at(-1), 'votacion');
+      // El aviso del diálogo, después del diálogo, en cada una (spec 2026-11-23-dato-quincena-votacion-cierre-anticipado)
+      assert.deepEqual(Object.keys(d.votacion), [
+        'estado', 'resumen', 'cierre', 'participacion', 'puede_votar', 'falta_tu_voto', 'tu_orden', 'dialogo', 'aviso_de_cierre', 'resultado'
+      ]);
     });
   }
+
+  it('cerrada porque votaron todos: el cierre con la hora del voto que cerró y la ganadora de los votos hasta ese', () => {
+    const { votacion, principal_equipo: equipo } = RESPUESTAS.detalle_votacion_cerrada_por_todos.data;
+    assert.equal(votacion.cierre, 'La votación cerró el lunes 02/11/2026 a las 21:40, cuando votaron todos.');
+    assert.equal(votacion.resultado.texto, 'Ganó por puntos: 6, contra 3 de la que siguió.');
+    assert.equal(votacion.aviso_de_cierre, null);
+    assert.deepEqual([equipo.orden, equipo.resumen], [2, 'Propuesta 2 · Otro título inventado']);
+  });
 
   it('con la votación, la elección a mano no cuenta; sin ella (null o sin la clave), como antes y votacion null', () => {
     const conVotacion = detalle({ eleccion: { ...ELECCION, orden: 2 }, votacion: votacionDePrueba('abierta', []) });
