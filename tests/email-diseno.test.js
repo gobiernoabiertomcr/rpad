@@ -848,6 +848,21 @@ describe('El mail del dato de la quincena', () => {
     assert.deepEqual(titulosDeLosGrupos(alReves), ['Efemérides', 'Lo que viene', 'Lo que pasó']);
   });
 
+  // spec 2026-11-23-dato-quincena-agenda-esta-semana: con «Esta semana», los cuatro grupos en la misma tabla y en el texto plano
+  it('la agenda con los cuatro grupos, en su orden', () => {
+    const conLaSemana = mail((m) => {
+      m.agenda_grupos.splice(1, 0, { titulo: 'Esta semana', eventos: [{
+        fecha_texto: '09/11/2026', titulo: 'Jornada de la semana', detalle: 'En la semana de la edición.',
+        url: 'https://datos.ejemplo.test/agenda/semana'
+      }] });
+    });
+    assert.deepEqual(titulosDeLosGrupos(conLaSemana.html), ['Lo que pasó', 'Esta semana', 'Lo que viene', 'Efemérides']);
+    assert.deepEqual([...conLaSemana.html.matchAll(TITULO_DEL_GRUPO)].map((encontrado) => encontrado[1]), ['0', '12px', '12px', '12px']);
+    const { text } = conLaSemana;
+    assert.ok(text.includes('Esta semana\n09/11/2026 · Jornada de la semana'));
+    assert.ok(text.indexOf('Lo que pasó\n') < text.indexOf('Esta semana\n') && text.indexOf('Esta semana\n') < text.indexOf('Lo que viene\n'));
+  });
+
   it('cada evento de la agenda: la fecha en su columna y «Ver» si la dirección es https://, sin la pastilla «Efeméride»', () => {
     assert.match(html, /<td valign="top" style="[^"]*width: 84px;[^"]*white-space: nowrap;">20\/11\/2026<\/td>/);
     assert.equal(veces(html, '>Efeméride</span>'), 0);

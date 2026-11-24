@@ -630,6 +630,19 @@ describe('dato-quincena.js: el detalle (spec, 10)', () => {
     assert.deepEqual(titulosDeLosGrupos(ctx.htmlDeLaAgenda(DETALLE_CON_REPETICION().agenda_grupos)), ['Lo que pasó', 'Efemérides']);
   });
 
+  // spec 2026-11-23-dato-quincena-agenda-esta-semana: con «Esta semana», cuatro grupos y cuatro columnas, en el orden del servidor
+  it('con los cuatro grupos, cuatro columnas en su orden', () => {
+    const grupos = GRUPOS();
+    grupos.splice(1, 0, { titulo: 'Esta semana', eventos: [
+      { fecha_texto: '15/11/2026', titulo: 'Jornada de la semana', detalle: 'En la semana de la edición.', url: 'https://datos.ejemplo.gob.ar/semana' }
+    ] });
+    const agenda = ctx.htmlDeLaAgenda(grupos);
+    assert.deepEqual(titulosDeLosGrupos(agenda), ['Lo que pasó', 'Esta semana', 'Lo que viene', 'Efemérides']);
+    assert.equal(cuantas(agenda, /<div class="dq-agenda-col">/g), 4);
+    assert.ok(agenda.indexOf('Esta semana</h4>') < agenda.indexOf('Jornada de la semana')
+      && agenda.indexOf('Jornada de la semana') < agenda.indexOf('Lo que viene</h4>'));
+  });
+
   it('cada evento con su fecha, título, detalle y enlace, separados por un espacio; sin la pastilla «Efeméride»', () => {
     const [{ eventos: [evento] }] = DETALLE().agenda_grupos;
     const agenda = ctx.htmlDeLaAgenda(DETALLE().agenda_grupos);

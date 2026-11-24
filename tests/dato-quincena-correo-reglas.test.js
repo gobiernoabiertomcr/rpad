@@ -1574,9 +1574,10 @@ describe('datoQuincenaTemplate: el texto plano y el nombre del bot', () => {
     assert.equal(datoQuincenaTemplate(modelo(), { conSvg: true }).text, TEXTO);
   });
 
-  // spec 2026-11-14-dato-quincena-agenda-grupos: el título de cada grupo en su renglón y sus eventos debajo, por fecha, sin la
-  // etiqueta «Efeméride» (el título del grupo ya lo dice); los grupos, en su orden y separados por un renglón en blanco
-  it('la agenda en sus tres grupos: cada título en su renglón, sus eventos debajo y sin etiquetas', () => {
+  // spec 2026-11-14-dato-quincena-agenda-grupos y 2026-11-23-dato-quincena-agenda-esta-semana: el título de cada grupo en su renglón y
+  // sus eventos debajo, por fecha, sin la etiqueta «Efeméride» (el título del grupo ya lo dice); los grupos, en su orden y separados
+  // por un renglón en blanco. El día de la edición (16/11, un lunes) va en «Esta semana» y el 25/11, en «Lo que viene»
+  it('la agenda en sus cuatro grupos: cada título en su renglón, sus eventos debajo y sin etiquetas', () => {
     const edicion = edicionDePrueba({
       fecha_edicion: '2026-11-16',
       agenda: [
@@ -1596,10 +1597,11 @@ describe('datoQuincenaTemplate: el texto plano y el nombre del bot', () => {
       '10/11/2026 · Lo que pasó',
       'Otro inventado.',
       '',
-      'Lo que viene',
+      'Esta semana',
       '16/11/2026 · Lo que viene antes',
       'https://datos.ejemplo.gob.ar/v1',
       '',
+      'Lo que viene',
       '25/11/2026 · Lo que viene después',
       'Uno inventado.',
       'https://datos.ejemplo.gob.ar/v2',

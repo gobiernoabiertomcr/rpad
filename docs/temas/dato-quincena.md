@@ -14,6 +14,7 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-18-dato-quincena-detalle-pestanas-design.md` (el detalle en tres pestañas)
 - `docs/superpowers/specs/2026-11-21-dato-quincena-principal-equipo-design.md` (la principal del equipo elegida a mano)
 - `docs/superpowers/specs/2026-11-23-dato-quincena-principal-votacion-design.md` (la principal del equipo se vota)
+- `docs/superpowers/specs/2026-11-23-dato-quincena-agenda-esta-semana-design.md` («Esta semana» en la agenda)
 
 ## Archivos
 
@@ -72,8 +73,10 @@ dato-quincena.html # El dato de la quincena: la lista de un año en tarjetas, el
   Queda para una pestaña abierta con la página anterior: la página y el mail imprimen `agenda_grupos`.
   `agenda_grupos`, la misma agenda en grupos `{ titulo, eventos }`, cada evento `{ fecha_texto, titulo, detalle, url }`, sin etiqueta (`gruposDeLaAgenda`, pura, con la `fecha_edicion` por parámetro).
   Los grupos, en este orden y con estos títulos (decisión del usuario): «Lo que pasó», los eventos (sin `tipo` o con `evento`) anteriores a la edición;
-  «Lo que viene», los eventos del día de la edición o después;
+  «Esta semana», los eventos del día de la edición al domingo de esa semana, los dos incluidos;
+  «Lo que viene», los de después de ese domingo;
   y «Efemérides», cualquiera sea su fecha.
+  «Esta semana» va hasta el domingo, como en los próximos de Mi espacio: una regular cae en lunes, así que son los días 0 a 6, donde caen los 3 a 6 que Datito separa en su correo.
   En cada grupo, por fecha, de la más vieja a la más nueva, y con la misma fecha, en el orden en que llegaron; un grupo vacío no va y, sin agenda, la lista es vacía.
   Los grupos salen de la `fecha` y el `tipo` de cada evento y de la `fecha_edicion`, no del orden en que llegan: el contrato con Datito no cambia.
   Cada propuesta: `orden` (el número del JSON, para la dirección y el índice de la página; el mail lo deja afuera, como `orden_texto`), `orden_texto` («Propuesta 1»), `etiquetas`, `principal`, sus textos tal como llegaron, `dataset` (`{ nombre, id_enlace, url }`, con `id_enlace` el id solo si el dataset existe y está activo), `foto`, `repeticion` (después de la foto), `para_copiar` y `borrador_para_copiar`.

@@ -12,6 +12,7 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-18-dato-quincena-propuestas-datasets-design.md` (las propuestas de datasets nuevos)
 - `docs/superpowers/specs/2026-11-21-dato-quincena-principal-equipo-design.md` (la frase y el recuadro del mail)
 - `docs/superpowers/specs/2026-11-23-dato-quincena-principal-votacion-design.md` (la pestaña Envío y votación y la lista de quienes votan)
+- `docs/superpowers/specs/2026-11-23-dato-quincena-agenda-esta-semana-design.md` («Esta semana» en la agenda)
 
 ## Archivos
 
@@ -153,7 +154,7 @@ dato-quincena.html y dato-quincena.js (las pestañas, la lista en tarjetas, la c
   «Buen día, <primer nombre>.»;
   el recuadro «Esta edición se lee mejor en el RPAD», con su botón (abajo);
   la infografía en línea (`cid`) con su pie;
-  «Agenda de la quincena», en sus grupos («Lo que pasó», «Lo que viene» y «Efemérides», los de `agenda_grupos`: `docs/temas/dato-quincena.md`);
+  «Agenda de la quincena», en sus grupos («Lo que pasó», «Esta semana», «Lo que viene» y «Efemérides», los de `agenda_grupos`: `docs/temas/dato-quincena.md`);
   una tarjeta por propuesta, con su franja («Propuesta 1 de 4», «Principal» en la principal) y la cifra, el dataset, la repetición si hay, «Por qué es noticia» (`por_que_hoy`), el ángulo, la idea de placa, el texto para redes, los puntos, el borrador, lo que hay que validar y las fuentes;
   si la edición trae `propuestas_datasets`, «Propuestas de datasets nuevos» (abajo);
   el botón «Ver la edición en el RPAD» (`RPAD_URL/dato-quincena.html?id=N`);

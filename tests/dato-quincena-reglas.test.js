@@ -2822,9 +2822,10 @@ describe('itemDeLaLista', () => {
   });
 });
 
-// spec 2026-11-14-dato-quincena-agenda-grupos: la agenda en tres grupos, «Lo que pasó» (los eventos anteriores a la edición), «Lo que
-// viene» (los del día de la edición o después) y «Efemérides» (cualquiera sea su fecha), cada uno por fecha y, con la misma fecha,
-// en el orden de llegada; sin los vacíos. Los eventos, inventados
+// spec 2026-11-14-dato-quincena-agenda-grupos y 2026-11-23-dato-quincena-agenda-esta-semana: la agenda en cuatro grupos, «Lo que
+// pasó» (los eventos anteriores a la edición), «Esta semana» (los del día de la edición al domingo de esa semana), «Lo que viene» (los
+// de después de ese domingo) y «Efemérides» (cualquiera sea su fecha), cada uno por fecha y, con la misma fecha, en el orden de
+// llegada; sin los vacíos. Los eventos, inventados
 describe('gruposDeLaAgenda', () => {
   // Un evento inventado de la agenda: sin tipo, la clave no va (la forma de antes del contrato v1.3)
   const eventoDeAgenda = (titulo, fecha, tipo) => ({
@@ -2852,11 +2853,13 @@ describe('gruposDeLaAgenda', () => {
     eventoDeAgenda('Un día inventado más', '2026-11-26', 'efemeride')
   ];
 
-  it('los tres grupos con la edición del piloto 14, en su orden y con sus títulos', () => {
+  // El piloto 14 cae en sábado: su semana termina el domingo 15/11
+  it('los cuatro grupos con la edición del piloto 14, en su orden y con sus títulos', () => {
     const agenda = agendaDelPiloto();
     assert.deepEqual(gruposDeLaAgenda(agenda, EDICION_DEL_PILOTO), [
       { titulo: 'Lo que pasó', eventos: [enElGrupo(agenda[0])] },
-      { titulo: 'Lo que viene', eventos: agenda.slice(1, 5).map(enElGrupo) },
+      { titulo: 'Esta semana', eventos: agenda.slice(1, 3).map(enElGrupo) },
+      { titulo: 'Lo que viene', eventos: agenda.slice(3, 5).map(enElGrupo) },
       { titulo: 'Efemérides', eventos: agenda.slice(5).map(enElGrupo) }
     ]);
     const [{ eventos: [evento] }] = gruposDeLaAgenda(agenda, EDICION_DEL_PILOTO);
@@ -2879,15 +2882,53 @@ describe('gruposDeLaAgenda', () => {
     ];
     assert.deepEqual(titulosPorGrupo(gruposDeLaAgenda(agenda, '2026-11-16')), [
       ['Lo que pasó', ['Pasó 03', 'Pasó 12 primero', 'Pasó 12 segundo']],
-      ['Lo que viene', ['Viene 20 primero', 'Viene 20 segundo', 'Viene 25', 'Viene en diciembre']],
+      ['Esta semana', ['Viene 20 primero', 'Viene 20 segundo']],
+      ['Lo que viene', ['Viene 25', 'Viene en diciembre']],
       ['Efemérides', ['Efeméride 18', 'Efeméride 18 otra', 'Efeméride 30']]
     ]);
   });
 
-  it('un evento del mismo día de la edición va a «Lo que viene»; uno del día anterior, a «Lo que pasó»', () => {
+  it('un evento del mismo día de la edición va a «Esta semana»; uno del día anterior, a «Lo que pasó»', () => {
     const agenda = [eventoDeAgenda('Hoy', '2026-11-16'), eventoDeAgenda('Ayer', '2026-11-15')];
     assert.deepEqual(titulosPorGrupo(gruposDeLaAgenda(agenda, '2026-11-16')),
-      [['Lo que pasó', ['Ayer']], ['Lo que viene', ['Hoy']]]);
+      [['Lo que pasó', ['Ayer']], ['Esta semana', ['Hoy']]]);
+  });
+
+  // Una regular cae en lunes: el domingo es el día 6, el último de «Esta semana», y el lunes siguiente ya es «Lo que viene»
+  it('el domingo de la semana y el lunes siguiente', () => {
+    const agenda = [eventoDeAgenda('Lunes siguiente', '2026-12-14'), eventoDeAgenda('Domingo', '2026-12-13')];
+    assert.deepEqual(titulosPorGrupo(gruposDeLaAgenda(agenda, '2026-12-07')),
+      [['Esta semana', ['Domingo']], ['Lo que viene', ['Lunes siguiente']]]);
+  });
+
+  // Un piloto puede caer en domingo: su semana es solo ese día
+  it('una edición de un domingo', () => {
+    const agenda = [eventoDeAgenda('El mismo domingo', '2026-11-22'), eventoDeAgenda('Lunes', '2026-11-23')];
+    assert.deepEqual(titulosPorGrupo(gruposDeLaAgenda(agenda, '2026-11-22')),
+      [['Esta semana', ['El mismo domingo']], ['Lo que viene', ['Lunes']]]);
+  });
+
+  it('una semana que cruza el año', () => {
+    const agenda = [
+      eventoDeAgenda('Lunes de enero', '2027-01-04'), eventoDeAgenda('Domingo de enero', '2027-01-03'), eventoDeAgenda('Fin de año', '2026-12-31')
+    ];
+    assert.deepEqual(titulosPorGrupo(gruposDeLaAgenda(agenda, '2026-12-28')),
+      [['Esta semana', ['Fin de año', 'Domingo de enero']], ['Lo que viene', ['Lunes de enero']]]);
+  });
+
+  it('una efeméride de esta semana va a «Efemérides»', () => {
+    const agenda = [eventoDeAgenda('Efeméride del jueves', '2026-11-19', 'efemeride'), eventoDeAgenda('Evento del jueves', '2026-11-19')];
+    assert.deepEqual(titulosPorGrupo(gruposDeLaAgenda(agenda, '2026-11-16')),
+      [['Esta semana', ['Evento del jueves']], ['Efemérides', ['Efeméride del jueves']]]);
+  });
+
+  it('los cuatro grupos, en su orden, aunque lleguen al revés', () => {
+    const agenda = [
+      eventoDeAgenda('Efeméride', '2026-11-30', 'efemeride'), eventoDeAgenda('Viene', '2026-11-24'),
+      eventoDeAgenda('Semana', '2026-11-18'), eventoDeAgenda('Pasó', '2026-11-10')
+    ];
+    assert.deepEqual(gruposDeLaAgenda(agenda, '2026-11-16').map((grupo) => grupo.titulo),
+      ['Lo que pasó', 'Esta semana', 'Lo que viene', 'Efemérides']);
   });
 
   it('una efeméride ya pasada va a «Efemérides», no a «Lo que pasó»', () => {
@@ -2903,7 +2944,7 @@ describe('gruposDeLaAgenda', () => {
     ];
     assert.deepEqual(titulosPorGrupo(gruposDeLaAgenda(agenda, '2026-11-16')), [
       ['Lo que pasó', ['Sin tipo, pasó', 'Con tipo, pasó']],
-      ['Lo que viene', ['Sin tipo, viene', 'Con tipo, viene']]
+      ['Esta semana', ['Sin tipo, viene', 'Con tipo, viene']]
     ]);
   });
 

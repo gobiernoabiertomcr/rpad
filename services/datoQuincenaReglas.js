@@ -1150,21 +1150,36 @@ const ORDEN_DE_LOS_ARCHIVOS_DEL_DETALLE = Object.freeze(Object.keys(ARCHIVOS_DEL
 // La etiqueta de un evento de la agenda: «Efeméride» o null (un evento, con tipo o sin él)
 const etiquetaDelEvento = (tipo) => (tipo === 'efemeride' ? 'Efeméride' : null);
 
-// Los grupos de la agenda (spec 2026-11-14-dato-quincena-agenda-grupos), en este orden y con estos títulos (decisión del
-// usuario). Un evento es uno sin tipo o con tipo evento; una efeméride va a su grupo cualquiera sea su fecha
+// El domingo de la semana (de lunes a domingo) de una fecha 'AAAA-MM-DD' que existe: la misma fecha si es domingo
+const domingoDeLaSemana = (iso) => sumarDias(iso, (7 - DIAS_DE_LA_SEMANA.indexOf(diaDeLaSemana(iso))) % 7);
+
+// Los grupos de la agenda (spec 2026-11-14-dato-quincena-agenda-grupos y 2026-11-23-dato-quincena-agenda-esta-semana), en este
+// orden y con estos títulos (decisión del usuario). Un evento es uno sin tipo o con tipo evento; una efeméride va a su grupo
+// cualquiera sea su fecha. «Esta semana» va hasta el domingo, como en los próximos de Mi espacio: una regular cae en lunes, así
+// que son los días 0 a 6, donde caen los 3 a 6 que Datito separa en su correo
 const esEfemeride = (evento) => evento.tipo === 'efemeride';
 const GRUPOS_DE_LA_AGENDA = Object.freeze([
   Object.freeze({ titulo: 'Lo que pasó', es: (evento, fechaDeLaEdicion) => !esEfemeride(evento) && evento.fecha < fechaDeLaEdicion }),
-  Object.freeze({ titulo: 'Lo que viene', es: (evento, fechaDeLaEdicion) => !esEfemeride(evento) && evento.fecha >= fechaDeLaEdicion }),
+  Object.freeze({
+    titulo: 'Esta semana',
+    es: (evento, fechaDeLaEdicion) => !esEfemeride(evento) && evento.fecha >= fechaDeLaEdicion
+      && evento.fecha <= domingoDeLaSemana(fechaDeLaEdicion)
+  }),
+  Object.freeze({
+    titulo: 'Lo que viene',
+    es: (evento, fechaDeLaEdicion) => !esEfemeride(evento) && evento.fecha > domingoDeLaSemana(fechaDeLaEdicion)
+  }),
   Object.freeze({ titulo: 'Efemérides', es: esEfemeride })
 ]);
 
 /**
- * La agenda de una edición ya validada en sus grupos (spec 2026-11-14-dato-quincena-agenda-grupos), con lo que ya trae cada
- * evento y la fecha de la edición ('AAAA-MM-DD', por parámetro): «Lo que pasó» (los eventos anteriores a la edición), «Lo que
- * viene» (los del día de la edición o después) y «Efemérides». Cada grupo `{ titulo, eventos }`, por fecha de la más vieja a la
- * más nueva y, con la misma fecha, en el orden en que llegaron; cada evento `{ fecha_texto, titulo, detalle, url }`, sin etiqueta:
- * el título del grupo ya la dice. Un grupo vacío no va; sin eventos, una lista vacía. No cambia la agenda que recibe.
+ * La agenda de una edición ya validada en sus grupos (spec 2026-11-14-dato-quincena-agenda-grupos y
+ * 2026-11-23-dato-quincena-agenda-esta-semana), con lo que ya trae cada evento y la fecha de la edición ('AAAA-MM-DD', por
+ * parámetro): «Lo que pasó» (los eventos anteriores a la edición), «Esta semana» (los del día de la edición al domingo de esa
+ * semana, los dos incluidos), «Lo que viene» (los de después de ese domingo) y «Efemérides». Cada grupo `{ titulo, eventos }`, por
+ * fecha de la más vieja a la más nueva y, con la misma fecha, en el orden en que llegaron; cada evento `{ fecha_texto, titulo,
+ * detalle, url }`, sin etiqueta: el título del grupo ya la dice. Un grupo vacío no va; sin eventos, una lista vacía. No cambia la
+ * agenda que recibe.
  */
 export const gruposDeLaAgenda = (agenda, fechaDeLaEdicion) => GRUPOS_DE_LA_AGENDA
   .map(({ titulo, es }) => ({
