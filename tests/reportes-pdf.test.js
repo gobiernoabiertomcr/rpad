@@ -2347,37 +2347,40 @@ const hashesPorHoja = (pdf) => contenidoPorHoja(pdf).map((contenido) => createHa
 // cuatro sin notas DGMIT, «En el día» con el orientativo y la frase en tres renglones bajan la letra de 21 a 19 pt, y el título del vacío corta en otro lugar; con una
 // nota DGMIT sigue en 19); en la hoja 2, esas dos líneas al principio de cada gestión en «Cómo se cuenta»; en «con una nota DGMIT», la tabla de los destildados
 // empieza en la hoja 3. Lo demás, igual, comprobado con el diff de texto hoja por hoja.
+// 24/11/2026: el avisado ya vencido que se pudo avisar a tiempo (spec 2026-11-24-metricas-avisado-ya-vencido): el 33 de los casos pasa a serlo. En la hoja 2
+// de los cinco, «Del RPAD a la DGMIT» con un ciclo más (y uno más en «2 o más») y la aclaración de los avisados ya vencidos de la externa con uno más. Lo demás,
+// igual, comprobado con el diff de texto hoja por hoja contra el código de antes.
 const REFERENCIA_DE_LOS_PDF = {
   'Métricas: los casos, con las métricas manuales': [
     'f99e6911c184b6e8361d499c5a95d8db58e093a68e208091da1cbbd0d7c1fc1c',
-    '385898bd229b362741a73a8b78ac2cda7b675edf131f897f9684080cb02cacc3',
+    '56e70d1caecb234598d0cc11cbf1539ac4aa7053321ebd030330eb1e9b3f14f9',
     '612f403ef4f31dc6b5cb35a0109d35b7de30c71f9df18d00765a00abc1b11f38',
     'b9cb9b826217b60cfd0fbf4685d68c8096a020667479a4b21786c535de6ea6d2',
     '9ff6936383728f833e6930ac3ef734c3a105da36735f8abf9c405ba2726fc276'
   ],
   'Métricas: con una nota DGMIT, promedio en días corridos y dos destildados': [
     '7548a7a619bef7c3fe4318caba9d67beb548b0decf8bfe477fdb4fb30a05956b',
-    '53abb1f38c3ecf371ce8e4c787263c28175cc6cf2e7b69f838ee27813d2e8d09',
+    '8c294621ab6c72f1c855cf91fe94bd66fc6d945be5ca9c0220f0eb75b9686078',
     '6749834666fc6b594b0fa46e4d119a076fe665c0063f513f0576028a08727b7c',
     'a2828c352766d72bfe151b11aaa58d01d8eb5ead68eb629349ca239876c2e83e',
     'fa769a21cc23404019ed9a01bc1e8c728f3b9efc0fec8fa62fbd5f2b78261c9b'
   ],
   'Métricas: un año cerrado sin foto': [
     'ae6d957c4703f69f8f749a76c77a689ef291b2484e7599780008e00187bc60f2',
-    'a8202067e272fc7f5a07266a2eb27d8c32715c55878710676ff865cb67d1e027',
+    '21f303f0e1a357592062e1236e2b3fbb0a00fb9afd6aad802001013879d39329',
     '59d4d8cb7fa0601437854459069b485a752e702cc0748b7d3337394c86a89196',
     '19e93b141b0412d748623bfe7eba17ca4725aa92057807227a47db9c5b37590f'
   ],
   'Informe anual: el primer año con foto': [
     '060ecf73247e46ab954fa5de4b9487779c5040efbf0172a42589492eddbbcc99',
-    '0216091c89c86a30ccdf6e1c4fbba2df8effbc7bffbf6589f9e1f1eb6b83a50b',
+    'debfe85d6481685a6f35756611c3ef832e5b315faaa1fcfd8e8909f7d264268c',
     'b73f4a0ed416321ee6c08362a75821ce2197a832c8af6337e60e776229e4b549',
     '002734fe914d923764d1f2d1ab7dbe8e1da1eb096c1a467cd356a162ceda9766',
     'c48d9d87a0ce2c0c5c7bd4d7acba86b9d95b65923a564626c34fb2d3abcf6d84'
   ],
   'Informe anual: con el año anterior y los logros': [
     '7729d7e93f7f41f0b807b3fb71294171f4c27d0174bca5e0938b6f3efd926efb',
-    '32c2688b94a99dd2e8720a6196781553d9f4f8d118b4e09cf12581cac2760889',
+    '7b23bbe988c2d4a6c47d5e2f7e874cdeed27d32eb266dbd4e20a2f98ad89141e',
     'ca73307db5980615e497748470592880af2e8c978552c401a319f3876bc75441',
     '7d4b57da2f38a103a286eff842910c0d6c39e294a777829e1189a900972e2443',
     '6f90c2ccdb59be72cb82612a3b05334bc12444053e779766b7fdb562697e86b9',

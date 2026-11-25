@@ -214,8 +214,8 @@ const esperabaElAviso = ({ diaDelAviso, aprobado, avisoRegla }, al) => {
 // vencimiento ya cerca», «el email no se pudo enviar», «se avisó ya vencido»). En este orden: 'email-fallido' si hubo un email de la
 // regla del ciclo que no se pudo enviar; 'alta-cercana' si el dataset se dio de alta después de la fecha de la regla (por día);
 // 'ya-vencido' si el primer aviso llegó después del vencimiento; si no, 'sin-aviso'.
-const motivoSinAviso = ({ avisos, deLaRegla, fechaRegla, altaDia, primerAviso, venc }) => {
-  if (avisos.some((a) => !a.enviado && deLaRegla(a))) return 'email-fallido';
+const motivoSinAviso = ({ emailDeLaReglaFallido, fechaRegla, altaDia, primerAviso, venc }) => {
+  if (emailDeLaReglaFallido) return 'email-fallido';
   if (altaDia !== null && altaDia > fechaRegla) return 'alta-cercana';
   if (primerAviso !== null && primerAviso > venc) return 'ya-vencido';
   return 'sin-aviso';
@@ -239,13 +239,18 @@ const casoDelCiclo = (datos, ciclo, avisos, notasDgmit, cerro, hoy) => {
   // El aviso que muestran la lista de casos y «Para completar»: el de la regla o, si no lo hubo, el primero
   const avisoQueSeMuestra = enviados.find(deLaRegla) ?? enviados[0] ?? null;
   const pudoAvisar = fechaRegla !== null && fechaRegla >= INICIO_DEL_REGISTRO && (altaDia === null || fechaRegla >= altaDia);
-  // Avisado ya vencido: el RPAD no pudo avisarlo a tiempo y su primer aviso llegó después del vencimiento (spec, 1.2)
-  const heredado = avisoRegla === null && primerAviso !== null && venc !== null && primerAviso > venc && !pudoAvisar;
+  // Un email de la regla del ciclo que no se pudo enviar (el motivo 'email-fallido')
+  const emailDeLaReglaFallido = avisos.some((a) => !a.enviado && deLaRegla(a));
+  // Avisado ya vencido: sin el aviso de la regla y con el primer aviso después del vencimiento, si el RPAD no pudo avisarlo a tiempo o
+  // si ningún email de la regla del ciclo falló: un vencimiento que se movió por fuera del RPAD se lee como uno que se pudo avisar, y sin
+  // esto su nota DGMIT no contaba (spec 2026-11-24-metricas-avisado-ya-vencido). En uno que se pudo avisar, un email fallido gana
+  const heredado = avisoRegla === null && primerAviso !== null && venc !== null && primerAviso > venc
+    && (!pudoAvisar || !emailDeLaReglaFallido);
   const inicioTramos = heredado ? primerAviso : avisoRegla;
   // El motivo, en todo ciclo sin aviso de la regla que ya lo esperaba (esperabaElAviso), se pudiera avisar a tiempo o no (spec, 2.2)
   const esperaba = esperabaElAviso({ diaDelAviso: diaDelAvisoDe(fechaRegla, calendario), aprobado: diaDe(ciclo.hasta), avisoRegla }, hoy);
   const motivo = venc !== null && avisoRegla === null && esperaba
-    ? motivoSinAviso({ avisos, deLaRegla, fechaRegla, altaDia, primerAviso, venc }) : null;
+    ? motivoSinAviso({ emailDeLaReglaFallido, fechaRegla, altaDia, primerAviso, venc }) : null;
   // Los datos recibidos y su origen son de la actualización que cerró el ciclo: una reprogramación no recibió nada (spec, 1.2)
   const actualizacion = ciclo.como === 'actualizacion';
   const nuevos = actualizacion && cerro ? objeto(cerro.nuevos) : {};
@@ -299,7 +304,8 @@ const casosDelDataset = (fuentes, hoy, calendario) => {
 //   fecha_regla, spec 2026-11-06-metricas-anticipacion-y-corridos, 3: el email de 40 o 60 días que se envió, o la Nota Digital de aviso
 //   en próximos a vencer, también adelantada), primer_aviso (el día del primer aviso del ciclo, de cualquier clase), fecha_regla (venc
 //   − 40 o 60 días corridos), pudo_avisar (fecha_regla ≥ INICIO_DEL_REGISTRO y ≥ el día del alta), heredado (avisado ya
-//   vencido: sin aviso de la regla, con el primer aviso después del venc y sin poder avisarse a tiempo), inicio_tramos (desde dónde
+//   vencido: sin aviso de la regla, con el primer aviso después del venc, y sin poder avisarse a tiempo o sin ningún email de la regla
+//   que fallara; spec 2026-11-24-metricas-avisado-ya-vencido), inicio_tramos (desde dónde
 //   se cuentan los tramos que empiezan en el aviso: el primer aviso si es heredado; si no, el aviso de la regla o null) y
 //   motivo_sin_aviso ('email-fallido', 'alta-cercana', 'ya-vencido' o 'sin-aviso': ver motivoSinAviso; en todo ciclo sin aviso de la
 //   regla que ya lo esperaba, se pudiera avisar a tiempo o no: el día del aviso, el hábil desde fecha_regla, es anterior a hoy y el ciclo
@@ -312,7 +318,7 @@ const casosDelDataset = (fuentes, hoy, calendario) => {
 //   origen ni carga;
 // - avisos_rpad (los días de los avisos del ciclo a la DGMIT, los mismos que cuenta avisosDelCiclo, de la más vieja a la más
 //   nueva) y reiteraciones_rpad (cuántos son de un día posterior a inicio_tramos; null, no 0, si no hay inicio_tramos: un ciclo
-//   sin aviso de la regla que no se avisó ya vencido no cuenta en las reiteraciones);
+//   sin aviso de la regla que no es avisado ya vencido (heredado) no cuenta en las reiteraciones);
 // - para la vista (al final, para no mover las de antes): alta (el día del alta del dataset, o null: distingue «se dio de alta ya
 //   vencido» en la cobertura), aviso_que (qué fue el aviso de la regla o, sin él, el primero del ciclo: 'email de 40 días',
 //   'email mensual de vencidos', 'Nota Digital 4/26'; null sin avisos) y emails_rpad (los días de los avisos de avisos_rpad que fueron

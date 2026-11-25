@@ -340,23 +340,57 @@ describe('casosDe', () => {
     assert.deepEqual([simple58.venc, simple58.fecha_regla, simple58.avisos_rpad.length, simple58.motivo_sin_aviso], [null, null, 2, null]);
   });
 
-  it('ya-vencido: sin aviso de la regla, con el alta antes de la regla y el primer aviso después del vencimiento', () => {
+  it('ya-vencido: sin aviso de la regla, con el alta antes de la regla y el primer aviso después del vencimiento (avisado ya vencido)', () => {
     // El 33 (real): vence el 31/01/2026, se dio de alta el 01/12/2025 (antes de su regla, el 22/12/2025) y su primer aviso es de junio.
-    // Se podía avisar a tiempo, así que no es heredado
+    // Se podía avisar a tiempo, pero ningún email de la regla falló: es avisado ya vencido y cuenta desde ese primer aviso (spec
+    // 2026-11-24-metricas-avisado-ya-vencido); el motivo de la cobertura sigue siendo 'ya-vencido'
     const [treinta] = casosDelCaso(33);
     assert.deepEqual([treinta.aviso_regla, treinta.primer_aviso, treinta.pudo_avisar, treinta.heredado, treinta.motivo_sin_aviso, treinta.inicio_tramos],
-      [null, '2026-06-21', true, false, 'ya-vencido', null]);
+      [null, '2026-06-21', true, true, 'ya-vencido', '2026-06-21']);
     // Armado: alta el 18/02/2026, regla el 19/02 y el primer aviso, el de vencidos del 01/04
     const [armado] = casosDel(solo({ id: 900, alta: '2026-02-18 10:00:00', proxima: '2026-03-31', ultima: '2026-02-18' },
       { emails: [email({ tipo: 'externo-vencido', enviado: '2026-04-01 08:00:00' })] }));
-    assert.deepEqual([armado.pudo_avisar, armado.heredado, armado.motivo_sin_aviso], [true, false, 'ya-vencido']);
+    assert.deepEqual([armado.pudo_avisar, armado.heredado, armado.motivo_sin_aviso], [true, true, 'ya-vencido']);
     // Sin ningún aviso, no es «ya vencido»: sin-aviso
     const [sinNada] = casosDel(solo({ id: 900, alta: '2026-02-18 10:00:00', proxima: '2026-03-31', ultima: '2026-02-18' }));
     assert.deepEqual([sinNada.primer_aviso, sinNada.motivo_sin_aviso], [null, 'sin-aviso']);
     // El día del vencimiento todavía no venció: un primer aviso ese día no es «ya vencido»
     const [elDia] = casosDel(solo({ id: 900, alta: '2026-02-18 10:00:00', proxima: '2026-03-31', ultima: '2026-02-18' },
       { emails: [email({ enviado: '2026-03-31 08:00:00' })] }));
-    assert.deepEqual([elDia.primer_aviso, elDia.motivo_sin_aviso], ['2026-03-31', 'sin-aviso']);
+    assert.deepEqual([elDia.primer_aviso, elDia.motivo_sin_aviso, elDia.heredado, elDia.inicio_tramos], ['2026-03-31', 'sin-aviso', false, null]);
+  });
+
+  it('avisado ya vencido aunque se pudo avisar a tiempo: cuenta desde el primer aviso, salvo un email de la regla que falló (spec 2026-11-24)', () => {
+    // Alta el 18/02/2026, vence el 31/03 (regla el 19/02, después del alta): se podía avisar a tiempo, y el primer aviso es el de
+    // vencidos del 01/04
+    const datos = { id: 900, alta: '2026-02-18 10:00:00', proxima: '2026-03-31', ultima: '2026-02-18' };
+    const vencidos = email({ tipo: 'externo-vencido', enviado: '2026-04-01 08:00:00' });
+    const conNota = { notasDgmit: [notaDgmit({ recibida: '2026-04-20', datasets: [{ id: 900, titulo: 'Ejemplo' }] })] };
+    const [c] = casosDel(solo(datos, { emails: [vencidos], ...conNota }));
+    assert.deepEqual([c.fecha_regla, c.pudo_avisar, c.heredado, c.inicio_tramos, c.motivo_sin_aviso, c.reiteraciones_rpad],
+      ['2026-02-19', true, true, '2026-04-01', 'ya-vencido', 0]);
+    // La redacción cuenta del primer aviso a la nota, con su marca en el modal
+    const v = vista([c], { dias: 'corridos' });
+    assert.equal(cifraDel(v, 'externa', 'tramite').valor, 19);
+    assert.deepEqual(tramoDe(v, 'externa', 'tramite').modal.ciclos.map((f) => [f.estado, f.desde, f.hasta, f.nota]),
+      [['cuenta', '2026-04-01', '2026-04-20', 'avisado ya vencido: desde ese primer aviso']]);
+    // Con un email de la regla del ciclo que falló, gana el email fallido: sin inicio y fuera de la redacción
+    const fallido = email({ id: 901, tipo: 'externo-40', enviado: '2026-02-19 08:00:00', success: false });
+    const [f] = casosDel(solo(datos, { emails: [fallido, vencidos], ...conNota }));
+    assert.deepEqual([f.heredado, f.inicio_tramos, f.motivo_sin_aviso, f.reiteraciones_rpad], [false, null, 'email-fallido', null]);
+    assert.equal(cifraDel(vista([f], { dias: 'corridos' }), 'externa', 'tramite'), null);
+    // Si no se pudo avisar a tiempo (alta después de la regla), el email fallido no lo saca: sigue avisado ya vencido, como antes
+    const [n] = casosDel(solo({ ...datos, alta: '2026-02-20 06:00:00' }, { emails: [email({ ...fallido, enviado: '2026-02-21 08:00:00' }), vencidos] }));
+    assert.deepEqual([n.pudo_avisar, n.heredado, n.inicio_tramos, n.motivo_sin_aviso], [false, true, '2026-04-01', 'email-fallido']);
+    // Un email de 40 días que falló antes de la fecha de la regla (de otro vencimiento) no es de la regla de este ciclo: no frena
+    const deOtro = email({ id: 902, tipo: 'externo-40', enviado: '2026-01-10 08:00:00', success: false });
+    const [o] = casosDel(solo(datos, { emails: [deOtro, vencidos] }));
+    assert.deepEqual([o.heredado, o.inicio_tramos, o.motivo_sin_aviso], [true, '2026-04-01', 'ya-vencido']);
+    // Interna: la producción del relevamiento, en curso desde el primer aviso
+    const [i] = casosDel(solo({ ...datos, tipo_gestion: 'interna', proxima: '2026-04-30' },
+      { emails: [email({ tipo: 'interno-vencido', enviado: '2026-05-01 08:00:00' })] }));
+    assert.deepEqual([i.pudo_avisar, i.heredado, i.inicio_tramos], [true, true, '2026-05-01']);
+    assert.equal(tramoDe(vista([i], { dias: 'corridos' }), 'interna', 'produccion').en_curso.n, 1);
   });
 
   it('el orden de los motivos: email-fallido, después alta-cercana, después ya-vencido', () => {
@@ -889,16 +923,17 @@ describe('vistaDe', () => {
       .filter((c) => c.gestion === 'externa' && c.aviso_regla && c.venc >= '2026-01-01' && c.venc <= '2026-12-31')
       .map((c) => duracion(c.aviso_regla, c.venc, 'habiles'));
     assert.equal(cifraDel(v, 'externa', 'aviso').valor, cifraDe(anticipaciones).mediana);
-    // Avisados ya vencidos: no cuentan en la anticipación (el 9 del 31/01/2025 y el 11 en externa, el 26 en interna). Después, lo que
-    // sale de los cajones (spec 2026-11-07, 6): las 7 notas pendientes de carga (sin notas DGMIT, la respuesta no tiene en curso) y la
-    // producción del 26, en curso desde ese primer aviso (01/01/2026), con las dos unidades
+    // Avisados ya vencidos: no cuentan en la anticipación (el 9 del 31/01/2025, el 11 y el 33 —que se pudo avisar a tiempo, spec
+    // 2026-11-24— en externa, el 26 en interna). Después, lo que sale de los cajones (spec 2026-11-07, 6): las 7 notas pendientes de carga
+    // (sin notas DGMIT, la respuesta no tiene en curso) y la producción del 26, en curso desde ese primer aviso (01/01/2026), con las dos
+    // unidades
     const corridos = duracion('2026-01-01', AL, 'corridos');
     const habiles = duracion('2026-01-01', AL, 'habiles');
     assert.deepEqual(v.circuito.aclaraciones, {
       externa: {
         ya_vencidos: {
-          n: 2,
-          texto: '2 ciclos se avisaron cuando ya estaban vencidos (vencieron antes de que existiera el aviso): no cuentan en la anticipación, y el resto de sus tramos se cuenta desde ese primer aviso.'
+          n: 3,
+          texto: '3 ciclos se avisaron cuando ya estaban vencidos (vencieron antes de que existiera el aviso): no cuentan en la anticipación, y el resto de sus tramos se cuenta desde ese primer aviso.'
         },
         fuente_publica: { n: 0, texto: '' },
         no_requieren_nota: { n: 0, texto: '' },
@@ -1498,8 +1533,9 @@ describe('vistaDe', () => {
   });
 
   it('reiteraciones por ciclo: las de los ciclos que terminaron en el año y las de los abiertos a al, también al 31/12', () => {
-    // Los reales: 16 ciclos (los abiertos sin aviso de la regla ni avisados ya vencidos, como el 33 o el 58, no cuentan: Ruling 6)
-    assert.deepEqual(vista(casosReales()).resultados.reiteraciones, { rpad: { ninguna: 4, una: 1, dos_o_mas: 11, total: 16 }, dgmit: null });
+    // Los reales: 17 ciclos (los abiertos sin aviso de la regla ni avisados ya vencidos, como el 58, no cuentan: Ruling 6; el 33, avisado
+    // ya vencido aunque se pudo avisar a tiempo, sí: spec 2026-11-24)
+    assert.deepEqual(vista(casosReales()).resultados.reiteraciones, { rpad: { ninguna: 4, una: 1, dos_o_mas: 12, total: 17 }, dgmit: null });
     // Los avisos de un día posterior al inicio de los tramos y hasta al
     const reiterado = (avisos, datos = {}) => cerrado({ avisos_rpad: ['2026-02-19', ...avisos], ...datos });
     const grupos = (lista, opciones) => vista(lista, opciones).resultados.reiteraciones.rpad;
@@ -1530,7 +1566,7 @@ describe('vistaDe', () => {
       a_tiempo: { de: 'de 9 ciclos', medidor: 33, vacio: '' },
       cobertura: { de: 'de 15 vencimientos', medidor: 87, regla: REGLA_DEL_AVISO, faltan: 'Los 2 que faltan:', vacio: '' },
       reiteraciones: {
-        rpad: 'Del RPAD a la DGMIT (16 ciclos)', rpad_vacio: '', dgmit: 'De la DGMIT al área', dgmit_vacio: 'Todavía no hay notas DGMIT cargadas.',
+        rpad: 'Del RPAD a la DGMIT (17 ciclos)', rpad_vacio: '', dgmit: 'De la DGMIT al área', dgmit_vacio: 'Todavía no hay notas DGMIT cargadas.',
         aclaracion: LAS_DOS_ACLARACIONES
       }
     });
@@ -1608,10 +1644,10 @@ describe('vistaDe', () => {
     });
     // El abierto del 52: sin datos, en curso desde el aviso
     assert.deepEqual(filasDe(v, 52)[1].recibido, { fecha: null, texto: `en curso, ${hace('2026-06-21')} desde el aviso`, origen: '' });
-    // Avisado ya vencido (el 11) y sin el aviso de la regla (el 33, que se avisó ya vencido)
+    // Avisados ya vencidos: el 11 y el 33 (que se pudo avisar a tiempo; spec 2026-11-24)
     assert.deepEqual(filasDe(v, 11)[0].aviso, { fecha: '2025-12-06', texto: 'avisado ya vencido', que: 'email mensual de vencidos' });
     assert.equal(filasDe(v, 11)[0].recibido.texto, `en curso, ${hace('2025-12-06')} desde el aviso`);
-    assert.deepEqual(filasDe(v, 33)[0].aviso, { fecha: '2026-06-21', texto: 'se avisó ya vencido', que: 'email de 40 días' });
+    assert.deepEqual(filasDe(v, 33)[0].aviso, { fecha: '2026-06-21', texto: 'avisado ya vencido', que: 'email de 40 días' });
     // Con nota DGMIT: su número y su tipo, los días de la redacción, y los de la respuesta debajo de «Recibido el»
     const conNota = vista([cerrado({ nota_dgmit: notaDe('2026-03-02', { tipo: 'reiteracion' }) })]).casos[0];
     assert.deepEqual([conNota.nota, conNota.recibido], [
@@ -2494,7 +2530,7 @@ const CINCO = () => [
 ];
 const YA_VENCIDOS_DE_LA_ETAPA = {
   1: '1 ciclo se avisó cuando ya estaba vencido: no cuenta en esta etapa, y sus etapas siguientes se cuentan desde ese primer aviso.',
-  2: '2 ciclos se avisaron cuando ya estaban vencidos: no cuentan en esta etapa, y sus etapas siguientes se cuentan desde ese primer aviso.'
+  3: '3 ciclos se avisaron cuando ya estaban vencidos: no cuentan en esta etapa, y sus etapas siguientes se cuentan desde ese primer aviso.'
 };
 // Los renglones de las notas de una etapa, cada uno con su tipo (el PDF pinta cada tipo a su modo)
 const renglon = (tipo, texto) => ({ tipo, texto });
@@ -2787,7 +2823,7 @@ describe('etapasDe: el Ciclo de vida del dato', () => {
   it('notas en orden: el orientativo, el en curso, los pendientes y la aclaración de la etapa', () => {
     const e = etapas(casosReales());
     // Los avisados ya vencidos van en el aviso anticipado de cada gestión (en la externa son 11 ciclos: no es orientativo)
-    assert.deepEqual(etapaDe(e, 'externa', 'aviso').textos.notas, [aclaracionDe(YA_VENCIDOS_DE_LA_ETAPA[2])]);
+    assert.deepEqual(etapaDe(e, 'externa', 'aviso').textos.notas, [aclaracionDe(YA_VENCIDOS_DE_LA_ETAPA[3])]);
     assert.deepEqual(etapaDe(e, 'interna', 'aviso').textos.notas, [ORIENTATIVO, aclaracionDe(YA_VENCIDOS_DE_LA_ETAPA[1])]);
     // Con su tipo, escrito a mano
     assert.deepEqual(etapaDe(e, 'interna', 'aviso').textos.notas, [
@@ -2796,7 +2832,7 @@ describe('etapasDe: el Ciclo de vida del dato', () => {
     ]);
     // La misma cuenta que la aclaración de Métricas
     const v = vista(casosReales());
-    assert.equal(v.circuito.aclaraciones.externa.ya_vencidos.n, 2);
+    assert.equal(v.circuito.aclaraciones.externa.ya_vencidos.n, 3);
     assert.equal(v.circuito.aclaraciones.interna.ya_vencidos.n, 1);
     assert.deepEqual(etapaDe(e, 'externa', 'carga').textos.notas, [ORIENTATIVO]);
     for (const etapa of todasLasEtapas(e)) {
@@ -3176,7 +3212,8 @@ describe('«Los casos»: cada número dice sus dos unidades y desde cuándo cuen
         assert.equal(filaCon(caso(), dias).recibido.texto, enCurso('2026-02-19', 'desde el aviso'));
         assert.equal(filaCon(caso(INTERNO), dias).recibido.texto, enCurso('2026-01-30', 'desde el aviso'));
         assert.match(filaCon(caso(CON_NOTA()), dias).recibido.texto, /^en curso, \d+ días corridos \(\d+ hábiles\) desde la nota$/);
-        // Se pudo avisar a tiempo y se avisó ya vencido: entra en la lista, pero no tiene desde cuándo contar
+        // Sin aviso de la regla y sin ser avisado ya vencido (por ejemplo, se pudo avisar a tiempo y falló el email de la regla): entra en
+        // la lista, pero no tiene desde cuándo contar
         const sinInicio = { aviso_regla: null, primer_aviso: '2026-06-21', inicio_tramos: null, avisos_rpad: ['2026-06-21'] };
         assert.equal(filaCon(caso(sinInicio), dias).recibido.texto, 'en curso');
         const hoy = { venc: '2026-12-31', aviso_regla: AL, primer_aviso: AL, inicio_tramos: AL };
@@ -3704,14 +3741,16 @@ describe('el modal de cada tramo (spec 2026-11-07, 5 y 7)', () => {
     assert.deepEqual(modalDe(enCorridos(conInterno), 'interna', 'aviso').como_se_cuenta, ['1 ciclo no tuvo el aviso de la regla: no cuenta en la anticipación.']);
     assert.deepEqual(modalDe(enCorridos(conInterno), 'externa', 'aviso').como_se_cuenta, modalDe(v, 'externa', 'aviso').como_se_cuenta);
     assert.deepEqual(modalDe(enCorridos(casos, { sin: [901, 902, 903] }), 'externa', 'aviso').como_se_cuenta, []);
-    // En los casos reales, sin avisados ya vencidos en la cobertura, las dos gestiones suman los que faltan en la cobertura. Sus avisados
-    // ya vencidos (el 9, el 11 y el 26) vencieron antes de 2026: las aclaraciones del circuito los cuentan, el aviso anticipado del año no
+    // En los casos reales, los que faltan en la cobertura son los que no tuvieron el aviso de la regla y un avisado ya vencido del año:
+    // el 33, que vence el 31/01/2026 y se pudo avisar a tiempo (spec 2026-11-24), en la línea de «cuando ya». Los otros avisados ya
+    // vencidos (el 9, el 11 y el 26) vencieron antes de 2026: las aclaraciones del circuito los cuentan, el aviso anticipado del año no
     const reales = enCorridos(casosReales());
     const cuantosEn = (gestion, inicio) => Number(modalDe(reales, gestion, 'aviso').como_se_cuenta.find((t) => t.includes(inicio))?.match(/^\d+/)[0] ?? 0);
-    assert.equal(cuantosEn('externa', 'no tuv') + cuantosEn('interna', 'no tuv'), reales.resultados.cobertura.faltan.length);
+    assert.deepEqual([cuantosEn('externa', 'cuando ya'), cuantosEn('interna', 'cuando ya')], [1, 0]);
+    assert.equal(cuantosEn('externa', 'no tuv') + cuantosEn('interna', 'no tuv') + cuantosEn('externa', 'cuando ya'),
+      reales.resultados.cobertura.faltan.length);
     assert.ok(reales.resultados.cobertura.faltan.length > 0);
-    assert.deepEqual([cuantosEn('externa', 'cuando ya'), cuantosEn('interna', 'cuando ya')], [0, 0]);
-    assert.deepEqual([reales.circuito.aclaraciones.externa.ya_vencidos.n, reales.circuito.aclaraciones.interna.ya_vencidos.n], [2, 1]);
+    assert.deepEqual([reales.circuito.aclaraciones.externa.ya_vencidos.n, reales.circuito.aclaraciones.interna.ya_vencidos.n], [3, 1]);
   });
 
   it('«Cómo se cuenta» de la redacción: las notas pendientes de carga, los avisados ya vencidos y los que no requieren nota', () => {

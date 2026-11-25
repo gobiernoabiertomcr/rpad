@@ -4,6 +4,8 @@
 // con aclaracionesDe (las aclaraciones de cada etapa y la de la hoja), y el PDF del Ciclo de vida imprime lo que da etapasDe. Los tramos
 // de vista.circuito pueden sumar claves, pero las de hoy no cambian de forma ni de contenido; las aclaraciones, lo mismo.
 // Puro: los casos reales de tests/metricas-casos.js, sin base de datos.
+// 24/11/2026: retomadas las aclaraciones, las etapas y el PDF del Ciclo de vida por la spec 2026-11-24-metricas-avisado-ya-vencido (el 33 de
+// los casos pasa a ser avisado ya vencido: un ciclo más en esas aclaraciones), comprobado con el diff de texto contra el código de antes; los tramos no cambian.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -47,9 +49,9 @@ const cicloDeLosCasos = () => ({
 
 const HUELLAS = {
   tramos: '2617ea5c2a98141bdc6dba9912c6c985a8b6f95cb4a95338691fa909db0774ec',
-  aclaraciones: '21c5b7fd46420bd04db7a3f668dc372a37b99e9744a7d14e79eec275542ef226',
-  etapas: '1b4c86184f777d56c862be69a7b71164f4eec8e30f0ccd17ef3f9ef23a3e0b20',
-  ciclo: 'e1fca4bb7083735ae7b92e337db5c51e75db5ac57c9bc263a0438f5b11c66587'
+  aclaraciones: 'c8977dc635478e4106d10837103bebdb0be1b536c4f73e0af770bf07258d7bbb',
+  etapas: '9af851c89024449e5b3462552378acc88d23cdf7f53891732c9601808cc8878f',
+  ciclo: '54acc7043ff7dcbf0bd01034e8157d84cd996c465d69ee387b665920ea25bd6a'
 };
 
 describe('las huellas de lo que no cambia', () => {
