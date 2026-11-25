@@ -1583,7 +1583,7 @@ describe('datoQuincenaTemplate: el texto plano y el nombre del bot', () => {
       agenda: [
         { titulo: 'Lo que viene después', fecha: '2026-11-25', detalle: 'Uno inventado.', url: 'https://datos.ejemplo.gob.ar/v2' },
         { ...efemerideDePrueba() },
-        { titulo: 'Lo que viene antes', fecha: '2026-11-16', detalle: '', url: 'https://datos.ejemplo.gob.ar/v1', tipo: 'evento' },
+        { titulo: 'Lo de esta semana', fecha: '2026-11-16', detalle: '', url: 'https://datos.ejemplo.gob.ar/v1', tipo: 'evento' },
         { titulo: 'Lo que pasó', fecha: '2026-11-10', detalle: 'Otro inventado.', url: 'http://datos.ejemplo.gob.ar/p' }
       ]
     });
@@ -1598,7 +1598,7 @@ describe('datoQuincenaTemplate: el texto plano y el nombre del bot', () => {
       'Otro inventado.',
       '',
       'Esta semana',
-      '16/11/2026 · Lo que viene antes',
+      '16/11/2026 · Lo de esta semana',
       'https://datos.ejemplo.gob.ar/v1',
       '',
       'Lo que viene',

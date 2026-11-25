@@ -7,7 +7,7 @@ El archivo de las ediciones (las lecturas y la página) está en `docs/temas/dat
 Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-12-dato-quincena-correo-design.md`
 - `docs/superpowers/specs/2026-11-14-dato-quincena-v1-3-design.md` (la pastilla Repite y la caja de la repetición)
-- `docs/superpowers/specs/2026-11-14-dato-quincena-agenda-grupos-design.md` (la agenda en tres grupos)
+- `docs/superpowers/specs/2026-11-14-dato-quincena-agenda-grupos-design.md` (la agenda en grupos)
 - `docs/superpowers/specs/2026-11-14-dato-quincena-en-mi-espacio-design.md` (las fechas en la agenda de Mi espacio)
 - `docs/superpowers/specs/2026-11-18-dato-quincena-propuestas-datasets-design.md` (las propuestas de datasets nuevos)
 - `docs/superpowers/specs/2026-11-21-dato-quincena-principal-equipo-design.md` (la frase y el recuadro del mail)

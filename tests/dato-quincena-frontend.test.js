@@ -610,7 +610,7 @@ describe('dato-quincena.js: el detalle (spec, 10)', () => {
       { fecha_texto: '06/11/2026', titulo: 'Feria inventada', detalle: 'Un evento que ya pasó.', url: 'https://datos.ejemplo.gob.ar/feria' }
     ] },
     { titulo: 'Lo que viene', eventos: [
-      { fecha_texto: '14/11/2026', titulo: 'Festival inventado', detalle: 'El día de la edición.', url: 'https://datos.ejemplo.gob.ar/festival' },
+      { fecha_texto: '21/11/2026', titulo: 'Festival inventado', detalle: 'La semana siguiente.', url: 'https://datos.ejemplo.gob.ar/festival' },
       { fecha_texto: '23/11/2026', titulo: 'Jornada inventada', detalle: 'Más adelante.', url: 'https://datos.ejemplo.gob.ar/jornada' }
     ] },
     { titulo: 'Efemérides', eventos: [
@@ -628,7 +628,7 @@ describe('dato-quincena.js: el detalle (spec, 10)', () => {
     assert.equal(cuantas(agenda, /<ol class="dq-linea">/g), 3);
     // Cada evento en la lista de su grupo, en el orden en que llegó
     const dias = [...agenda.matchAll(/<span class="dq-dia">([^<]*)<\/span>/g)].map((encontrado) => encontrado[1]);
-    assert.deepEqual(dias, ['06/11/2026', '14/11/2026', '23/11/2026', '18/11/2026']);
+    assert.deepEqual(dias, ['06/11/2026', '21/11/2026', '23/11/2026', '18/11/2026']);
     assert.ok(agenda.indexOf('Lo que viene</h4>') < agenda.indexOf('Festival inventado')
       && agenda.indexOf('Jornada inventada') < agenda.indexOf('Efemérides</h4>'));
     assert.deepEqual(titulosDeLosGrupos(ctx.htmlDeLaAgenda(GRUPOS().reverse())), ['Efemérides', 'Lo que viene', 'Lo que pasó']);

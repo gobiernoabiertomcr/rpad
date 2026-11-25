@@ -9,7 +9,7 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-07-dato-quincena-design.md`
 - `docs/superpowers/specs/2026-11-12-dato-quincena-correo-design.md`
 - `docs/superpowers/specs/2026-11-14-dato-quincena-v1-3-design.md` (el contrato v1.3: Repite y Efemeride)
-- `docs/superpowers/specs/2026-11-14-dato-quincena-agenda-grupos-design.md` (la agenda en tres grupos)
+- `docs/superpowers/specs/2026-11-14-dato-quincena-agenda-grupos-design.md` (la agenda en grupos)
 - `docs/superpowers/specs/2026-11-18-dato-quincena-propuestas-datasets-design.md` (el contrato v1.4: las propuestas de datasets nuevos)
 - `docs/superpowers/specs/2026-11-18-dato-quincena-detalle-pestanas-design.md` (el detalle en tres pestañas)
 - `docs/superpowers/specs/2026-11-21-dato-quincena-principal-equipo-design.md` (la principal del equipo elegida a mano)

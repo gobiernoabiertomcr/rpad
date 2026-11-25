@@ -2870,10 +2870,10 @@ describe('gruposDeLaAgenda', () => {
   it('dentro de cada grupo, por fecha de la más vieja a la más nueva; con la misma fecha, en el orden en que llegaron', () => {
     const agenda = [
       eventoDeAgenda('Viene 25', '2026-11-25'),
-      eventoDeAgenda('Viene 20 primero', '2026-11-20'),
+      eventoDeAgenda('Semana 20 primero', '2026-11-20'),
       eventoDeAgenda('Efeméride 30', '2026-11-30', 'efemeride'),
       eventoDeAgenda('Pasó 12 primero', '2026-11-12', 'evento'),
-      eventoDeAgenda('Viene 20 segundo', '2026-11-20', 'evento'),
+      eventoDeAgenda('Semana 20 segundo', '2026-11-20', 'evento'),
       eventoDeAgenda('Efeméride 18', '2026-11-18', 'efemeride'),
       eventoDeAgenda('Pasó 03', '2026-11-03'),
       eventoDeAgenda('Pasó 12 segundo', '2026-11-12'),
@@ -2882,7 +2882,7 @@ describe('gruposDeLaAgenda', () => {
     ];
     assert.deepEqual(titulosPorGrupo(gruposDeLaAgenda(agenda, '2026-11-16')), [
       ['Lo que pasó', ['Pasó 03', 'Pasó 12 primero', 'Pasó 12 segundo']],
-      ['Esta semana', ['Viene 20 primero', 'Viene 20 segundo']],
+      ['Esta semana', ['Semana 20 primero', 'Semana 20 segundo']],
       ['Lo que viene', ['Viene 25', 'Viene en diciembre']],
       ['Efemérides', ['Efeméride 18', 'Efeméride 18 otra', 'Efeméride 30']]
     ]);
@@ -2899,6 +2899,20 @@ describe('gruposDeLaAgenda', () => {
     const agenda = [eventoDeAgenda('Lunes siguiente', '2026-12-14'), eventoDeAgenda('Domingo', '2026-12-13')];
     assert.deepEqual(titulosPorGrupo(gruposDeLaAgenda(agenda, '2026-12-07')),
       [['Esta semana', ['Domingo']], ['Lo que viene', ['Lunes siguiente']]]);
+  });
+
+  // Un piloto puede caer a mitad de semana: «Esta semana» empieza el día de la edición, no el lunes
+  it('una edición de un miércoles: el lunes y el martes de esa semana van a «Lo que pasó»', () => {
+    const agenda = [
+      eventoDeAgenda('Lunes de la semana', '2026-11-16'), eventoDeAgenda('Martes de la semana', '2026-11-17'),
+      eventoDeAgenda('El mismo miércoles', '2026-11-18'), eventoDeAgenda('Domingo de la semana', '2026-11-22'),
+      eventoDeAgenda('Lunes siguiente', '2026-11-23')
+    ];
+    assert.deepEqual(titulosPorGrupo(gruposDeLaAgenda(agenda, '2026-11-18')), [
+      ['Lo que pasó', ['Lunes de la semana', 'Martes de la semana']],
+      ['Esta semana', ['El mismo miércoles', 'Domingo de la semana']],
+      ['Lo que viene', ['Lunes siguiente']]
+    ]);
   });
 
   // Un piloto puede caer en domingo: su semana es solo ese día
@@ -2940,11 +2954,11 @@ describe('gruposDeLaAgenda', () => {
   it('sin tipo es un evento, como con tipo evento', () => {
     const agenda = [
       eventoDeAgenda('Sin tipo, pasó', '2026-11-10'), eventoDeAgenda('Con tipo, pasó', '2026-11-10', 'evento'),
-      eventoDeAgenda('Sin tipo, viene', '2026-11-20'), eventoDeAgenda('Con tipo, viene', '2026-11-20', 'evento')
+      eventoDeAgenda('Sin tipo, esta semana', '2026-11-20'), eventoDeAgenda('Con tipo, esta semana', '2026-11-20', 'evento')
     ];
     assert.deepEqual(titulosPorGrupo(gruposDeLaAgenda(agenda, '2026-11-16')), [
       ['Lo que pasó', ['Sin tipo, pasó', 'Con tipo, pasó']],
-      ['Esta semana', ['Sin tipo, viene', 'Con tipo, viene']]
+      ['Esta semana', ['Sin tipo, esta semana', 'Con tipo, esta semana']]
     ]);
   });
 
@@ -2954,6 +2968,20 @@ describe('gruposDeLaAgenda', () => {
     assert.deepEqual(titulosPorGrupo(gruposDeLaAgenda([eventoDeAgenda('Solo pasó', '2026-11-01')], '2026-11-16')),
       [['Lo que pasó', ['Solo pasó']]]);
     assert.deepEqual(gruposDeLaAgenda([], '2026-11-16'), []);
+  });
+
+  // Inalcanzable (el POST valida la fecha de la edición), pero la regla no tira: con un texto que no es una fecha que existe no hay
+  // semana, y ningún evento se pierde. El 30/02, que JS correría al 02/03, no arma una semana con el evento de marzo
+  it('con una fecha de la edición que no existe, no tira ni arma «Esta semana»', () => {
+    const agenda = [...agendaDelPiloto(), eventoDeAgenda('Marzo inventado', '2026-03-03')];
+    for (const fecha of ['x', '', '2026-02-30']) {
+      const grupos = gruposDeLaAgenda(agenda, fecha);
+      assert.ok(!grupos.some((grupo) => grupo.titulo === 'Esta semana'), JSON.stringify(fecha));
+      assert.deepEqual(grupos.flatMap((grupo) => grupo.eventos.map((evento) => evento.titulo)).sort(),
+        agenda.map((evento) => evento.titulo).sort(), JSON.stringify(fecha));
+      assert.deepEqual(grupos.find((grupo) => grupo.titulo === 'Efemérides').eventos,
+        agenda.filter((evento) => evento.tipo === 'efemeride').map(enElGrupo), JSON.stringify(fecha));
+    }
   });
 
   it('no cambia la agenda que recibe', () => {

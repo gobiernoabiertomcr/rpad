@@ -1156,19 +1156,16 @@ const domingoDeLaSemana = (iso) => sumarDias(iso, (7 - DIAS_DE_LA_SEMANA.indexOf
 // Los grupos de la agenda (spec 2026-11-14-dato-quincena-agenda-grupos y 2026-11-23-dato-quincena-agenda-esta-semana), en este
 // orden y con estos títulos (decisión del usuario). Un evento es uno sin tipo o con tipo evento; una efeméride va a su grupo
 // cualquiera sea su fecha. «Esta semana» va hasta el domingo, como en los próximos de Mi espacio: una regular cae en lunes, así
-// que son los días 0 a 6, donde caen los 3 a 6 que Datito separa en su correo
+// que son los días 0 a 6, donde caen los 3 a 6 que Datito separa en su correo. Cada grupo mira la fecha de la edición y el domingo
+// de su semana, que gruposDeLaAgenda calcula una sola vez
 const esEfemeride = (evento) => evento.tipo === 'efemeride';
 const GRUPOS_DE_LA_AGENDA = Object.freeze([
   Object.freeze({ titulo: 'Lo que pasó', es: (evento, fechaDeLaEdicion) => !esEfemeride(evento) && evento.fecha < fechaDeLaEdicion }),
   Object.freeze({
     titulo: 'Esta semana',
-    es: (evento, fechaDeLaEdicion) => !esEfemeride(evento) && evento.fecha >= fechaDeLaEdicion
-      && evento.fecha <= domingoDeLaSemana(fechaDeLaEdicion)
+    es: (evento, fechaDeLaEdicion, domingo) => !esEfemeride(evento) && evento.fecha >= fechaDeLaEdicion && evento.fecha <= domingo
   }),
-  Object.freeze({
-    titulo: 'Lo que viene',
-    es: (evento, fechaDeLaEdicion) => !esEfemeride(evento) && evento.fecha > domingoDeLaSemana(fechaDeLaEdicion)
-  }),
+  Object.freeze({ titulo: 'Lo que viene', es: (evento, _, domingo) => !esEfemeride(evento) && evento.fecha > domingo }),
   Object.freeze({ titulo: 'Efemérides', es: esEfemeride })
 ]);
 
@@ -1179,17 +1176,21 @@ const GRUPOS_DE_LA_AGENDA = Object.freeze([
  * semana, los dos incluidos), «Lo que viene» (los de después de ese domingo) y «Efemérides». Cada grupo `{ titulo, eventos }`, por
  * fecha de la más vieja a la más nueva y, con la misma fecha, en el orden en que llegaron; cada evento `{ fecha_texto, titulo,
  * detalle, url }`, sin etiqueta: el título del grupo ya la dice. Un grupo vacío no va; sin eventos, una lista vacía. No cambia la
- * agenda que recibe.
+ * agenda que recibe. Con un texto que no es una fecha que existe (inalcanzable: el POST valida la fecha de la edición) no tira: no
+ * hay semana, el domingo es el mismo texto y la agenda se parte en lo anterior y lo posterior, sin «Esta semana».
  */
-export const gruposDeLaAgenda = (agenda, fechaDeLaEdicion) => GRUPOS_DE_LA_AGENDA
-  .map(({ titulo, es }) => ({
-    titulo,
-    eventos: agenda
-      .filter((evento) => es(evento, fechaDeLaEdicion))
-      .sort((a, b) => (a.fecha < b.fecha ? -1 : Number(a.fecha > b.fecha)))
-      .map(({ fecha, titulo: delEvento, detalle, url }) => ({ fecha_texto: diaArgentino(fecha), titulo: delEvento, detalle, url }))
-  }))
-  .filter((grupo) => grupo.eventos.length > 0);
+export const gruposDeLaAgenda = (agenda, fechaDeLaEdicion) => {
+  const domingo = esFechaIso(fechaDeLaEdicion) ? domingoDeLaSemana(fechaDeLaEdicion) : fechaDeLaEdicion;
+  return GRUPOS_DE_LA_AGENDA
+    .map(({ titulo, es }) => ({
+      titulo,
+      eventos: agenda
+        .filter((evento) => es(evento, fechaDeLaEdicion, domingo))
+        .sort((a, b) => (a.fecha < b.fecha ? -1 : Number(a.fecha > b.fecha)))
+        .map(({ fecha, titulo: delEvento, detalle, url }) => ({ fecha_texto: diaArgentino(fecha), titulo: delEvento, detalle, url }))
+    }))
+    .filter((grupo) => grupo.eventos.length > 0);
+};
 
 const archivoDelDetalle = (campo, nombre, bytes) => {
   const { rotulo, formato, se_puede_ver } = ARCHIVOS_DEL_DETALLE[campo];

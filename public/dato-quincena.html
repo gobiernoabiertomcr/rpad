@@ -168,8 +168,8 @@
 
         .dq-seccion-titulo { margin: 0 0 14px; font-family: var(--f-titulo); font-weight: 700; font-size: 1.3rem; letter-spacing: -0.01em; color: var(--sg-tinta); }
         .dq-agenda { margin: 40px 0 0; padding: 22px 26px 24px; background: var(--sg-cielo); border-radius: 10px; }
-        /* Tantas columnas como grupos (spec 2026-11-21-dato-quincena-principal-equipo, 4): sin «Lo que pasó», las otras dos ocupan todo el
-           ancho y no queda un tercio vacío. Debajo de 820 px, una sola (más abajo) */
+        /* Tantas columnas como grupos (spec 2026-11-21-dato-quincena-principal-equipo, 4), de una a cuatro: una regular no trae «Lo que
+           pasó» y sus tres grupos ocupan todo el ancho, sin una columna vacía. Debajo de 820 px, una sola (más abajo) */
         .dq-agenda-cols { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 28px; }
         .dq-agenda-col { min-width: 0; }
         .dq-agenda-grupo { margin: 0 0 14px; padding-bottom: 6px; border-bottom: 2px solid var(--sg-tinta); font-size: 0.95rem; font-weight: 700; color: var(--sg-tinta); }
