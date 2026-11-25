@@ -3238,7 +3238,7 @@ describe('la nota de una licencia', () => {
       const id = await conLicencia('editor', { tipo: 'medica', desde: q(0) });
       await guardadaEl(id, '2026-10-28T01:30:00Z');
       assert.deepEqual(await datos.datosDeLaNota(usuarios.editor.id, id),
-        { guardada: '2026-10-27', nombre: 'Carla Benítez', cargo: null, vinculo: 'contrato' });
+        { guardada: '2026-10-27', nombre: 'Carla Benítez', cargo: null, vinculo: 'contrato', encargo: null });
       const dadaDeBaja = await conLicencia('editor', { tipo: 'medica', desde: q(1), activo: 0 });
       for (const [usuario, licencia] of [
         [usuarios.adminA.id, id], [usuarios.editor.id, dadaDeBaja], [usuarios.editor.id, 'abc'], ['abc', id],
@@ -3247,6 +3247,124 @@ describe('la nota de una licencia', () => {
         assert.equal(await datos.datosDeLaNota(usuario, licencia), null, `${usuario} ${licencia}`);
       }
     });
+
+  // Quien se encarga de las tareas (spec 2026-11-25-mi-espacio-nota-licencia-encargo): la persona a cargo que el titular eligió,
+  // guardada en Configuración, sale en un párrafo aparte de la nota, en la hoja y en el Word
+  describe('quien se encarga de las tareas', () => {
+    const ASIMISMO = 'Asimismo, con el objetivo de mantener el correcto flujo de trabajo, durante mi licencia ';
+    const LAS_TAREAS = 'se encargará de las tareas de la Dirección a mi cargo.';
+    // Las vacaciones de adminB, el titular, con `autorizado` a cargo (la clave de la persona, o null para nadie)
+    const vacacionesDelTitular = async (autorizado) => {
+      await comoTitular('adminB');
+      if (autorizado) await conFirma(autorizado);
+      await listoParaVacaciones('adminB');
+      const carga = await cargarMia('adminB',
+        { tipo: 'vacaciones', desde: q(0), hasta: q(4), autorizado_id: autorizado ? usuarios[autorizado].id : null });
+      assert.equal(carga.status, 201, JSON.stringify(carga.body));
+      return carga.body.data.id;
+    };
+    const laDeConfiguracion = (cambios, valores) =>
+      query(`UPDATE usuarios_licencias SET ${cambios} WHERE usuario_id = ?`, [...valores, usuarios.adminB.id]);
+
+    it('de planta, con su cargo: el párrafo después del cuerpo, en la hoja y en el Word', async () => {
+      await conCargo('adminA', 'Coordinadora de Sistemas', async () => {
+        const id = await vacacionesDelTitular('adminA');
+        const parrafo = `${ASIMISMO}Laura Gómez, Coordinadora de Sistemas, ${LAS_TAREAS}`;
+        const [nota, word] = await lasDos('adminB', id);
+        assert.equal(nota.status, 200, JSON.stringify(nota.body));
+        assert.ok(nota.body.data.html.includes(`</p><p></p><p class="sangria justificado">${parrafo}</p><p></p>`
+          + '<p class="sangria">Sin otro particular'), nota.body.data.html);
+        assert.equal(word.status, 200);
+        assert.ok((await textoDelWord(word.body)).includes(parrafo));
+      });
+    });
+
+    it('un contratado: «personal contratado, cumpliendo funciones de»; sin cargo, solo el nombre', async () => {
+      const id = await vacacionesDelTitular('editor');
+      const sinCargo = await verNota('adminB', id);
+      assert.equal(sinCargo.status, 200, JSON.stringify(sinCargo.body));
+      assert.ok(sinCargo.body.data.html.includes(`${ASIMISMO}Carla Benítez ${LAS_TAREAS}`), sinCargo.body.data.html);
+      await conCargo('editor', 'Analista de Datos', async () => {
+        const parrafo = `${ASIMISMO}Carla Benítez, personal contratado, cumpliendo funciones de Analista de Datos, ${LAS_TAREAS}`;
+        const [nota, word] = await lasDos('adminB', id);
+        assert.ok(nota.body.data.html.includes(parrafo), nota.body.data.html);
+        assert.ok((await textoDelWord(word.body)).includes(parrafo));
+      });
+    });
+
+    // Sin el párrafo: la hoja y el Word no dicen «Asimismo»
+    const sinElParrafo = async (id) => {
+      const [nota, word] = await lasDos('adminB', id);
+      assert.equal(nota.status, 200, JSON.stringify(nota.body));
+      assert.ok(!nota.body.data.html.includes('Asimismo'), nota.body.data.html);
+      assert.equal(word.status, 200);
+      assert.ok(!(await textoDelWord(word.body)).includes('Asimismo'));
+    };
+
+    it('sin persona a cargo («Nadie»), la nota sale sin el párrafo', async () => {
+      await sinElParrafo(await vacacionesDelTitular(null));
+    });
+
+    it('si se quita la persona o se anula la licencia de Configuración, la nota sale sin el párrafo', async () => {
+      const id = await vacacionesDelTitular('adminA');
+      assert.ok((await verNota('adminB', id)).body.data.html.includes(ASIMISMO));
+      await laDeConfiguracion('autorizado_id = NULL, autorizado_at = NULL', []);
+      await sinElParrafo(id);
+      await laDeConfiguracion('autorizado_id = ?, autorizado_at = NOW()', [usuarios.adminA.id]);
+      assert.ok((await verNota('adminB', id)).body.data.html.includes(ASIMISMO));
+      await laDeConfiguracion('anulada = 1', []);
+      await sinElParrafo(id);
+    });
+
+    it('la fecha: el día más nuevo entre el último guardado y la elección de la persona, tal cual en hora argentina', async () => {
+      const id = await vacacionesDelTitular('adminA');
+      await guardadaEl(id, '2026-11-20T15:00:00Z');
+      // Elegida (o cambiada) el 01/12 a las 22:30 hora argentina: ese día, no el siguiente
+      await laDeConfiguracion('autorizado_at = ?', ['2026-12-01 22:30:00']);
+      const [nota, word] = await lasDos('adminB', id);
+      assert.equal(nota.status, 200, JSON.stringify(nota.body));
+      assert.equal(nota.body.data.fecha, '2026-12-01');
+      assert.ok(nota.body.data.aclaracion.startsWith('Lleva la fecha del 01/12/2026,'), nota.body.data.aclaracion);
+      assert.ok((await textoDelWord(word.body)).includes('Comodoro Rivadavia, 1 de diciembre de 2026'));
+      // A la madrugada: el DATETIME no se pasa de UTC a hora argentina (el 01/12 a la 01:30 no es el 30/11)
+      await laDeConfiguracion('autorizado_at = ?', ['2026-12-01 01:30:00']);
+      assert.equal((await verNota('adminB', id)).body.data.fecha, '2026-12-01');
+      // Elegida antes del último guardado: el del guardado
+      await laDeConfiguracion('autorizado_at = ?', ['2026-11-10 09:00:00']);
+      assert.equal((await verNota('adminB', id)).body.data.fecha, '2026-11-20');
+    });
+
+    it('corregir solo la persona desde Mi espacio no mueve el guardado, y la nota sale con el día del cambio', async () => {
+      const id = await vacacionesDelTitular('adminA');
+      await guardadaEl(id, '2026-11-20T15:00:00Z');
+      await laDeConfiguracion('autorizado_at = ?', ['2026-11-20 12:00:00']);
+      await conFirma('editor');
+      const correccion = await api.put(`/mi-espacio/licencias/${id}`,
+        { tipo: 'vacaciones', desde: q(0), hasta: q(4), autorizado_id: usuarios.editor.id }, como('adminB'));
+      assert.equal(correccion.status, 200, JSON.stringify(correccion.body));
+      // El guardado de Mi espacio sigue en el 20/11: la corrección escribió los mismos valores
+      const [{ guardada_ts: guardadaTs }] =
+        await query('SELECT UNIX_TIMESTAMP(updated_at) AS guardada_ts FROM mi_espacio_licencias WHERE id = ?', [id]);
+      assert.equal(Number(guardadaTs), Date.parse('2026-11-20T15:00:00Z') / 1000);
+      const nota = await verNota('adminB', id);
+      assert.equal(nota.status, 200, JSON.stringify(nota.body));
+      assert.equal(nota.body.data.fecha, hoy);
+      assert.ok(nota.body.data.html.includes(`${ASIMISMO}Carla Benítez ${LAS_TAREAS}`), nota.body.data.html);
+    });
+
+    it('datosDeLaNota: la persona de la licencia de Configuración enlazada, de la misma persona y sin anular', async () => {
+      const id = await vacacionesDelTitular('adminA');
+      await guardadaEl(id, '2026-11-20T15:00:00Z');
+      await laDeConfiguracion('autorizado_at = ?', ['2026-11-10 09:00:00']);
+      assert.deepEqual(await datos.datosDeLaNota(usuarios.adminB.id, id), {
+        guardada: '2026-11-20', nombre: 'Martín Ríos', cargo: null, vinculo: 'planta_permanente',
+        encargo: { nombre: 'Laura Gómez', cargo: null, vinculo: 'planta_permanente' }
+      });
+      // Una licencia de Configuración de otra persona no cuenta (no pasa: el enlace es siempre de la misma)
+      await laDeConfiguracion('usuario_id = ?', [usuarios.adminA.id]);
+      assert.equal((await datos.datosDeLaNota(usuarios.adminB.id, id)).encargo, null);
+    });
+  });
 });
 
 // Los días restituidos por un asueto (spec 2026-10-31-mi-espacio-dias-restituidos, 4, 8, 11 y 12): la carga del caso A

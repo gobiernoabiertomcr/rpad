@@ -27,13 +27,15 @@ const LETRA = 22;
 const LETRA_CHICA = 18;
 // Interlineado 1,15: 276 (con lineRule auto, 240 es el sencillo)
 const INTERLINEADO = 276;
-// La sangría del primer renglón del cuerpo y del cierre: 1,25 cm
+// La sangría del primer renglón del cuerpo, del párrafo de quien se encarga de las tareas y del cierre: 1,25 cm
 const SANGRIA = 709;
 // La firma va centrada en la mitad derecha: 8 cm de sangría izquierda
 const SANGRIA_DE_LA_FIRMA = 4535;
 
 const listaDe = (valor) => (Array.isArray(valor) ? valor : []);
 const esObjeto = (valor) => valor !== null && typeof valor === 'object' && !Array.isArray(valor);
+// Un texto con algo escrito (la misma condición que htmlDeLaNota para el párrafo de quien se encarga de las tareas)
+const conTexto = (valor) => typeof valor === 'string' && valor.trim() !== '';
 
 // Un renglón de la nota: un párrafo con su texto (que pasa por textoParaWord) y su diagramación; `chico`, en 9 pt
 const renglon = (texto, { chico = false, ...diagramacion } = {}) => new Paragraph({
@@ -48,7 +50,9 @@ const CON_SANGRIA = { indent: { firstLine: SANGRIA } };
 const DE_LA_FIRMA = { alignment: AlignmentType.CENTER, indent: { left: SANGRIA_DE_LA_FIRMA } };
 
 // Los párrafos de la nota, en el orden de htmlDeLaNota: la fecha a la derecha y dos renglones vacíos; el destinatario, el «S / D»
-// y uno vacío; el saludo y uno vacío; el cuerpo, justificado y con sangría, y uno vacío; el cierre, con sangría, y cuatro vacíos;
+// y uno vacío; el saludo y uno vacío; el cuerpo, justificado y con sangría, y uno vacío; si hay quien se encargue de las tareas
+// (`encargo`, spec 2026-11-25-mi-espacio-nota-licencia-encargo), su párrafo, como el cuerpo, y uno vacío; el cierre, con
+// sangría, y cuatro vacíos;
 // y la firma (la línea, el nombre, el renglón chico y el cargo), centrada en la mitad derecha. Una línea de la firma que no es
 // un objeto no va, como en la vista
 const parrafosDe = (nota) => [
@@ -56,6 +60,7 @@ const parrafosDe = (nota) => [
   ...listaDe(nota.destinatario).map((linea) => renglon(linea)), renglon(nota.sd), ...vacios(1),
   renglon(nota.saludo), ...vacios(1),
   renglon(nota.cuerpo, { ...CON_SANGRIA, alignment: AlignmentType.JUSTIFIED }), ...vacios(1),
+  ...(conTexto(nota.encargo) ? [renglon(nota.encargo, { ...CON_SANGRIA, alignment: AlignmentType.JUSTIFIED }), ...vacios(1)] : []),
   renglon(nota.cierre, CON_SANGRIA), ...vacios(4),
   renglon(LINEA_DE_LA_FIRMA, DE_LA_FIRMA),
   ...listaDe(nota.firma).filter(esObjeto).map((linea) => renglon(linea.texto, { ...DE_LA_FIRMA, chico: linea.chico === true }))
@@ -63,8 +68,8 @@ const parrafosDe = (nota) => [
 
 /**
  * El Word de una nota de licencia.
- * @param {{ fecha: string, destinatario: string[], sd: string, saludo: string, cuerpo: string, cierre: string,
- *   firma: Array<{ texto: string, chico: boolean }> }} nota La nota de `notaDeLicencia`.
+ * @param {{ fecha: string, destinatario: string[], sd: string, saludo: string, cuerpo: string, encargo: string | null,
+ *   cierre: string, firma: Array<{ texto: string, chico: boolean }> }} nota La nota de `notaDeLicencia`.
  * @returns {Promise<Buffer>}
  */
 export const renderNotaDocx = (nota) => {

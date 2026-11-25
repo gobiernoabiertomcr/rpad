@@ -366,7 +366,7 @@ describe('notaDeLicencia: las partes fijas, la firma y el nombre', () => {
     const resultado = armar(VACACIONES);
     assert.deepEqual(Object.keys(resultado), ['nota']);
     assert.deepEqual(Object.keys(resultado.nota).sort(),
-      ['cierre', 'cuerpo', 'destinatario', 'fecha', 'firma', 'nombre', 'saludo', 'sd']);
+      ['cierre', 'cuerpo', 'destinatario', 'encargo', 'fecha', 'firma', 'nombre', 'saludo', 'sd']);
   });
 
   it('la fecha de la nota es la que llega, no hoy', () => {
@@ -506,6 +506,93 @@ describe('htmlDeLaNota', () => {
   });
 });
 
+// Quien se encarga de las tareas durante la licencia (spec 2026-11-25-mi-espacio-nota-licencia-encargo): la persona a cargo
+// que el titular eligió en Configuración. Las personas son inventadas
+describe('notaDeLicencia: el párrafo de quien se encarga de las tareas', () => {
+  const ASIMISMO = 'Asimismo, con el objetivo de mantener el correcto flujo de trabajo, durante mi licencia ';
+  const LAS_TAREAS = 'se encargará de las tareas de la Dirección a mi cargo.';
+  const TOMAS = Object.freeze({ nombre: 'Tomás Ibáñez', cargo: 'Coordinador de Sistemas', vinculo: 'planta_permanente' });
+  const PAULA = Object.freeze({ nombre: 'Paula Benítez', cargo: 'Analista de Datos', vinculo: 'contrato' });
+  const conEncargo = (encargo, licencia = VACACIONES) =>
+    notaDeLicencia(licencia, { fecha: FECHA, persona: PERSONA, feriados: FERIADOS, encargo });
+  const sinLaClave = ({ encargo, ...resto }) => resto;
+
+  it('de planta: el nombre y el cargo, entre comas', () => {
+    assert.equal(conEncargo(TOMAS).nota.encargo, `${ASIMISMO}Tomás Ibáñez, Coordinador de Sistemas, ${LAS_TAREAS}`);
+  });
+
+  it('de un contratado: «personal contratado, cumpliendo funciones de» y el cargo, como en las Notas Digitales', () => {
+    assert.equal(conEncargo(PAULA).nota.encargo,
+      `${ASIMISMO}Paula Benítez, personal contratado, cumpliendo funciones de Analista de Datos, ${LAS_TAREAS}`);
+  });
+
+  it('sin cargo (también un contratado sin cargo): solo el nombre, sin comas', () => {
+    for (const cargo of [null, undefined, '', '   ']) {
+      for (const vinculo of ['planta_permanente', 'contrato', null]) {
+        assert.equal(conEncargo({ nombre: 'Marta Ríos', cargo, vinculo }).nota.encargo,
+          `${ASIMISMO}Marta Ríos ${LAS_TAREAS}`, JSON.stringify([cargo, vinculo]));
+      }
+    }
+  });
+
+  it('el nombre y el cargo, recortados', () => {
+    assert.equal(conEncargo({ nombre: '  Tomás Ibáñez ', cargo: ' Coordinador de Sistemas  ', vinculo: null }).nota.encargo,
+      `${ASIMISMO}Tomás Ibáñez, Coordinador de Sistemas, ${LAS_TAREAS}`);
+  });
+
+  it('sin persona, o con una que no sirve, no hay párrafo y la nota sale igual', () => {
+    const sinNadie = notaDeLicencia(VACACIONES, { fecha: FECHA, persona: PERSONA, feriados: FERIADOS });
+    assert.equal(sinNadie.nota.encargo, null);
+    for (const encargo of [null, undefined, 'Tomás', 3, [], {}, { nombre: '   ' }, { nombre: 7, cargo: 'Jefe' }]) {
+      const { nota } = conEncargo(encargo);
+      assert.equal(nota.encargo, null, JSON.stringify(encargo));
+      assert.deepEqual(nota, sinNadie.nota);
+    }
+  });
+
+  it('el cuerpo, el cierre, la firma y el nombre del archivo no cambian', () => {
+    const sinNadie = notaDeLicencia(VACACIONES, { fecha: FECHA, persona: PERSONA, feriados: FERIADOS }).nota;
+    assert.deepEqual(sinLaClave(conEncargo(PAULA).nota), sinLaClave(sinNadie));
+  });
+
+  it('en cualquier tipo con nota: la nota dice lo que está en Configuración', () => {
+    const medica = { tipo: 'medica', desde: '2026-11-16', hasta: '2026-11-17', horas: null };
+    assert.equal(conEncargo(TOMAS, medica).nota.encargo, `${ASIMISMO}Tomás Ibáñez, Coordinador de Sistemas, ${LAS_TAREAS}`);
+  });
+
+  it('la nota de una restitución (la B) no lo lleva', () => {
+    const { nota } = notaDeRestitucion({ anio: 2025, dias: 2, fechas: ['2026-12-24', '2026-12-31'] },
+      { fecha: '2027-04-01', persona: PERSONA, encargo: TOMAS });
+    assert.equal(nota.encargo, null);
+  });
+
+  it('la hoja: después del cuerpo y su renglón vacío, justificado y con sangría, y otro vacío antes del cierre', () => {
+    const { nota } = conEncargo(PAULA);
+    const html = htmlDeLaNota(nota);
+    assert.ok(html.includes(`<p class="sangria justificado">${nota.cuerpo}</p><p></p>`
+      + `<p class="sangria justificado">${nota.encargo}</p><p></p>`
+      + '<p class="sangria">Sin otro particular, saludo a Ud. atentamente.</p>'));
+    // Sin persona, la hoja de siempre
+    const sinNadie = notaDeLicencia(VACACIONES, { fecha: FECHA, persona: PERSONA, feriados: FERIADOS }).nota;
+    assert.ok(htmlDeLaNota(sinNadie).includes(`<p class="sangria justificado">${sinNadie.cuerpo}</p><p></p>`
+      + '<p class="sangria">Sin otro particular, saludo a Ud. atentamente.</p>'));
+  });
+
+  it('la hoja escapa el nombre y el cargo', () => {
+    const html = htmlDeLaNota(conEncargo({ nombre: 'Ana <b>&</b> "Luz"', cargo: "Jefa d'Área <i>", vinculo: null }).nota);
+    assert.ok(html.includes(`${ASIMISMO}Ana &lt;b&gt;&amp;&lt;/b&gt; &quot;Luz&quot;, Jefa d&#39;Área &lt;i&gt;, ${LAS_TAREAS}`));
+    assert.ok(!html.includes('<b>'));
+    assert.ok(!html.includes('<i>'));
+  });
+
+  it('la hoja no dibuja un encargo que no es un texto', () => {
+    const { nota } = conEncargo(TOMAS);
+    for (const encargo of [null, '', 3, ['x'], { texto: 'x' }]) {
+      assert.equal(htmlDeLaNota({ ...nota, encargo }), htmlDeLaNota({ ...nota, encargo: null }), JSON.stringify(encargo));
+    }
+  });
+});
+
 describe('aclaracionDeLaNota', () => {
   it('el texto con la fecha corta', () => {
     assert.equal(aclaracionDeLaNota('2026-10-27'),
@@ -589,7 +676,9 @@ describe('notaDeLicencia: los días restituidos (la nota A)', () => {
     assert.equal(nota.fecha, 'Comodoro Rivadavia, 1 de abril de 2027');
     assert.equal(nota.nombre, 'Nota de licencia - Días restituidos - 2027-04-12.docx');
     assert.equal(htmlDeLaNota(nota), HOJA(CUERPO_A));
-    assert.deepEqual(Object.keys(nota).sort(), ['cierre', 'cuerpo', 'destinatario', 'fecha', 'firma', 'nombre', 'saludo', 'sd']);
+    assert.deepEqual(Object.keys(nota).sort(),
+      ['cierre', 'cuerpo', 'destinatario', 'encargo', 'fecha', 'firma', 'nombre', 'saludo', 'sd']);
+    assert.equal(nota.encargo, null);
   });
 
   it('un solo día: «un (1) día hábil», «restituido por el asueto del día …, declarado» y «el día»', () => {

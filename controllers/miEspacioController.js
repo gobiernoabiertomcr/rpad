@@ -506,9 +506,10 @@ const restitucionDeLaCarga = (estado, cargaId) => {
  * licencia sale del `estado` de `contextoDe` (con sus horas como número) y los días hábiles se cuentan con sus feriados, como
  * la lista, más sus días restituibles (`restituiblesDe`: unas vacaciones en las que cayó un asueto cargado después siguen
  * diciendo los días que se pidieron; spec 2026-10-31-mi-espacio-dias-restituidos, 4). La de unos días restituidos dice además
- * de qué licencia salen y qué asuetos los restituyen (`restitucionDeLaCarga`). Sin modalidad, la nota se arma igual: el texto
- * no depende de ella. Una nota que no se puede armar (la clave 'error') tira, y la ruta responde 500 con el mensaje fijo (el
- * detalle, solo en la consola).
+ * de qué licencia salen y qué asuetos los restituyen (`restitucionDeLaCarga`). Con persona a cargo en Configuración, la nota
+ * nombra a quien se encarga de las tareas (`encargo` de `datosDeLaNota`; spec 2026-11-25-mi-espacio-nota-licencia-encargo).
+ * Sin modalidad, la nota se arma igual: el texto no depende de ella. Una nota que no se puede armar (la clave 'error') tira,
+ * y la ruta responde 500 con el mensaje fijo (el detalle, solo en la consola).
  */
 const leerLaNota = async (usuarioId, licenciaId, hoy) => {
   const id = idPositivo(licenciaId);
@@ -519,11 +520,11 @@ const leerLaNota = async (usuarioId, licenciaId, hoy) => {
   // Borrada entre las dos lecturas: tampoco está
   const licencia = contexto.estado.licencias.find((fila) => fila.id === id);
   if (!licencia) return { rechazo: noEncontrada() };
-  const { guardada, nombre, cargo, vinculo } = datos;
+  const { guardada, nombre, cargo, vinculo, encargo } = datos;
   const { estado, feriados } = contexto;
   // Las salidas de la planilla: las horas a favor nombran los días tildados «Sumar a {mes anterior}» que suman a sus horas
   const { nota, error } = notaDeLicencia(licencia, {
-    fecha: guardada, persona: { nombre, cargo, vinculo }, feriados, salidas: estado.salidas,
+    fecha: guardada, persona: { nombre, cargo, vinculo }, encargo, feriados, salidas: estado.salidas,
     restituibles: restituiblesDe(licencia, estado, feriados),
     restitucion: licencia.tipo === 'restituidos' ? restitucionDeLaCarga(estado, licencia.id) : undefined
   });

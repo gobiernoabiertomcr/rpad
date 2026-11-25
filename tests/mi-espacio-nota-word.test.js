@@ -311,6 +311,60 @@ describe('renderNotaDocx: los mismos renglones que la vista (htmlDeLaNota)', () 
   });
 });
 
+// Quien se encarga de las tareas (spec 2026-11-25-mi-espacio-nota-licencia-encargo): el párrafo va después del cuerpo, como el
+// cuerpo, y la vista y el Word dicen lo mismo
+describe('renderNotaDocx: el párrafo de quien se encarga de las tareas', () => {
+  const conEncargo = (encargo, licencia = LICENCIAS.vacaciones) => {
+    const resultado = notaDeLicencia(licencia, { fecha: FECHA, persona: PLANTA, feriados: FERIADOS, encargo });
+    assert.ok(resultado.nota?.encargo, `sin el párrafo: ${JSON.stringify(resultado)}`);
+    return resultado.nota;
+  };
+
+  it('después del cuerpo y un renglón vacío, justificado y con sangría, y otro vacío antes del cierre', async () => {
+    const nota = conEncargo(CONTRATADA);
+    const parrafos = parrafosDelWord((await wordDe(nota)).documento);
+    const textos = parrafos.map((p) => p.texto);
+    const cuerpo = textos.indexOf(nota.cuerpo);
+    assert.deepEqual(textos.slice(cuerpo, cuerpo + 5),
+      [nota.cuerpo, '', nota.encargo, '', 'Sin otro particular, saludo a Ud. atentamente.']);
+    const encargo = parrafos[cuerpo + 2];
+    assert.match(encargo.xml, /<w:jc w:val="both"\/>/);
+    assert.match(encargo.xml, /w:firstLine="709"/);
+    assert.equal(encargo.izquierda, null);
+    assert.equal(encargo.letra, null);
+    // Sin persona, los párrafos de siempre
+    const sinNadie = notaDe();
+    const deSiempre = parrafosDelWord((await wordDe(sinNadie)).documento).map((p) => p.texto);
+    const suyo = deSiempre.indexOf(sinNadie.cuerpo);
+    assert.deepEqual(deSiempre.slice(suyo, suyo + 3), [sinNadie.cuerpo, '', 'Sin otro particular, saludo a Ud. atentamente.']);
+  });
+
+  for (const [quien, encargo] of Object.entries({ PLANTA, CONTRATADA, SIN_CARGO, SIN_VINCULO })) {
+    it(`${quien}: el mismo texto que la vista, en el mismo orden y con la misma diagramación`, async () => {
+      const nota = conEncargo(encargo);
+      const word = parrafosDelWord((await wordDe(nota)).documento).map(sinXml);
+      assert.deepEqual(word, renglonesDeLaVista(htmlDeLaNota(nota)));
+      assert.ok(word.some((p) => p.texto === nota.encargo));
+    });
+  }
+
+  it('con caracteres que se escapan en el HTML o que el XML no admite, el Word abre y dice lo mismo sin ellos', async () => {
+    const nota = conEncargo({ nombre: 'Ana\u0001 "Anita" & <Cía>', cargo: 'Jefa <de> & \'Datos\'', vinculo: null });
+    const word = parrafosDelWord((await wordDe(nota)).documento).map(sinXml);
+    assert.ok(word.some((p) => p.texto === nota.encargo.replace('\u0001', '')));
+    assert.ok(word.some((p) => p.texto.includes('Ana "Anita" & <Cía>, Jefa <de> & \'Datos\', se encargará')));
+  });
+
+  it('un encargo que no es un texto no va', async () => {
+    const nota = conEncargo(PLANTA);
+    const sinEncargo = parrafosDelWord((await wordDe({ ...nota, encargo: null })).documento).map(sinXml);
+    for (const encargo of ['', 3, ['x'], { texto: 'x' }]) {
+      assert.deepEqual(parrafosDelWord((await wordDe({ ...nota, encargo })).documento).map(sinXml), sinEncargo,
+        JSON.stringify(encargo));
+    }
+  });
+});
+
 // ---------------------------------------------------------------------------------------------------------------------------
 // Los días restituidos por un asueto (spec 2026-10-31-mi-espacio-dias-restituidos, 12): la nota A (la carga de los días
 // restituidos) y la nota B (el pedido de restitución) salen en la misma hoja, con la misma estructura. La persona es la de la

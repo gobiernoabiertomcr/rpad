@@ -19,10 +19,14 @@
  * diciendo los días que se pidieron aunque después un asueto caiga en ellas; la carga de los días restituidos (la nota A)
  * dice además de qué licencia salen y por qué asuetos (`restitucion`), y el pedido de restitución (la nota B) tiene su propia
  * nota, `notaDeRestitucion`, con la misma estructura (así `htmlDeLaNota` y el Word no cambian).
+ *
+ * Quien se encarga de las tareas (spec 2026-11-25-mi-espacio-nota-licencia-encargo): si la licencia tiene persona a cargo en
+ * Configuración, la nota suma un párrafo que la nombra (`encargo`). No dice que la persona queda a cargo (el «a mi cargo» del
+ * final es del titular): ni un contratado ni la planta transitoria pueden quedar a cargo de una Dirección (decisión del usuario).
  */
 import { diasHabilesDe, diaDeLaSemana } from './feriadosReglas.js';
 import { esFechaIso, formatoCorto, formatoLargo } from './notasDigitalesCalendario.js';
-import { RENGLON_FIRMA_CONTRATADO, escapeHtml } from './notasDigitalesContenido.js';
+import { RENGLON_FIRMA_CONTRATADO, cargoEnTexto, escapeHtml } from './notasDigitalesContenido.js';
 import {
   TIPOS_LICENCIA, MESES_HASTA_EL_FRANCO, MESES_HASTA_LAS_HORAS, mesMas, mesEnFrase, nombreDelMes, horasDeLaSalida,
   TIPOS_CON_RESTITUIBLES, horasAcumuladasDe
@@ -53,6 +57,9 @@ const SD = `S${' '.repeat(15)}/${' '.repeat(15)}D`;
 const SALUDO = 'De mi mayor consideración:';
 const PIDO = 'Me dirijo a Ud. a fin de solicitarle tenga a bien autorizar ';
 const CIERRE = 'Sin otro particular, saludo a Ud. atentamente.';
+// El párrafo de quien se encarga de las tareas, antes y después del nombre y el cargo (texto del usuario, 25/11/2026)
+const ASIMISMO = 'Asimismo, con el objetivo de mantener el correcto flujo de trabajo, durante mi licencia ';
+const LAS_TAREAS = 'se encargará de las tareas de la Dirección a mi cargo.';
 // La línea sobre la que se firma: la misma en la vista y en el Word (services/miEspacioNotaWord.js la importa de acá)
 export const LINEA_DE_LA_FIRMA = '_'.repeat(30);
 
@@ -292,15 +299,29 @@ const firmaDe = ({ nombre, cargo, vinculo }) => {
   ];
 };
 
-// La nota armada, con lo fijo, el cuerpo (lo que sigue a PIDO) y el nombre del archivo: la misma estructura para la nota de una
-// licencia y la de una restitución
-const notaCon = ({ fecha, persona, nombre, cuerpo, archivo }) => ({
+// El párrafo de quien se encarga de las tareas: `encargo` = { nombre, cargo, vinculo }, la persona a cargo de la licencia en
+// Configuración. El cargo de un contratado, como en las Notas Digitales (`cargoEnTexto`); sin cargo, solo el nombre y sin comas
+// («cumpliendo funciones de» necesita un cargo). «se encargará» es neutro: el sistema no sabe el género. Sin persona, o con una
+// que no sirve (no es un objeto, o sin nombre), null: la nota sale sin el párrafo
+const textoDelEncargo = (encargo) => {
+  if (!esObjeto(encargo)) return null;
+  const nombre = textoDe(encargo.nombre);
+  if (!nombre) return null;
+  const cargo = textoDe(encargo.cargo);
+  if (!cargo) return `${ASIMISMO}${nombre} ${LAS_TAREAS}`;
+  return `${ASIMISMO}${nombre}, ${cargoEnTexto({ cargo, contratado: encargo.vinculo === 'contrato' })}, ${LAS_TAREAS}`;
+};
+
+// La nota armada, con lo fijo, el cuerpo (lo que sigue a PIDO), el párrafo de quien se encarga de las tareas (o null) y el
+// nombre del archivo: la misma estructura para la nota de una licencia y la de una restitución
+const notaCon = ({ fecha, persona, nombre, cuerpo, encargo = null, archivo }) => ({
   nota: {
     fecha: `${LUGAR}, ${formatoLargo(fecha)}`,
     destinatario: [...DESTINATARIO],
     sd: SD,
     saludo: SALUDO,
     cuerpo: `${PIDO}${cuerpo}`,
+    encargo,
     cierre: CIERRE,
     firma: firmaDe({ nombre, cargo: textoDe(persona.cargo), vinculo: persona.vinculo }),
     nombre: archivo
@@ -320,16 +341,19 @@ const notaCon = ({ fecha, persona, nombre, cuerpo, archivo }) => ({
  * licencia de la que salen, los asuetos que restituye y el tipo de la carga en la que cayeron (`durante`: 'restituidos' en la
  * recursión, «declarados durante mis días restituidos»; sin él, o con otro valor, «durante mis vacaciones»), que necesita la
  * carga de los días restituidos (la nota A; sin ella, o con un año o unas fechas que no sirven, `{ error: 'error' }`) y los
- * demás tipos no miran.
- * Da `{ nota }`, con `nota` = { fecha, destinatario: [string, string], sd, saludo, cuerpo, cierre, firma: [{ texto, chico }],
- * nombre } (`nombre`, el del archivo: «Nota de licencia - Licencia anual ordinaria - 2026-11-16.docx», con el desde), o
- * `{ error }` con una clave de MENSAJES_NOTA. Nunca tira.
+ * demás tipos no miran. `encargo`, opcional, = { nombre, cargo, vinculo }: la persona a cargo de la licencia en Configuración
+ * (spec 2026-11-25-mi-espacio-nota-licencia-encargo), en cualquier tipo; sin ella, o con una que no sirve, la nota sale sin
+ * el párrafo y nunca da error por esto.
+ * Da `{ nota }`, con `nota` = { fecha, destinatario: [string, string], sd, saludo, cuerpo, encargo, cierre, firma:
+ * [{ texto, chico }], nombre } (`encargo`, el párrafo de quien se encarga de las tareas o null; `nombre`, el del archivo:
+ * «Nota de licencia - Licencia anual ordinaria - 2026-11-16.docx», con el desde), o `{ error }` con una clave de
+ * MENSAJES_NOTA. Nunca tira.
  */
 export const notaDeLicencia = (licencia, opciones) => {
   if (!esObjeto(licencia)) return { error: 'error' };
   const { tipo, desde, hasta, horas } = licencia;
   if (!TIPOS_CON_NOTA.includes(tipo)) return { error: 'sinNota' };
-  const { fecha, persona, feriados, salidas, restituibles, restitucion: asuetos } = esObjeto(opciones) ? opciones : {};
+  const { fecha, persona, feriados, salidas, restituibles, restitucion: asuetos, encargo } = esObjeto(opciones) ? opciones : {};
   if (!esFechaIso(fecha) || !esFechaIso(desde) || !esFechaIso(hasta) || hasta < desde || !esObjeto(persona)) {
     return { error: 'error' };
   }
@@ -344,14 +368,15 @@ export const notaDeLicencia = (licencia, opciones) => {
   const cuerpo = CUERPOS[tipo]({ desde, horas, acumuladas, dias, salidas: listaDe(salidas), feriados, restitucion });
   if (cuerpo === null) return { error: 'error' };
   const archivo = `Nota de licencia - ${NOMBRES_DEL_ARCHIVO[tipo]} - ${desde}.docx`;
-  return notaCon({ fecha, persona, nombre, cuerpo, archivo });
+  return notaCon({ fecha, persona, nombre, cuerpo, encargo: textoDelEncargo(encargo), archivo });
 };
 
 /**
  * La nota de un pedido de restitución (la nota B, spec 2026-10-31-mi-espacio-dias-restituidos, 12): `pedido` = { anio, dias,
  * fechas } (la licencia a la que vuelven los días, cuántos son —el entero guardado en el pedido, de 1 a 999— y los asuetos
  * que los restituyen), y en las opciones, `fecha` = 'AAAA-MM-DD' (el día del pedido) y `persona` = { nombre, cargo, vinculo }.
- * Da `{ nota }`, con la misma estructura que `notaDeLicencia` (así `htmlDeLaNota` y el Word no cambian) y `nombre` «Nota de
+ * Da `{ nota }`, con la misma estructura que `notaDeLicencia` (así `htmlDeLaNota` y el Word no cambian; `encargo`, siempre
+ * null: un pedido no es una licencia) y `nombre` «Nota de
  * restitución - Licencia 2025 - 2027-04-01.docx» (con el día del pedido), o `{ error: 'error' }` con un pedido, una fecha o
  * una persona que no sirven. «correspondiente(s)» concuerda con los días y «al asueto … declarado» o «a los asuetos …
  * declarados», con los asuetos. Nunca tira.
@@ -377,7 +402,8 @@ const vacios = (cuantos) => '<p></p>'.repeat(cuantos);
 
 /**
  * La hoja de la nota para la vista del segundo paso, con todo texto escapado: la fecha a la derecha y dos renglones vacíos;
- * el destinatario, el «S / D» y uno vacío; el saludo y uno vacío; el cuerpo, con sangría y justificado, y uno vacío; el
+ * el destinatario, el «S / D» y uno vacío; el saludo y uno vacío; el cuerpo, con sangría y justificado, y uno vacío; si hay
+ * quien se encargue de las tareas (`encargo`, un texto no vacío), su párrafo, como el cuerpo, y uno vacío; el
  * cierre, con sangría, y cuatro vacíos; y la firma (la línea, el nombre, el renglón chico y el cargo). Las clases (`me-hoja`,
  * `me-hoja-texto`, `derecha`, `sangria`, `justificado`, `sd`, `firma` y `chico`) las dibuja el `<style>` de
  * mi-espacio.html. Con lo que no es una nota, ''.
@@ -391,6 +417,7 @@ export const htmlDeLaNota = (nota) => {
     + listaDe(nota.destinatario).map((linea) => renglon(linea)).join('') + renglon(nota.sd, 'sd') + vacios(1)
     + renglon(nota.saludo) + vacios(1)
     + renglon(nota.cuerpo, 'sangria justificado') + vacios(1)
+    + (textoDe(nota.encargo) ? renglon(nota.encargo, 'sangria justificado') + vacios(1) : '')
     + renglon(nota.cierre, 'sangria') + vacios(4)
     + `<div class="firma">${renglon(LINEA_DE_LA_FIRMA)}${firma}</div>`
     + '</div></div>';

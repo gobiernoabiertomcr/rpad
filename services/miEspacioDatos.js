@@ -309,30 +309,49 @@ export const licenciaDe = async (usuarioId, licenciaId, conexion = pool) => {
 
 /**
  * Lo que la nota de una licencia (spec 2026-10-27-mi-espacio-licencia-word, secciones 2 y 4) lee de la base además de la
- * licencia: `{ guardada, nombre, cargo, vinculo }`, o null (un id que no sirve, de otra persona, que no existe o dado de
- * baja). `guardada` es la fecha de la nota, el día en Argentina ('AAAA-MM-DD') de la última vez que se guardó la licencia:
- * `updated_at`, que la base pone al día solo cuando un guardado cambia algo. Es un TIMESTAMP que la base guarda en UTC: se lee
- * con UNIX_TIMESTAMP y se pasa a hora argentina (como `subido_el` de Proyectos), así un guardado a las 22:00 no sale con el día
- * siguiente; sin `updated_at`, null. La firma (el nombre, el cargo y el vínculo de la persona) se lee al armar la nota, en la
- * misma consulta (`personaDe` no lee el cargo).
- * @returns {Promise<{ guardada: string | null, nombre: string, cargo: string | null, vinculo: string | null } | null>}
+ * licencia: `{ guardada, nombre, cargo, vinculo, encargo }`, o null (un id que no sirve, de otra persona, que no existe o dado
+ * de baja). La firma (el nombre, el cargo y el vínculo de la persona) se lee al armar la nota, en la misma consulta (`personaDe`
+ * no lee el cargo).
+ * `encargo` = `{ nombre, cargo, vinculo }` es quien se encarga de las tareas (spec 2026-11-25-mi-espacio-nota-licencia-encargo):
+ * la persona a cargo (`autorizado_id`) de la licencia de Configuración enlazada (`licencia_oficial_id`), de la misma persona y
+ * sin anular; si no, null.
+ * `guardada` es la fecha de la nota, el día en Argentina ('AAAA-MM-DD') de la última vez que se guardó la licencia: el más nuevo
+ * entre el de `updated_at`, que la base pone al día solo cuando un guardado cambia algo, y, con persona a cargo, el de
+ * `autorizado_at` (corregir solo la persona no mueve `updated_at`). `updated_at` es un TIMESTAMP que la base guarda en UTC: se
+ * lee con UNIX_TIMESTAMP y se pasa a hora argentina (como `subido_el` de Proyectos), así un guardado a las 22:00 no sale con el
+ * día siguiente; `autorizado_at` es un DATETIME que ya está en hora argentina (`ahoraArgentina`): su día va tal cual. Sin
+ * ninguno de los dos, null.
+ * @returns {Promise<{ guardada: string | null, nombre: string, cargo: string | null, vinculo: string | null,
+ *   encargo: { nombre: string, cargo: string | null, vinculo: string | null } | null } | null>}
  */
 export const datosDeLaNota = async (usuarioId, licenciaId, conexion = pool) => {
   const persona = idPositivo(usuarioId);
   const id = idPositivo(licenciaId);
   if (persona === null || id === null) return null;
   const [[fila]] = await conexion.query(
-    `SELECT UNIX_TIMESTAMP(l.updated_at) AS guardada_ts, u.nombre_completo, u.cargo, u.vinculo
+    `SELECT UNIX_TIMESTAMP(l.updated_at) AS guardada_ts, u.nombre_completo, u.cargo, u.vinculo,
+       a.id AS encargo_id, a.nombre_completo AS encargo_nombre, a.cargo AS encargo_cargo, a.vinculo AS encargo_vinculo,
+       DATE_FORMAT(ul.autorizado_at, '%Y-%m-%d') AS encargo_desde
      FROM mi_espacio_licencias l JOIN usuarios u ON u.id = l.usuario_id
+     LEFT JOIN usuarios_licencias ul ON ul.id = l.licencia_oficial_id AND ul.usuario_id = l.usuario_id AND ul.anulada = 0
+     LEFT JOIN usuarios a ON a.id = ul.autorizado_id
      WHERE l.id = ? AND l.usuario_id = ? AND l.activo = 1`,
     [id, persona]
   );
   if (!fila) return null;
+  const encargo = fila.encargo_id === null
+    ? null
+    : { nombre: fila.encargo_nombre, cargo: fila.encargo_cargo ?? null, vinculo: fila.encargo_vinculo ?? null };
+  const dias = [
+    fila.guardada_ts === null ? null : hoyArgentina(new Date(Number(fila.guardada_ts) * 1000)),
+    encargo === null ? null : fila.encargo_desde
+  ].filter((dia) => typeof dia === 'string');
   return {
-    guardada: fila.guardada_ts === null ? null : hoyArgentina(new Date(Number(fila.guardada_ts) * 1000)),
+    guardada: dias.length === 0 ? null : dias.sort().at(-1),
     nombre: fila.nombre_completo,
     cargo: fila.cargo ?? null,
-    vinculo: fila.vinculo ?? null
+    vinculo: fila.vinculo ?? null,
+    encargo
   };
 };
 

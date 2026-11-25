@@ -7,6 +7,7 @@ Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-10-30-mi-espacio-horas-mes-anterior-design.md`
 - `docs/superpowers/specs/2026-10-31-mi-espacio-dias-restituidos-design.md`
 - `docs/superpowers/specs/2026-11-03-mi-espacio-horas-acumuladas-design.md`
+- `docs/superpowers/specs/2026-11-25-mi-espacio-nota-licencia-encargo-design.md`
 
 ## Mi espacio: la nota de licencia en Word (spec 2026-10-27-mi-espacio-licencia-word)
 
@@ -23,12 +24,20 @@ Historia y motivos, en las specs:
   El uso autorizado y las horas extras no tienen nota (decisión del usuario, «por ahora»).
   Una persona sin modalidad arma la nota igual: la lista no muestra sus licencias, pero el texto no depende de la modalidad (sin vínculo, la firma va como la de planta).
 - La nota (`services/miEspacioNota.js`, puro: sin pool ni `Date` local, fechas `'AAAA-MM-DD'`, ninguna función tira, salvo con un tipo nuevo sin su entrada en `CUERPOS`: `TIPOS_CON_NOTA` lo acepta y da `TypeError`):
-  `notaDeLicencia(licencia, { fecha, persona, feriados, salidas })` (`salidas`, las de la planilla (para «Sumar al mes anterior»), opcional: sin ellas, []; solo las usan las horas a favor) → `{ nota }` o `{ error }` con una clave de `MENSAJES_NOTA` (`sinNota`: el uso autorizado o un tipo que no está en `TIPOS_CON_NOTA`; `sinDiasHabiles`; o `error`: una licencia, una fecha o una persona que no sirven);
-  `nota` = `{ fecha, destinatario, sd, saludo, cuerpo, cierre, firma: [{ texto, chico }], nombre }`, armada una sola vez, y de ahí salen la vista (`htmlDeLaNota`, escapada ahí mismo, con las clases `me-hoja`, `me-hoja-texto`, `derecha`, `sangria`, `justificado`, `sd`, `firma` y `chico`) y el Word.
+  `notaDeLicencia(licencia, { fecha, persona, feriados, salidas, encargo })` (`encargo`, quien se encarga de las tareas, opcional: ver abajo; `salidas`, las de la planilla (para «Sumar al mes anterior»), opcional: sin ellas, []; solo las usan las horas a favor) → `{ nota }` o `{ error }` con una clave de `MENSAJES_NOTA` (`sinNota`: el uso autorizado o un tipo que no está en `TIPOS_CON_NOTA`; `sinDiasHabiles`; o `error`: una licencia, una fecha o una persona que no sirven);
+  `nota` = `{ fecha, destinatario, sd, saludo, cuerpo, encargo, cierre, firma: [{ texto, chico }], nombre }` (`encargo`, el párrafo de quien se encarga de las tareas o null), armada una sola vez, y de ahí salen la vista (`htmlDeLaNota`, escapada ahí mismo, con las clases `me-hoja`, `me-hoja-texto`, `derecha`, `sangria`, `justificado`, `sd`, `firma` y `chico`) y el Word.
   Lo fijo, sin nombres de personas:
   «Comodoro Rivadavia, <fecha larga>», «Al Señor Director General de» / «Modernización e Investigación Territorial» (dirigida al cargo, nunca a una persona: decisión del usuario, el repositorio es público;
   si hace falta, el nombre se agrega a mano en el Word, y si cambia la autoridad, se cambia el código), «S / D» (15 espacios a cada lado de la barra), «De mi mayor consideración:», «Me dirijo a Ud. a fin de solicitarle tenga a bien autorizar …» (la fórmula del usuario) y «Sin otro particular, saludo a Ud. atentamente.».
   La nota opcional de la licencia no va (decisión del usuario: es un apunte personal).
+- Quien se encarga de las tareas (spec 2026-11-25-mi-espacio-nota-licencia-encargo): si la licencia tiene persona a cargo en Configuración, la nota suma un párrafo aparte, después del pedido y antes del cierre (texto del usuario):
+  «Asimismo, con el objetivo de mantener el correcto flujo de trabajo, durante mi licencia {nombre}, {cargo}, se encargará de las tareas de la Dirección a mi cargo.».
+  No dice que la persona queda a cargo, a propósito (el «a mi cargo» del final es del titular): ni un contratado ni la planta transitoria pueden quedar a cargo de una Dirección (decisión del usuario).
+  «se encargará» es neutro: el sistema no sabe el género de nadie.
+  El cargo de un contratado, como en las Notas Digitales: «personal contratado, cumpliendo funciones de {cargo}» (`cargoEnTexto` de `notasDigitalesContenido.js`); sin cargo (también un contratado), solo el nombre y sin comas («… durante mi licencia {nombre} se encargará …»).
+  La persona es la `autorizado_id` de la licencia de Configuración enlazada (`licencia_oficial_id`), de la misma persona y sin anular, con su nombre y su cargo de `usuarios` (como la firma de la nota, no la de Mi Perfil); no mira el tipo, ni si la de Configuración todavía cubre las fechas (una unida que después se acortó, o una corrección que Configuración rechazó), ni si la persona todavía sirve para las Notas Digitales: la nota dice lo que está cargado.
+  Sin ella (nadie, la de Configuración anulada o sin enlazar), o con una que no sirve (sin nombre), la nota sale sin el párrafo y nunca da error por esto.
+  La nota de un pedido de restitución (la B) no lo lleva: `encargo` es siempre null.
 - El cuerpo de cada tipo (spec, sección 2, al pie de la letra): vacaciones, «el usufructo de cinco (5) días hábiles correspondientes a mi licencia anual ordinaria, a partir del día martes 3 de noviembre de 2026.» (solo cuántos días y desde cuándo, sin el hasta ni de qué año salen: pedido del usuario); franquicia, «el usufructo de tres (3) horas de franquicia para trámites personales el día …»;
   estudios, «licencia por examen por dos (2) días hábiles, a partir del día …» (sin «Oportunamente presentaré la constancia del examen»), y con la misma forma «licencia por atención médica», «licencia por atención del grupo familiar» y «licencia médica extraordinaria»; franco, «el usufructo del franco compensatorio correspondiente a las horas extras realizadas en octubre de 2026, el día …»;
   horas a favor (spec 2026-10-30-mi-espacio-horas-mes-anterior, 7: el usuario eligió la redacción y pidió el día primero en todas), «el usufructo de dos horas y media (2,5)
@@ -48,6 +57,8 @@ Historia y motivos, en las specs:
   Una licencia de días sin ningún día hábil (un feriado cargado después en Configuración → Feriados cayó sobre ella) no tiene nota (`sinDiasHabiles`); en el segundo paso no puede pasar: el guardado no deja una licencia sin días hábiles.
 - La fecha de la nota es el día argentino de la última vez que se guardó la licencia (decisión del usuario: la de la carga o la de la última corrección):
   `mi_espacio_licencias.updated_at`, que la base mueve solo cuando un guardado cambia algo (una corrección sin cambios no la mueve), leído con `UNIX_TIMESTAMP` y pasado con `hoyArgentina(new Date(…))`, como `subido_el` de Proyectos (un guardado a las 22:30 sale con ese día, no con el siguiente).
+  Con persona a cargo, cuenta también cuándo se eligió o se cambió: la fecha es el día más nuevo entre ese y el de `usuarios_licencias.autorizado_at`, un DATETIME ya en hora argentina, que se toma tal cual (corregir solo la persona no mueve `updated_at`).
+  Límite sabido: quitar la persona deja `autorizado_at` en NULL, y la nota, ya sin el párrafo, vuelve a la fecha del último guardado de Mi espacio.
   La firma, leída al armar la nota: el nombre (`nombre_completo`); en un contratado (`vinculo = 'contrato'`), el renglón chico «Personal contratado, cumpliendo funciones de» (`RENGLON_FIRMA_CONTRATADO` de `notasDigitalesContenido.js`, como en las Notas Digitales); y el cargo.
   Sin cargo, solo el nombre, también en un contratado («cumpliendo funciones de» necesita un cargo).
   El archivo:
@@ -61,7 +72,7 @@ Historia y motivos, en las specs:
   A4 con la hoja como literales (`HOJA_DE_LA_NOTA`: 11906 × 16838 twips;
   `convertMillimetersToTwip` redondea para abajo y daría 11905 × 16837), 2,5 cm arriba y abajo y 3 cm a los costados (1417 y 1701), sin encabezado, pie, membrete ni marca de agua;
   Arial 11 (`size: 22`) e interlineado 1,15 (`line: 276`, `lineRule: auto`), sin espacio entre párrafos, en el estilo por defecto del documento y no en cada párrafo (los renglones vacíos miden lo mismo que los escritos).
-  El orden, el de `htmlDeLaNota`: la fecha a la derecha y dos renglones vacíos; el destinatario, el «S / D» y uno vacío; el saludo y uno; el cuerpo, justificado y con sangría de 1,25 cm en el primer renglón (709), y uno; el cierre, con la misma sangría, y cuatro; y la firma, centrada en la mitad derecha (sangría izquierda de 8 cm, 4535):
+  El orden, el de `htmlDeLaNota`: la fecha a la derecha y dos renglones vacíos; el destinatario, el «S / D» y uno vacío; el saludo y uno; el cuerpo, justificado y con sangría de 1,25 cm en el primer renglón (709), y uno; si hay quien se encargue de las tareas (`encargo` con texto), su párrafo, como el cuerpo, y uno; el cierre, con la misma sangría, y cuatro; y la firma, centrada en la mitad derecha (sangría izquierda de 8 cm, 4535):
   `LINEA_DE_LA_FIRMA` (30 guiones bajos, exportada para que la vista y el Word tengan la misma), el nombre, el renglón del contratado en 9 pt y el cargo.
   Todo texto pasa por `textoParaWord` (`services/notasWord.js`).
   `TIPO_WORD`, el MIME de Word.
@@ -71,7 +82,7 @@ Historia y motivos, en las specs:
   «Está en la lista de 2027.» si no es la del año de hoy; si no, null); y `GET /api/mi-espacio/licencias/:id/word` (`bajarWordDeLicencia`) → el .docx, con `Content-Type` `TIPO_WORD` y `Content-Disposition` de `disposicionDeAdjunto(nota.nombre)`.
   Las dos pasan por `leerLaNota`:
   `idPositivo` → `datosDeLaNota` (`services/miEspacioDatos.js`:
-  `{ guardada, nombre, cargo, vinculo }` en una consulta con `usuarios`, o null;
+  `{ guardada, nombre, cargo, vinculo, encargo }` en una consulta con `usuarios` y la licencia de Configuración enlazada con su persona a cargo, o null;
   `personaDe` no lee el cargo) → la licencia del `estado` de `contextoDe` (con sus horas como número y sus feriados) → `notaDeLicencia`.
   Los errores, en JSON en las dos, por la clave (`RECHAZOS_DE_LA_NOTA`): 404 «Licencia no encontrada» (un id que no pasa `idPositivo`, de otra persona, que no existe, dada de baja o borrada entre las dos lecturas: no se revela que existe), 404 «Esta licencia no tiene nota.» (`sinNota`: el uso autorizado), 409 «Entre esas fechas ya no hay ningún día hábil:
   corregí la licencia para bajar la nota.» (`sinDiasHabiles`) y cualquier otra clave o falla (por ejemplo, una persona sin nombre), 500 con el mensaje fijo «Error al armar la nota» y el detalle solo en `console.error`.
