@@ -30,7 +30,8 @@ export const usuariosDelAviso = async (conexion = pool) => {
  * Los eventos activos de desde a hasta ('AAAA-MM-DD', los dos incluidos), por fecha, hora e id, con sus personas y sus vistas, en lote: tres
  * consultas para todos, sin N+1. La forma que recibe `mailDeLaPersona`. Las fechas y las horas, como texto (DATE_FORMAT y TIME_FORMAT: el pool
  * no tiene `dateStrings`, y un Date crudo no coincidiría nunca con lo informado, y repetiría el mail cada día). Trae el título y el detalle
- * también de un Público: es `mailDeLaPersona` la que no los lee para quien no lo creó. Sin un rango que sirva, [].
+ * también de un Público: es `mailDeLaPersona` la que no los lee para quien no lo creó. `aviso_por_mail`, el tilde del aviso a la cadena (spec
+ * 2026-11-27-evento-mail-optativo, 6): prendido salvo un 0 de la base. Sin un rango que sirva, [].
  * @returns {Promise<object[]>}
  */
 export const eventosDelAviso = async (desde, hasta, conexion = pool) => {
@@ -39,7 +40,7 @@ export const eventosDelAviso = async (desde, hasta, conexion = pool) => {
     `SELECT e.id, e.creado_por, c.nombre_completo AS creador, c.activo AS creador_activo, e.titulo, e.detalle,
        DATE_FORMAT(e.fecha, '%Y-%m-%d') AS fecha, TIME_FORMAT(e.desde, '%H:%i') AS desde, TIME_FORMAT(e.hasta, '%H:%i') AS hasta,
        e.compartido, e.para_todos, e.publico, e.publico_todos, e.texto_publico, e.recordatorio,
-       DATE_FORMAT(e.publicado_at, '%Y-%m-%d %H:%i:%s') AS publicado_at
+       DATE_FORMAT(e.publicado_at, '%Y-%m-%d %H:%i:%s') AS publicado_at, e.aviso_por_mail
      FROM mi_espacio_eventos e LEFT JOIN usuarios c ON c.id = e.creado_por
      WHERE e.activo = 1 AND e.fecha BETWEEN ? AND ?
      ORDER BY e.fecha, e.desde, e.id`,
@@ -64,6 +65,7 @@ export const eventosDelAviso = async (desde, hasta, conexion = pool) => {
     texto_publico: fila.texto_publico ?? null,
     recordatorio: fila.recordatorio,
     publicado_at: fila.publicado_at ?? null,
+    aviso_por_mail: Number(fila.aviso_por_mail) !== 0,
     personas: personas.get(Number(fila.id)),
     vistas: vistas.get(Number(fila.id))
   }));

@@ -117,7 +117,8 @@ const marcaDe = (evento, contexto) => {
  * - `gente`, siempre: los Públicos de quien tiene a esta persona en su cadena, sean o no de los que marcó, `{ fecha, desde, hasta, texto,
  *   nuevo }`. De un Público de otra persona, **ni el título ni el detalle: acá no se leen**, y por eso los Públicos ajenos se separan
  *   antes de hacer nada más con el evento. Uno que no es de su gente no entra, aunque se lo muestren: a quien solo fue elegida no le llega
- *   nada;
+ *   nada. Uno con `aviso_por_mail` en el false literal (el tilde apagado de quien lo cargó; sin la clave, prendido: spec
+ *   2026-11-27-evento-mail-optativo, 6) tampoco: ni a las 14:00, ni a las 8:05, ni como rezagado, y no queda informado;
  * - `informa`: lo que queda informado si el mail sale, `{ evento_id, fecha }`.
  * A las 14:00 trae los días de `diasDelAviso` y, a un superior, los rezagados de hoy. A las 8:05, solo si tiene un rezagado: entonces trae
  * todo hoy, con `nuevo` en lo sin informar. Un rezagado es un Público de su gente, de hoy, sin informar, publicado antes de hoy (o sin dato:
@@ -137,7 +138,9 @@ export const mailDeLaPersona = ({ persona, eventos, informados, momento, ahora, 
   const rezagados = [];
   for (const evento of eventos) {
     if (esPublico(evento) && evento.creado_por !== persona.id) {
-      if (!evento.creador_activo || !superioresDe(evento.creado_por, usuarios).some((fila) => fila.id === persona.id)) continue;
+      // El tilde de quien lo cargó, sin leer nada más del evento (spec 2026-11-27-evento-mail-optativo, 6)
+      if (!evento.creador_activo || evento.aviso_por_mail === false) continue;
+      if (!superioresDe(evento.creado_por, usuarios).some((fila) => fila.id === persona.id)) continue;
       const rezagado = evento.fecha === hoy && sinInformar(evento) && evento.desde > hora
         && (evento.publicado_at === null || evento.publicado_at.slice(0, 10) < hoy);
       const item = {

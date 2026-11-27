@@ -118,6 +118,15 @@ describe('eventosDelAviso', () => {
     assert.deepEqual([dos.personas.map((p) => p.id), dos.vistas.map((v) => v.id)], [[otra], [otra]]);
   });
 
+  // El aviso por mail optativo (spec 2026-11-27-evento-mail-optativo, 6): prendido salvo un 0 de la base
+  it('el aviso por mail: false con un 0; con el valor de entrada de la columna, prendido', async () => {
+    const creador = await persona({ clave: 'creador' });
+    const apagado = await evento({ creador, publico: 1 });
+    await query('UPDATE mi_espacio_eventos SET aviso_por_mail = 0 WHERE id = ?', [apagado]);
+    const prendido = await evento({ creador, desde: '11:00:00', publico: 1 });
+    assert.deepEqual((await datos.eventosDelAviso('2026-11-06', '2026-11-06')).map((e) => [e.id, e.aviso_por_mail]), [[apagado, false], [prendido, true]]);
+  });
+
   it('el creador desactivado queda dicho, y un evento sin creador no se rompe', async () => {
     const inactiva = await persona({ clave: 'inactiva', activo: 0 });
     await evento({ creador: inactiva });

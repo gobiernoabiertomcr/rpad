@@ -254,16 +254,20 @@ describe('mailDeLaPersona (spec, 5.2 a 5.4)', () => {
       assert.equal(mail(TOMAS, eventos), null);
     });
 
-    it('**de un Público ajeno no se lee ni el título, ni el detalle, ni con quién está**', () => {
-      const conTrampas = publico(1);
-      for (const campo of ['titulo', 'detalle', 'personas', 'vistas']) {
-        Object.defineProperty(conTrampas, campo, { get() { throw new Error(`se leyó ${campo}`); } });
-      }
+    it('**de un Público ajeno no se lee ni el título, ni el detalle, ni con quién está**, tampoco con el aviso por mail apagado', () => {
+      const conTrampas = (id, cambios = {}) => {
+        const elEvento = publico(id, cambios);
+        for (const campo of ['titulo', 'detalle', 'personas', 'vistas']) {
+          Object.defineProperty(elEvento, campo, { get() { throw new Error(`se leyó ${campo}`); } });
+        }
+        return elEvento;
+      };
+      const eventos = [conTrampas(1), conTrampas(2, { desde: '11:00', aviso_por_mail: false, texto_publico: 'Asunto familiar' })];
       for (const persona of [FEDERICO, GRACIELA, TOMAS, LUCIA]) {
-        const resultado = mail(persona, [conTrampas]);
+        const resultado = mail(persona, eventos);
         if (resultado) assert.ok(!JSON.stringify(resultado).includes('Título'));
       }
-      assert.equal(mail(FEDERICO, [conTrampas]).gente[0].texto, 'Micaela: Fuera de la oficina');
+      assert.deepEqual(mail(FEDERICO, eventos).gente.map((item) => item.texto), ['Micaela: Fuera de la oficina']);
     });
 
     it('con publico y compartido juntos (datos mal), manda el Público: a un Laboral no entra', () => {
@@ -372,6 +376,62 @@ describe('mailDeLaPersona (spec, 5.2 a 5.4)', () => {
     it('el evento que cambió de fecha entra como no informado para la nueva, aunque ya se le haya informado la otra', () => {
       const informados = new Set([claveDeInformado(1, 2, '2026-11-09')]);
       assert.equal(mail(FEDERICO, [cargadoAyer()], opciones(informados)).gente.length, 1);
+    });
+  });
+
+  // El aviso por mail optativo (spec 2026-11-27-evento-mail-optativo, 6): un Público de su gente con el tilde apagado no le llega a la cadena
+  // por ningún camino, ni cuenta como rezagado; lo propio de quien lo cargó no cambia
+  describe('con el aviso por mail apagado', () => {
+    const apagado = (id, cambios = {}) => publico(id, { aviso_por_mail: false, texto_publico: 'Asunto familiar', ...cambios });
+    const VIERNES_TARDE = '2026-11-06 14:00:00';
+
+    it('a las 14:00 no le llega a nadie de la cadena', () => {
+      for (const persona of [FEDERICO, GRACIELA]) assert.equal(mail(persona, [apagado(1)]), null, persona.nombre_completo);
+    });
+
+    it('con otro prendido el mismo día, solo el prendido, y solo ese queda informado', () => {
+      const eventos = [apagado(1), publico(2, { desde: '11:00' })];
+      for (const persona of [FEDERICO, GRACIELA]) {
+        const resultado = mail(persona, eventos);
+        assert.deepEqual(resultado.gente.map(({ evento_id: id, texto }) => [id, texto]), [[2, 'Micaela: Fuera de la oficina']], persona.nombre_completo);
+        assert.deepEqual(resultado.informa, [{ evento_id: 2, fecha: '2026-11-06' }]);
+      }
+    });
+
+    it('a las 8:05, uno de hoy sin informar y publicado antes no dispara el mail; con otro rezagado prendido, no aparece', () => {
+      const opciones = { momento: 'manana', ahora: VIERNES_MANANA };
+      const deHoy = apagado(1, { desde: '08:15', publicado_at: '2026-11-05 14:02:00' });
+      assert.equal(mail(FEDERICO, [deHoy], opciones), null);
+      const resultado = mail(FEDERICO, [deHoy, publico(2, { desde: '09:00', publicado_at: '2026-11-05 15:00:00' })], opciones);
+      assert.deepEqual(resultado.gente.map(({ evento_id: id, nuevo }) => [id, nuevo]), [[2, true]]);
+      assert.deepEqual(resultado.informa, [{ evento_id: 2, fecha: '2026-11-06' }]);
+    });
+
+    it('a las 14:00 tampoco entra al grupo «Hoy»', () => {
+      const deHoy = apagado(1, { desde: '16:00', publicado_at: '2026-11-05 15:00:00' });
+      assert.equal(mail(FEDERICO, [deHoy], { ahora: VIERNES_TARDE }), null);
+      const resultado = mail(FEDERICO, [deHoy, publico(2, { desde: '17:00', publicado_at: '2026-11-05 15:00:00' })], { ahora: VIERNES_TARDE });
+      assert.deepEqual(resultado.gente.map((item) => item.evento_id), [2]);
+    });
+
+    it('prendido hoy para hoy (publicado_at de hoy) no es rezagado: ni a las 8:05 ni a las 14:00', () => {
+      const prendidoHoy = publico(1, { aviso_por_mail: true, desde: '16:00', publicado_at: '2026-11-06 07:30:00' });
+      assert.equal(mail(FEDERICO, [prendidoHoy], { momento: 'manana', ahora: VIERNES_MANANA }), null);
+      assert.equal(mail(FEDERICO, [{ ...prendidoHoy, publicado_at: '2026-11-06 09:00:00' }], { ahora: VIERNES_TARDE }), null);
+    });
+
+    it('lo propio de quien lo cargó sigue saliendo, con su marca de siempre', () => {
+      const resultado = mail(MICAELA, [apagado(1, { vistas: [{ id: 4, nombre: 'Lucía Ortiz' }] })]);
+      assert.deepEqual(resultado.propios.map(({ evento_id: id, titulo, detalle, marca }) => [id, titulo, detalle, marca]), [
+        [1, 'Título 1', 'Detalle 1', 'Lo ve Lucía como «Asunto familiar»']
+      ]);
+      assert.deepEqual(resultado.gente, []);
+    });
+
+    it('un evento sin la clave (los de los datos de antes) cuenta como prendido', () => {
+      const sinLaClave = publico(1);
+      assert.equal('aviso_por_mail' in sinLaClave, false);
+      assert.equal(mail(FEDERICO, [sinLaClave]).gente.length, 1);
     });
   });
 

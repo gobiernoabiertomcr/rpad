@@ -4,6 +4,7 @@ Un mail a las 14:00 del día hábil anterior con la agenda de cada persona, y a 
 
 Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-04-agenda-aviso-y-dependencia-design.md`
+- `docs/superpowers/specs/2026-11-27-evento-mail-optativo-design.md` (el aviso por mail optativo de un Público)
 
 ## Archivos
 
@@ -30,7 +31,10 @@ Historia y motivos, en las specs:
 - `mailDeLaPersona({ persona, eventos, informados, momento, ahora, calendario, usuarios })` da null o `{ propios, gente, dias, soloHoy, informa }`.
 - Lo propio, solo con `eventos_por_mail`: lo que creó, de los tres tipos, con título, detalle y una marca, y los Laborales de otra persona en los que está, con «Laboral, de Federico».
 - Haber apagado «Mi recordatorio» de un evento no lo saca de este mail.
-- Lo de su gente, siempre: los Públicos activos de quien la tiene en su cadena, de un creador activo, solo con el nombre corto y el texto corto, «Micaela: Fuera de la oficina», con la hora y «Hasta las 10:00» si tiene fin.
+- Lo de su gente, sin casilla de por medio: los Públicos activos de quien la tiene en su cadena, de un creador activo, solo con el nombre corto y el texto corto, «Micaela: Fuera de la oficina», con la hora y «Hasta las 10:00» si tiene fin.
+- Un Público con el aviso por mail apagado (`aviso_por_mail` en 0) no le llega a nadie de la cadena: ni a las 14:00, ni a las 8:05, ni en el grupo «Hoy»; no cuenta como rezagado ni queda informado.
+  Quien esté marcado lo ve igual en su agenda, y quien lo cargó lo sigue recibiendo en lo propio, con su casilla.
+  `eventosDelAviso` lo trae prendido salvo un 0 de la base, y `mailDeLaPersona` corta solo con el `false` literal, en la rama del Público ajeno, junto a `creador_activo` y antes de leer nada más del evento.
 - Quien solo fue elegida para ver un Público no recibe nada: el mail es para que los jefes estén enterados, no para quienes lo ven en su agenda (decisión del usuario).
 - Un jefe no ve el título aunque esté marcado para verlo: la marca decide la agenda, y la cadena, el mail.
   Tampoco lo ve en su agenda, donde un Público siempre llega recortado.
@@ -87,7 +91,10 @@ Historia y motivos, en las specs:
 
 - `usuarios.eventos_por_mail`, `PUT /api/mi-espacio/eventos-por-mail` con `{ recibir: true | false }`; otro valor, 400 en `recibir`.
 - `GET /api/mi-espacio/eventos` trae `eventos_por_mail` y `alguien_depende`, con el que la página suma «Lo de quienes dependen de vos te llega igual.».
-- Apaga solo lo propio: lo que le llega como jefe no se apaga, para que el objetivo no dependa de una casilla (decisión del usuario).
+- Apaga solo lo propio: lo que le llega como jefe no se apaga desde su casilla, para que el objetivo no dependa de ella (decisión del usuario).
+- El mail a la cadena depende también del tilde «Aviso por mail» de quien carga cada Público: quien recibe no puede apagar lo de su gente, y quien carga decide evento por evento (decisión del usuario, spec 2026-11-27-evento-mail-optativo, sección 10).
+  El motivo: poder dejar algo a la vista de quien se elige, en su agenda, sin avisarle por mail a la cadena.
+- Por eso los textos de la casilla («Lo de quienes dependen de vos te llega igual.») y las notas al pie del mail del jefe («…lo demás te llega siempre.») no cambian: desde el lado de quien recibe siguen siendo ciertos, y el tilde se le explica a quien carga el evento, en el formulario, al guardar, en Próximos y en el Resumen.
 
 ## Los mails
 
