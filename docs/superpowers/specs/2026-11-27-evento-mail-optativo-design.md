@@ -33,6 +33,7 @@ Quiere que las personas que marca lo vean en su agenda, con el texto corto, y el
 | Dónde se ve | Una insignia gris «Sin aviso por mail» en Próximos y en el día elegido, al lado de «Lo ve Federico como «…»»; y en «Hoy y mañana» del Resumen, «Hoy · lo ve Federico como «…», sin aviso por mail». Tu propio mail de la agenda no cambia. |
 | La ayuda de las personas, apagado | Sin la parte del mail: «Federico ya está en la lista, porque dependés de esa persona. Si le sacás la marca, no lo ve en su agenda.». Sin la marca, solo la primera oración de siempre. |
 | Configuración | La ayuda de «Depende de» suma «salvo los que cargue sin aviso por mail». |
+| Lo que lee el jefe | Sin cambios: las notas al pie del mail («…lo demás te llega siempre.») y la casilla («Lo de quienes dependen de vos te llega igual.») siguen siendo ciertas desde su lado, porque él no puede apagar lo de su gente. El tilde se le explica a quien carga el evento. |
 
 ## 3. Cómo se construye (enfoques)
 
@@ -144,6 +145,7 @@ Si también se deshace el aviso diario, va antes que `rollback-mi-espacio-evento
 - Quién ve un Público en su agenda, cómo lo ve y su orden.
 - El recordatorio de un Público: le llega solo a quien lo cargó.
 - La casilla «Recibir mi agenda por mail» y lo que le llega a quien lo cargó.
+- Los textos del mail del jefe (`NOTA_DEL_AVISO_CON_GENTE`, `NOTA_DEL_AVISO_SOLO_GENTE`) y los de la casilla (`ayudaDeLaCasilla`, `mensajeDeLaCasilla`): decisión del usuario.
 - `GET /mi-espacio/eventos/aviso-de-la-cadena`, `cuandoLlegaElAviso` y `fraseDelAviso`.
 
 ## 12. Pruebas
