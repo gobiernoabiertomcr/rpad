@@ -2867,8 +2867,9 @@ function gruposDeProximos(datos, hoy) {
 
 // Una cosa de los próximos: la hora, el título con el ícono de la cosa delante (decorativo; lo que es solo tuyo, un punto; un
 // Público, el ojo; un evento es un botón con su id: lo abre) y el detalle (de un evento, quién está, en su color, y su aviso). Un
-// Público tuyo (el que lleva el ojo, `icono`) dice a quiénes se lo mostrás y cómo, en una línea con el ojo y sin insignia de color (con el aviso por mail apagado, suma la gris) («Lo ven
-// todos como «Turno médico»», spec 2026-10-29-mi-espacio-evento-publico, 5.1); uno de otra persona, nada de quién está
+// Público tuyo (el que lleva el ojo, `icono`) dice a quiénes se lo mostrás y cómo, en una línea con el ojo y sin insignia de color:
+// «Lo ven todos como «Turno médico»» (spec 2026-10-29-mi-espacio-evento-publico, 5.1). Con el aviso por mail apagado, suma después
+// la insignia gris (spec 2026-11-27-evento-mail-optativo, 7). Uno de otra persona, nada de quién está
 const htmlDeProximo = (item) => {
   const icono = `<span class="me-prox-icono ${esc(item.clase)}" aria-hidden="true">${iconoOPunto(item.clase, item.icono)}</span>`;
   const titulo = Object.hasOwn(item, 'evento_id')
@@ -6778,10 +6779,16 @@ async function alCambiarLaCasilla() {
 }
 
 // La casilla del aviso por mail: lo que dice queda en los valores (cambiar de tipo y volver no la toca) y la frase y la ayuda de las
-// personas lo dicen; el foco sigue en la casilla, que no se vuelve a dibujar. El cuándo del servidor se sigue pidiendo: al prenderla, ya está
+// personas lo dicen; el foco sigue en la casilla, que no se vuelve a dibujar. El cuándo del servidor se sigue pidiendo: al prenderla,
+// ya está. Mientras guarda, como los tipos, los textos y las personas, no cambia nada: el pedido ya salió, y la casilla vuelve a lo
+// que dicen los valores
 function alCambiarElAvisoPorMail() {
   const formulario = pagina.evento;
   if (!formulario) return;
+  if (formulario.guardando) {
+    pintarLaFrase();
+    return;
+  }
   const casilla = porId('ev-aviso-mail');
   formulario.valores = { ...valoresDelFormularioDeEvento(formulario), aviso_por_mail: casilla.checked === true };
   pintarLaFrase();

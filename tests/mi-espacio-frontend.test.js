@@ -6942,7 +6942,10 @@ describe('cómo se ve el evento Personal (Público) en la agenda (lo puro)', () 
     const eventos = [{ ...itemDel(PUBLICO_CON_TODOS), aviso_por_mail: false }];
     const datos = { ...delMesCon([]), eventos };
     assert.ok(!JSON.stringify(plano(Object.fromEntries([...M.cosasPorDia(datos)]))).includes('sin_aviso'));
-    assert.ok(!M.htmlDelMes('2026-10', datos, HOY).includes('Sin aviso por mail'));
+    const mes = M.htmlDelMes('2026-10', datos, HOY);
+    // El evento está en la grilla, sin la insignia
+    assert.ok(mes.includes('Firma en la escribanía'));
+    assert.ok(!mes.includes('Sin aviso por mail'));
   });
 
   it('el día elegido: uno tuyo con el ojo y debajo a quiénes se lo mostrás; uno de otra persona, en rosado con el ojo y nada debajo', () => {
@@ -7930,6 +7933,36 @@ describe('¿Quién lo ve?: en la página (DOM falso)', () => {
       'FR Federico GP Graciela De quienes dependés: no les va a llegar ningún mail por este evento.');
     await pagina.tocar(pagina.el('ev-guardar'));
     assert.deepEqual(pagina.pedidosA('PUT', '/api/mi-espacio/eventos/19').map((p) => p.cuerpo.aviso_por_mail), [false]);
+  });
+
+  // Como los tipos, los textos y las personas: lo que salió en el pedido es lo que dice el formulario (Revisión final, M1)
+  it('mientras guarda, tocar la casilla no cambia nada: vuelve a como estaba, la frase sigue y, si falla, el próximo POST manda lo mismo', async () => {
+    let soltar;
+    const demorado = new Promise((resolver) => { soltar = resolver; });
+    let posts = 0;
+    const pagina = await abrirNuevo(conCadena((metodo, ruta) => {
+      if (metodo !== 'POST' || ruta !== '/api/mi-espacio/eventos') return undefined;
+      posts += 1;
+      return posts === 1 ? demorado.then(() => respuesta(500, { success: false, error: 'Falló' })) : undefined;
+    }));
+    await pagina.escribir('ev-titulo', 'Turno con el oculista');
+    await pagina.escribir('ev-fecha', '2026-11-05');
+    await pagina.escribir('ev-desde', '10:00');
+    await pagina.tocar(tipoDel(pagina, 'publico'));
+    await pagina.correr();
+    await pagina.tocar(textoDel(pagina, 'Turno médico'));
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.deepEqual(pagina.pedidosA('POST', '/api/mi-espacio/eventos').map((p) => p.cuerpo.aviso_por_mail), [true]);
+    await apagarElAviso(pagina);
+    assert.equal(casillaDelAviso(pagina).checked, true);
+    assert.equal(textoDe(pagina.el('ev-tipo-ayuda').innerHTML), `FR Federico GP Graciela ${AVISO}`);
+    assert.ok(!pagina.el('ev-tipo-ayuda').querySelector('.me-superiores').classList.contains('apagados'));
+    soltar();
+    await pagina.esperar();
+    assert.deepEqual(abiertos(pagina), ['modal-evento']);
+    assert.equal(casillaDelAviso(pagina).checked, true);
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.deepEqual(pagina.pedidosA('POST', '/api/mi-espacio/eventos').map((p) => p.cuerpo.aviso_por_mail), [true, true]);
   });
 
   it('un Laboral a muchas personas pide confirmar; «Cancelar» no manda nada y «Guardar» manda uno solo', async () => {

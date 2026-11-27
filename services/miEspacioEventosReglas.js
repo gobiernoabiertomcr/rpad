@@ -269,7 +269,7 @@ export const validarEvento = (entrada, hoy) => {
  * cambio, el evento de antes (`anterior`, el de los datos, o null en un alta): un Privado y un Laboral, true (si después pasa a
  * Público, arranca prendido); un Público, el true o el false que vino; si no vino, lo que tenía si ya era Público (una pestaña
  * con la página anterior no lo manda y no tiene que prenderlo ni apagarlo: es la regla de «un cuerpo sin `depende_de` no lo
- * toca») y, en un alta o si era de otro tipo, true. Solo un false o un 0 de antes lo deja apagado. Nada tira.
+ * toca») y, en un alta o si era de otro tipo, true. Solo un false, un 0 o un '0' de antes lo deja apagado. Nada tira.
  */
 export const avisoPorMailAlGuardar = (datos, anterior = null) => {
   const pedido = esObjeto(datos) ? datos : {};
