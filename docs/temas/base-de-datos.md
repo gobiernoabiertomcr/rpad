@@ -195,6 +195,14 @@ Historia y motivos, en las specs:
   Antes borra las filas de quien hoy no es administración activa: son de un recordatorio apagado, hoy no le dan acceso y convertidas sí.
   Por eso se puede repetir solo antes del Restart del código nuevo: después achicaría a la administración los «Todos» nuevos.
   `rollback-mi-espacio-eventos-diario.sql` va después de volver a los archivos anteriores y antes de los del Público y la agenda: los «para todos» viejos no vuelven y un «Todos» nuevo queda solo para la administración.
+- **El aviso por mail optativo de un Público** (`migracion-mi-espacio-evento-aviso-por-mail.sql`; spec 2026-11-27-evento-mail-optativo, 9; las reglas, en `docs/temas/mi-espacio-aviso-diario.md`):
+  `mi_espacio_eventos.aviso_por_mail` tinyint(1) NOT NULL DEFAULT 1, después de `publicado_at`: 1 si el evento se avisa por mail a la cadena de quien lo cargó; 0, un Público con el tilde apagado.
+  Los eventos que ya existen quedan en 1.
+  La migración (aditiva y repetible: un `ADD COLUMN IF NOT EXISTS … AFTER publicado_at`) va después de `migracion-dato-quincena-votacion.sql` y **antes** del código, obligatoria: el código nuevo sin la columna da «Unknown column» en toda la agenda.
+  El código anterior anda con la columna: no la lee y lo que guarda queda en 1.
+  `tests/schema.test.js` (compara `schema.sql` con la base del `.env`) y `tests/permisos.test.js` (`GET /mi-espacio/eventos`, sobre esa base) la necesitan: la base local también necesita la migración antes de correr la suite.
+  `rollback-mi-espacio-evento-aviso-por-mail.sql` va después de volver a los archivos anteriores y borra la columna: **los eventos con el tilde apagado vuelven a mandar el mail a la cadena**, y su cabecera trae la consulta para listarlos antes.
+  Si también se deshace el aviso diario, va antes que `rollback-mi-espacio-eventos-diario.sql`: las vueltas atrás van de la más nueva a la más vieja.
 
 ## Los días restituidos
 
