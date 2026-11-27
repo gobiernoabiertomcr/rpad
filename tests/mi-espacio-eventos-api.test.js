@@ -1585,8 +1585,8 @@ describe('Personal (Público)', () => {
   const CLAVES_DEL_AJENO_PUBLICO = ['id', 'fecha', 'desde', 'hasta', 'es_mio', 'compartido', 'publico', 'creador', 'titulo',
     'texto_publico'];
   const CLAVES_DEL_MIO_PUBLICO = ['id', 'titulo', 'detalle', 'fecha', 'desde', 'hasta', 'es_mio', 'compartido', 'para_todos',
-    'publico', 'publico_todos', 'texto_publico', 'creador', 'personas', 'personas_ids', 'recordatorio', 'recordatorio_texto',
-    'mi_recordatorio', 'aviso', 'quien_texto'];
+    'publico', 'publico_todos', 'texto_publico', 'aviso_por_mail', 'creador', 'personas', 'personas_ids', 'recordatorio',
+    'recordatorio_texto', 'mi_recordatorio', 'aviso', 'quien_texto'];
   const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   // Las columnas del Público de un evento y a quién se le muestra, por SQL

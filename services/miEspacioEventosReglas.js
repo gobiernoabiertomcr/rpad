@@ -162,6 +162,10 @@ const recordatorioPedido = (valor) => {
   return esRecordatorio(recordatorio) ? recordatorio : null;
 };
 
+// El aviso por mail pedido para un Público (spec 2026-11-27-evento-mail-optativo, 5.1): solo el true y el false literales;
+// cualquier otra cosa, o sin la clave, null («no vino»)
+const avisoPorMailPedido = (valor) => (typeof valor === 'boolean' ? valor : null);
+
 // El tipo pedido (el paso 6 de validarEvento): el de TIPOS_DE_EVENTO que dice el cuerpo. Sin él (o null: un cuerpo de antes,
 // de una pestaña que quedó abierta con la página anterior), como antes: con `compartido` en el true literal, 'laboral', y si
 // no, 'privado'. Cualquier otro valor, null
@@ -182,9 +186,9 @@ const personasElegidas = (valor, ninguna) => {
  * Valida un evento, el cuerpo de un alta o de un cambio (el formulario entero), contra hoy ('AAAA-MM-DD'). Devuelve
  * `{ datos, error }`: `error` es null, o `{ campo, mensaje }` del primero que no sirve, y entonces `datos` es null; si no,
  * `datos` es `{ titulo, detalle, fecha, desde, hasta, tipo, compartido, para_todos, publico, publico_todos, personas,
- * texto_publico, recordatorio }`. El cuerpo es `{ titulo, fecha, desde, hasta, detalle, recordatorio, tipo, para_todos,
- * personas, texto_publico }`: `para_todos` y `personas` son el «Todos» y las personas del tipo que corresponda (spec
- * 2026-10-29-mi-espacio-evento-publico, 6.5). Los controles, en este orden (el del formulario):
+ * texto_publico, aviso_por_mail, recordatorio }`. El cuerpo es `{ titulo, fecha, desde, hasta, detalle, recordatorio, tipo,
+ * para_todos, personas, texto_publico, aviso_por_mail }`: `para_todos` y `personas` son el «Todos» y las personas del tipo que
+ * corresponda (spec 2026-10-29-mi-espacio-evento-publico, 6.5). Los controles, en este orden (el del formulario):
  * 1. el título, recortado: vacío (o lo que no es un texto), `titulo`; de más de 150 caracteres, `tituloLargo`;
  * 2. la fecha: una que existe, del 01/01/2025 a fechaMaximaEvento(hoy), cualquier día (también un fin de semana o un
  *    feriado); si no, textoRangoEvento. Sin un hoy válido no pasa ninguna;
@@ -203,8 +207,12 @@ const personasElegidas = (valor, ninguna) => {
  * Lo que se guarda de cada tipo: un Laboral, `compartido` en true y `para_todos` con su «Todos» (`publico` y
  * `publico_todos` en false, `texto_publico` null); un Público, `compartido` y `para_todos` en false (se guarda como uno
  * personal: ningún camino de los emails lo toca), `publico` en true, `publico_todos` con su «Todos» y el texto; un Privado,
- * todo lo de compartir en false, [] y null. Los caracteres se cuentan con Array.from. Una entrada que no es un objeto
- * cuenta como `{}`. Que las personas sean de la lista lo controla la API (`personasInvalidas`), con la base.
+ * todo lo de compartir en false, [] y null. `aviso_por_mail` (spec 2026-11-27-evento-mail-optativo, 5.1), el tilde del
+ * aviso por mail a la cadena: en un Público, true o false si vino ese literal y null en cualquier otro caso («no vino»:
+ * avisoPorMailAlGuardar lo resuelve con el evento de antes, así una pestaña con la página anterior no lo mueve); en un
+ * Privado y un Laboral, true, venga lo que venga. Nunca da error: es una casilla. Los caracteres se cuentan con Array.from.
+ * Una entrada que no es un objeto cuenta como `{}`. Que las personas sean de la lista lo controla la API
+ * (`personasInvalidas`), con la base.
  */
 export const validarEvento = (entrada, hoy) => {
   const fuente = esObjeto(entrada) ? entrada : {};
@@ -250,10 +258,25 @@ export const validarEvento = (entrada, hoy) => {
     datos: {
       titulo, detalle: detalle === '' ? null : detalle, fecha, desde, hasta, tipo, compartido: laboral,
       para_todos: laboral && todos, publico, publico_todos: publico && todos, personas, texto_publico: textoPublico,
-      recordatorio
+      aviso_por_mail: publico ? avisoPorMailPedido(fuente.aviso_por_mail) : true, recordatorio
     },
     error: null
   };
+};
+
+/**
+ * Lo que se guarda en `aviso_por_mail` (spec 2026-11-27-evento-mail-optativo, 5.1), de los `datos` de validarEvento y, en un
+ * cambio, el evento de antes (`anterior`, el de los datos, o null en un alta): un Privado y un Laboral, true (si después pasa a
+ * Público, arranca prendido); un Público, el true o el false que vino; si no vino, lo que tenía si ya era Público (una pestaña
+ * con la página anterior no lo manda y no tiene que prenderlo ni apagarlo: es la regla de «un cuerpo sin `depende_de` no lo
+ * toca») y, en un alta o si era de otro tipo, true. Solo un false o un 0 de antes lo deja apagado. Nada tira.
+ */
+export const avisoPorMailAlGuardar = (datos, anterior = null) => {
+  const pedido = esObjeto(datos) ? datos : {};
+  if (!esSi(pedido.publico)) return true;
+  if (typeof pedido.aviso_por_mail === 'boolean') return pedido.aviso_por_mail;
+  const antes = esObjeto(anterior) ? anterior : {};
+  return esSi(antes.publico) ? !esNo(antes.aviso_por_mail) : true;
 };
 
 /**
@@ -773,9 +796,11 @@ const itemDelPublicoAjeno = (fuente, usuarios) => {
  *   quién más está: no salen del servidor hacia otra persona;
  * - todos los demás: `{ id, titulo, detalle, fecha, desde, hasta, es_mio, compartido, para_todos, publico, creador,
  *   personas, personas_ids, recordatorio, recordatorio_texto, mi_recordatorio, aviso, quien_texto, quien_largo }`, y un
- *   Público (de quien lo pide) suma `publico_todos` y `texto_publico` después de `publico`. Ahí:
+ *   Público (de quien lo pide) suma `publico_todos`, `texto_publico` y `aviso_por_mail` después de `publico`. Ahí:
  *   - `es_mio`: lo creó quien lo pide; `publico`: es un Personal (Público). Un Público nunca es compartido (con los datos
  *     mal, publico y compartido a la vez, manda el Público: `compartido` y `para_todos` en false);
+ *   - `aviso_por_mail`, solo en un Público propio: el tilde del aviso por mail a la cadena (spec
+ *     2026-11-27-evento-mail-optativo, 5.4), false solo con un 0 o un false de los datos (sin la clave, prendido);
  *   - `creador`: el nombre corto de quien lo creó, como lo ven los compañeros (`nombreCorto`: «Julián», o «Carla B.» si hay
  *     otra Carla; spec 2026-10-28-mi-espacio-agenda-onda, 5.1), o null sin un nombre;
  *   - `personas`: los nombres completos de las elegidas (el formulario los muestra al lado de los de la lista para
@@ -838,7 +863,13 @@ export const itemDeEvento = (evento, contexto) => {
     para_todos: paraTodos,
     publico
   };
-  if (publico) Object.assign(item, { publico_todos: publicoTodos, texto_publico: textoPublicoDe(fuente.texto_publico) });
+  if (publico) {
+    Object.assign(item, {
+      publico_todos: publicoTodos,
+      texto_publico: textoPublicoDe(fuente.texto_publico),
+      aviso_por_mail: !esNo(fuente.aviso_por_mail)
+    });
+  }
   Object.assign(item, { creador, personas: elegidas.map(nombre) });
   if (esMio) item.personas_ids = elegidas.map((persona) => idPositivo(persona.id));
   Object.assign(item, {
@@ -1073,6 +1104,10 @@ export const fraseDelMes = (entrada) => {
 // «Turno médico»»
 const minuscula = (texto) => texto.charAt(0).toLowerCase() + texto.slice(1);
 
+// Lo que suma un Público tuyo con el aviso por mail apagado a quién lo ve, en «Hoy y mañana» (spec
+// 2026-11-27-evento-mail-optativo, 7): «lo ve Federico como «Fuera de la oficina», sin aviso por mail»
+export const SUFIJO_SIN_AVISO_POR_MAIL = ', sin aviso por mail';
+
 /**
  * Los eventos de «Hoy y mañana» del Resumen (spec, sección 6, y spec 2026-10-27-mi-espacio-resumen, 4.4), de los ítems de
  * `itemDeEvento` (los que ve la persona), hoy ('AAAA-MM-DD') y ahora ('AAAA-MM-DD HH:MM:SS' de `ahoraArgentina()`, o sin los
@@ -1083,7 +1118,8 @@ const minuscula = (texto) => texto.charAt(0).toLowerCase() + texto.slice(1);
  * `quien_texto`, ''), para las columnas de la página, que no corta `detalle`; `compartido`, si el evento es un Laboral (el
  * violeta de la página), y `publico`, si es un Personal (Público) (spec 2026-10-29-mi-espacio-evento-publico, 5.4): el de otra
  * persona va con su título, «Carla: Turno médico», y sin nada de quién está (`quien` '' y `detalle` «Hoy» o «Mañana», aunque
- * el ítem trajera un `quien_texto`, que no trae). Ni los de antes ni los de pasado
+ * el ítem trajera un `quien_texto`, que no trae); el tuyo con `aviso_por_mail` en false suma SUFIJO_SIN_AVISO_POR_MAIL a
+ * `quien` (y así a `detalle`: spec 2026-11-27-evento-mail-optativo, 7). Ni los de antes ni los de pasado
  * mañana, ni los de hoy que ya terminaron (decisión del usuario, 27/10/2026): los que tienen su fin (`hasta` si es una hora;
  * si no, `desde`) antes de la hora y el minuto de ahora (a las 10:00, uno de 09:00 a 10:00 todavía va; a las 10:01, ya no).
  * Sin un ahora que sirva o con uno de otro día, no saca ninguno; uno sin ninguna hora, tampoco (no se sabe si terminó). Los de
@@ -1106,7 +1142,10 @@ export const eventosDeHoyYManana = (items, hoy, ahora) => {
       const dia = item.fecha === hoy ? 'Hoy' : 'Mañana';
       const publico = esSi(item.publico);
       const deOtro = publico && item.es_mio !== true;
-      const quien = !deOtro && typeof item.quien_texto === 'string' ? minuscula(item.quien_texto.trim()) : '';
+      const quienLoVe = !deOtro && typeof item.quien_texto === 'string' ? minuscula(item.quien_texto.trim()) : '';
+      // Sin quién lo ve (los ítems siempre lo traen), nada: no queda una coma suelta
+      const sinAviso = publico && !deOtro && item.aviso_por_mail === false && quienLoVe !== '';
+      const quien = sinAviso ? `${quienLoVe}${SUFIJO_SIN_AVISO_POR_MAIL}` : quienLoVe;
       return {
         id: idPositivo(item.id),
         hora: hora(item),

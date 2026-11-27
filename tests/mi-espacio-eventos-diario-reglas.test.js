@@ -126,6 +126,43 @@ describe('mensajeDelGuardado (spec, 2.5)', () => {
   });
 });
 
+// El aviso por mail optativo (spec 2026-11-27-evento-mail-optativo, 5.3): con la cadena y el tilde apagado, lo dice, aunque la fecha no
+// llegue en ningún aviso; sin nadie arriba no vio ningún tilde, y sin avisoPorMail, como siempre
+describe('mensajeDelGuardado con el aviso por mail apagado', () => {
+  const quienTexto = 'Lo ve Lucía como «Trámite personal»';
+  const conTilde = (datos) => mensajeDelGuardado({ tipo: 'publico', verbo: 'guardado', quienTexto, superiores: ['Federico'], ...datos });
+  it('con la cadena: «… en su agenda, sin aviso por mail.», llegue o no el aviso', () => {
+    const esperado = 'Evento guardado. Lo ve Lucía como «Trámite personal» en su agenda, sin aviso por mail.';
+    assert.equal(conTilde({ aviso: { llega: true, cuando: 'hoy a las 14:00' }, avisoPorMail: false }), esperado);
+    assert.equal(conTilde({ aviso: { llega: false, motivo: 'como es para hoy' }, avisoPorMail: false }), esperado);
+    assert.equal(conTilde({ aviso: null, avisoPorMail: false }), esperado);
+    assert.equal(conTilde({ superiores: ['Federico', 'Graciela'], aviso: { llega: true, cuando: 'hoy a las 14:00' }, avisoPorMail: false }),
+      esperado);
+    assert.equal(conTilde({ verbo: 'cambiado', aviso: { llega: true, cuando: 'hoy a las 14:00' }, avisoPorMail: false }),
+      'Evento cambiado. Lo ve Lucía como «Trámite personal» en su agenda, sin aviso por mail.');
+  });
+
+  it('sin nadie arriba, como siempre', () => {
+    assert.equal(conTilde({ superiores: [], aviso: { llega: true, cuando: 'hoy a las 14:00' }, avisoPorMail: false }),
+      'Evento guardado. Lo ve Lucía como «Trámite personal» en su agenda.');
+  });
+
+  it('prendido o sin avisoPorMail, como siempre; en un Privado y un Laboral no cuenta', () => {
+    const llega = { llega: true, cuando: 'hoy a las 14:00' };
+    const conAviso = 'Evento guardado. Lo ve Lucía como «Trámite personal» en su agenda, y a Federico le llega antes del evento.';
+    assert.equal(conTilde({ aviso: llega }), conAviso);
+    assert.equal(conTilde({ aviso: llega, avisoPorMail: true }), conAviso);
+    // Solo el false literal
+    for (const avisoPorMail of [0, null, 'false']) assert.equal(conTilde({ aviso: llega, avisoPorMail }), conAviso, String(avisoPorMail));
+    assert.equal(conTilde({ aviso: { llega: false, motivo: 'como es para hoy' } }),
+      'Evento guardado. Lo ve Lucía como «Trámite personal» en su agenda.');
+    assert.equal(mensajeDelGuardado({ tipo: 'privado', verbo: 'guardado', quienTexto: 'Solo vos', avisoPorMail: false }),
+      'Evento guardado. Solo vos lo ves.');
+    assert.equal(mensajeDelGuardado({ tipo: 'laboral', verbo: 'guardado', quienTexto: 'Con Federico', superiores: ['Graciela'],
+      avisoPorMail: false }), 'Evento guardado. Con Federico.');
+  });
+});
+
 describe('mensajeDeLaCasilla (spec, 2.7)', () => {
   it('cada caso', () => {
     assert.equal(mensajeDeLaCasilla({ recibir: true, alguienDepende: true }), 'Te va a llegar tu agenda por mail.');

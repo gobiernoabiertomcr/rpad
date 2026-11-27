@@ -61,12 +61,15 @@ export const superioresConNombre = (id, usuarios) => {
  * El aviso de un guardado (spec, 2.5): «Evento guardado. Solo vos lo ves.», «Evento guardado. Lo ven Lucía y Tomás como «…» en su agenda, y
  * a Federico y Graciela les llega antes del evento.» o «Evento guardado. Con Federico.». `verbo`: 'guardado' o 'cambiado'; `quienTexto`,
  * el de itemDeEvento; `superiores`, los nombres cortos, y `aviso`, el de cuandoLlegaElAviso: sin nadie, o si no llega, no se nombra a nadie.
+ * `avisoPorMail`, el tilde guardado (spec 2026-11-27-evento-mail-optativo, 5.3): en un Público con la cadena y el false literal, «Evento
+ * guardado. Lo ve Lucía como «…» en su agenda, sin aviso por mail.», llegue o no el aviso; sin nadie arriba no vio ningún tilde y no lo dice.
  */
-export const mensajeDelGuardado = ({ tipo, verbo, quienTexto, superiores = [], aviso = null }) => {
+export const mensajeDelGuardado = ({ tipo, verbo, quienTexto, superiores = [], aviso = null, avisoPorMail = true }) => {
   const inicio = `Evento ${verbo}.`;
   if (tipo === 'privado') return `${inicio} Solo vos lo ves.`;
   // El punto de una inicial («Con Test e.») ya cierra la oración
   if (tipo !== 'publico') return `${inicio} ${quienTexto}${quienTexto.endsWith('.') ? '' : '.'}`;
+  if (superiores.length > 0 && avisoPorMail === false) return `${inicio} ${quienTexto} en su agenda, sin aviso por mail.`;
   if (superiores.length === 0 || aviso?.llega !== true) return `${inicio} ${quienTexto} en su agenda.`;
   return `${inicio} ${quienTexto} en su agenda, y a ${listaConY(superiores)} ${superiores.length === 1 ? 'le llega' : 'les llega'} antes del evento.`;
 };
