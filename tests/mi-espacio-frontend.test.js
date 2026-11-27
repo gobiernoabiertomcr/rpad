@@ -7850,6 +7850,26 @@ describe('¿Quién lo ve?: en la página (DOM falso)', () => {
     assert.ok(!Object.hasOwn(cuerpo, 'aviso_por_mail'));
   });
 
+  // Sin la lista de un Público no se sabe quién está en la cadena: no hay casilla, y uno nuevo se guarda prendido
+  it('si la lista de personas falla, la casilla queda oculta y el POST de un Público nuevo manda aviso_por_mail en true', async () => {
+    const pagina = await abrirNuevo(conCadena((metodo, ruta) => (ruta === RUTA_DE_PERSONAS_DEL_PUBLICO
+      ? respuesta(500, { success: false, error: 'No se pudo cargar la lista.' }) : undefined)));
+    await pagina.escribir('ev-titulo', 'Turno con el oculista');
+    await pagina.escribir('ev-fecha', '2026-11-05');
+    await pagina.escribir('ev-desde', '10:00');
+    await pagina.tocar(tipoDel(pagina, 'publico'));
+    await pagina.correr();
+    assert.equal(pagina.el('ev-aviso-mail-rotulo').hidden, true);
+    assert.equal(pagina.el('ev-tipo-ayuda').hidden, true);
+    await pagina.tocar(textoDel(pagina, 'Turno médico'));
+    await pagina.tocar(personaDel(pagina, 'todos'));
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.deepEqual(pagina.pedidosA('POST', '/api/mi-espacio/eventos').map((p) => p.cuerpo), [{
+      titulo: 'Turno con el oculista', fecha: '2026-11-05', desde: '10:00', hasta: null, detalle: '', recordatorio: '2h', tipo: 'publico',
+      para_todos: true, personas: [], texto_publico: 'Turno médico', aviso_por_mail: true
+    }]);
+  });
+
   it('al editar un Público con el aviso apagado, la casilla abre apagada y el PUT lo conserva', async () => {
     const APAGADO = eventoDe(19, 'Turno con la dentista', '2026-10-30', '16:00',
       { publico: 1, texto_publico: 'Turno médico', vistas: [{ id: 2, nombre: 'Federico Ríos' }], aviso_por_mail: 0 });
