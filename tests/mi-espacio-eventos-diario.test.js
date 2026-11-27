@@ -396,13 +396,19 @@ describe('con el aviso por mail apagado', () => {
   });
 
   it('a las 8:05, con un rezagado apagado y otro prendido, a la cadena le llega solo el prendido', async () => {
-    const { federico, micaela } = await cadena();
+    const { graciela, federico, micaela } = await cadena();
     await publico({ creador: micaela, desde: '08:15', texto: 'Asunto familiar', publicado: '2026-11-05 14:02:00', avisoPorMail: 0 });
     await publico({ creador: micaela, desde: '09:00', publicado: '2026-11-05 14:02:00' });
     assert.deepEqual(await corrida('manana', VIERNES_8), resultado({ enviados: 2 }));
-    const html = await mailpit.html((await esperarDe(federico.email))[0].ID);
-    assert.match(html, /<strong>Nuevo:<\/strong> Test m[^<]*: Fuera de la oficina/);
-    assert.doesNotMatch(html, /Asunto familiar/);
+    for (const superior of [federico, graciela]) {
+      const [mensaje] = await esperarDe(superior.email);
+      const html = await mailpit.html(mensaje.ID);
+      const texto = await mailpit.texto(mensaje.ID);
+      assert.match(html, /<strong>Nuevo:<\/strong> Test m[^<]*: Fuera de la oficina/);
+      assert.match(texto, /Nuevo: Test m[^\n]*: Fuera de la oficina/);
+      assert.doesNotMatch(html, /Asunto familiar/);
+      assert.doesNotMatch(texto, /Asunto familiar/);
+    }
   });
 });
 

@@ -1,6 +1,6 @@
 # Mi espacio: el aviso diario de la agenda
 
-Un mail a las 14:00 del día hábil anterior con la agenda de cada persona, y a sus jefes, el texto corto de lo que su gente deja a la vista.
+Un mail a las 14:00 del día hábil anterior con la agenda de cada persona, y a sus jefes, el texto corto de lo que su gente deja a la vista con aviso por mail.
 
 Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-04-agenda-aviso-y-dependencia-design.md`
@@ -50,6 +50,8 @@ Historia y motivos, en las specs:
 - `publicado_at` se escribe en hora argentina cuando un evento queda Público siendo nuevo, cuando pasa a Público desde otro tipo, cuando un Público cambia de fecha y cuando se prende su aviso por mail.
   Prenderlo cuenta como cargarlo en ese momento (decisión del usuario): prendido hoy para hoy, no es rezagado a las 8:05.
   Un cambio de título, hora o texto no lo toca, apagar el aviso por mail tampoco, y un evento que deja de ser Público queda con NULL.
+- Apagar el aviso por mail no borra lo informado: apagarlo y volver a prenderlo para la misma fecha no repite el mail (decisión del usuario, spec 2026-11-27-evento-mail-optativo, secciones 2 y 6).
+  Lo que salió, salió: la cadena ya se enteró, y limpiar los informados al apagarlo haría que, prendido otra vez antes del día, le vuelva a llegar a las 8:05 como «Nuevo:».
 - `claveDeInformado` usa siempre el texto de la fecha, `AAAA-MM-DD`: la consulta la pasa con `DATE_FORMAT`.
 
 ## La frase de cuándo llega
