@@ -49,6 +49,8 @@ Historia y motivos, en las specs:
 - Un rezagado es un evento sin informar, de hoy, con `publicado_at` anterior a hoy o NULL (los de antes de la migración) y que todavía no empezó.
 - `publicado_at` se escribe en hora argentina cuando un evento queda Público siendo nuevo, cuando pasa a Público desde otro tipo, cuando un Público cambia de fecha y cuando se prende su aviso por mail.
   Prenderlo cuenta como cargarlo en ese momento (decisión del usuario): prendido hoy para hoy, no es rezagado a las 8:05.
+  Pero si ese jefe tiene otro rezagado, el mail de las 8:05 trae toda la agenda de hoy: prendido hoy antes de las 8:05, va ahí como «Nuevo:» y queda informado.
+  Es la regla de cualquier Público cargado hoy antes de las 8:05 y no se le hace una excepción: prenderlo es cargarlo, igual que un Privado que pasa a Público (spec 2026-11-27-evento-mail-optativo, sección 2, «Prenderlo tarde»).
   Un cambio de título, hora o texto no lo toca, apagar el aviso por mail tampoco, y un evento que deja de ser Público queda con NULL.
 - Apagar el aviso por mail no borra lo informado: apagarlo y volver a prenderlo para la misma fecha no repite el mail (decisión del usuario, spec 2026-11-27-evento-mail-optativo, secciones 2 y 6).
   Lo que salió, salió: la cadena ya se enteró, y limpiar los informados al apagarlo haría que, prendido otra vez antes del día, le vuelva a llegar a las 8:05 como «Nuevo:».
@@ -96,7 +98,8 @@ Historia y motivos, en las specs:
 - Apaga solo lo propio: lo que le llega como jefe no se apaga desde su casilla, para que el objetivo no dependa de ella (decisión del usuario).
 - El mail a la cadena depende también del tilde «Aviso por mail» de quien carga cada Público: quien recibe no puede apagar lo de su gente, y quien carga decide evento por evento (decisión del usuario, spec 2026-11-27-evento-mail-optativo, sección 10).
   El motivo: poder dejar algo a la vista de quien se elige, en su agenda, sin avisarle por mail a la cadena.
-- Por eso los textos de la casilla («Lo de quienes dependen de vos te llega igual.») y las notas al pie del mail del jefe («…lo demás te llega siempre.») no cambian: desde el lado de quien recibe siguen siendo ciertos, y el tilde se le explica a quien carga el evento, en el formulario, al guardar, en Próximos y en el Resumen.
+- Por eso los textos de la casilla («Lo de quienes dependen de vos te llega igual.») y las notas al pie del mail del jefe («…lo demás te llega siempre.») no nombran el tilde: desde el lado de quien recibe son ciertos, porque no puede apagar lo de su gente.
+  El tilde se le explica a quien carga el evento: en el formulario, al guardar, en Próximos y en el Resumen.
 
 ## Los mails
 

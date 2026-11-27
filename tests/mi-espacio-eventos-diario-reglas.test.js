@@ -420,6 +420,43 @@ describe('mailDeLaPersona (spec, 5.2 a 5.4)', () => {
       assert.equal(mail(FEDERICO, [{ ...prendidoHoy, publicado_at: '2026-11-06 09:00:00' }], { ahora: VIERNES_TARDE }), null);
     });
 
+    // No es rezagado, pero tampoco se esconde: con otro rezagado de su gente, el mail de las 8:05 trae toda la agenda de hoy, y ahí va
+    // como nuevo y queda informado. Es la regla de cualquier Público cargado hoy antes de las 8:05, que no se cambia (Revisión final, M2)
+    it('prendido hoy para hoy, con otro rezagado de su gente, sale a las 8:05 como nuevo y queda informado, igual que uno cargado hoy', () => {
+      const opciones = { momento: 'manana', ahora: VIERNES_MANANA };
+      const otroRezagado = publico(2, { desde: '09:00', publicado_at: '2026-11-05 15:00:00', texto_publico: 'Trámite personal' });
+      const prendidoHoy = publico(1, { aviso_por_mail: true, desde: '16:00', publicado_at: '2026-11-06 07:30:00' });
+      for (const persona of [FEDERICO, GRACIELA]) {
+        const resultado = mail(persona, [otroRezagado, prendidoHoy], opciones);
+        assert.deepEqual(resultado.gente.map(({ evento_id: id, texto, nuevo }) => [id, texto, nuevo]), [
+          [2, 'Micaela: Trámite personal', true], [1, 'Micaela: Fuera de la oficina', true]
+        ], persona.nombre_completo);
+        assert.deepEqual(resultado.informa, [{ evento_id: 2, fecha: '2026-11-06' }, { evento_id: 1, fecha: '2026-11-06' }]);
+        // Uno cargado hoy antes de las 8:05, sin el tilde de por medio, sale igual
+        const cargadoHoy = publico(1, { desde: '16:00', publicado_at: '2026-11-06 07:30:00' });
+        assert.deepEqual(mail(persona, [otroRezagado, cargadoHoy], opciones), resultado, persona.nombre_completo);
+      }
+    });
+
+    // Lo que salió, salió (spec 2026-11-27-evento-mail-optativo, 2 y 6): apagarlo no borra lo informado y prenderlo otra vez reescribe
+    // publicado_at; para la misma fecha, no se repite (Revisión final, M3)
+    it('apagarlo y volver a prenderlo para la misma fecha no repite: ni rezagado a las 8:05, ni «Nuevo:», ni en el grupo «Hoy»', () => {
+      const informados = new Set([claveDeInformado(1, 2, '2026-11-06'), claveDeInformado(1, 1, '2026-11-06')]);
+      const manana = { momento: 'manana', ahora: VIERNES_MANANA, informados };
+      const otroRezagado = publico(2, { desde: '09:00', publicado_at: '2026-11-05 15:00:00', texto_publico: 'Trámite personal' });
+      // Prendido otra vez ayer después de las 14:00, o hoy antes de las 8:05
+      for (const publicadoAt of ['2026-11-05 15:00:00', '2026-11-06 07:30:00']) {
+        const otraVez = publico(1, { aviso_por_mail: true, desde: '16:00', publicado_at: publicadoAt });
+        for (const persona of [FEDERICO, GRACIELA]) {
+          const donde = `${persona.nombre_completo}, publicado_at ${publicadoAt}`;
+          assert.equal(mail(persona, [otraVez], manana), null, donde);
+          const conOtro = mail(persona, [otroRezagado, otraVez], manana);
+          assert.deepEqual(conOtro.gente.map(({ evento_id: id, nuevo }) => [id, nuevo]), [[2, true], [1, false]], donde);
+          assert.equal(mail(persona, [otraVez], { ahora: VIERNES_TARDE, informados }), null, donde);
+        }
+      }
+    });
+
     it('lo propio de quien lo cargó sigue saliendo, con su marca de siempre', () => {
       const resultado = mail(MICAELA, [apagado(1, { vistas: [{ id: 4, nombre: 'Lucía Ortiz' }] })]);
       assert.deepEqual(resultado.propios.map(({ evento_id: id, titulo, detalle, marca }) => [id, titulo, detalle, marca]), [
