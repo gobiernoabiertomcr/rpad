@@ -2493,7 +2493,7 @@ describe('migracion-mi-espacio-agenda.sql', () => {
   // la del aviso diario
   const MIGRACION_AVISO_POR_MAIL = 'migracion-mi-espacio-evento-aviso-por-mail.sql';
   const ROLLBACK_AVISO_POR_MAIL = 'rollback-mi-espacio-evento-aviso-por-mail.sql';
-  const esDelAvisoDiario =(c) => ['usuarios.depende_de ', 'usuarios.eventos_por_mail ', 'mi_espacio_diario_envios.', 'mi_espacio_evento_informados.'].some(inicio => c.startsWith(inicio));
+  const esDelAvisoDiario = (c) => ['usuarios.depende_de ', 'usuarios.eventos_por_mail ', 'mi_espacio_diario_envios.', 'mi_espacio_evento_informados.'].some(inicio => c.startsWith(inicio));
   const ROLLBACK_PUBLICO = 'rollback-mi-espacio-evento-publico.sql';
   // Las cuatro tablas de esta migración: mi_espacio_evento_vistas, la última de la lista, es de la del evento Personal (Público)
   const TABLAS_DE_LA_MIGRACION = TABLAS_MI_ESPACIO_AGENDA.filter(tabla => tabla !== 'mi_espacio_evento_vistas');
