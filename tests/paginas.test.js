@@ -149,7 +149,7 @@ describe('páginas', () => {
     assert.ok(html.indexOf('id="u-vinculo"') < html.indexOf('id="u-depende"'));
     assert.ok(html.indexOf('id="u-depende"') < html.indexOf('id="acciones-form"'));
     assert.match(html, /<select id="u-depende" class="form-input" aria-describedby="u-depende-ayuda"><\/select>/);
-    assert.match(html, /<p class="rol-ayuda" id="u-depende-ayuda">A esta persona y a quien esté más arriba les llega por mail el texto corto de los eventos que quien depende de ellas deja a la vista de otros\. No ven nada más de su Mi espacio\.<\/p>/);
+    assert.match(html, /<p class="rol-ayuda" id="u-depende-ayuda">A esta persona y a quien esté más arriba les llega por mail el texto corto de los eventos que quien depende de ellas deja a la vista de otros, salvo los que cargue sin aviso por mail\. No ven nada más de su Mi espacio\.<\/p>/);
   });
 
   for (const [pagina, script] of [['configuracion.html', 'usuarios']]) {

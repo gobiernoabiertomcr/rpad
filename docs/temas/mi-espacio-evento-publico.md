@@ -77,6 +77,9 @@ Historia y motivos, en las specs:
     Turno médico» (también su nombre accesible, con la hora delante:
     «10:00 Carla:
     Turno médico»), sin quién lo ve, y en el teléfono es un **anillo** rosado en lugar de un punto (el color nunca es lo único que distingue: también el ojo, el anillo y el texto).
+    Un Público tuyo con el aviso por mail apagado lleva, en «Próximos» y en el día elegido, después de «Lo ven …», la insignia gris «Sin aviso por mail»: el servidor ya manda `aviso_por_mail`, y la insignia sale solo con el `false` literal; en la grilla no va, porque no tiene lugar y el título no cambia.
+    Uno de otra persona nunca la lleva: su ítem recortado no trae `aviso_por_mail`.
+    El color gris no es lo único que lo dice: la insignia lleva la frase.
     La leyenda tiene ocho:
     «Solo vos», «Tuyos, a la vista», «Personales de otros», «Laborales», «Tus licencias y francos», «Feriados», «El dato de la quincena» y «Compañeros que no están» («El dato de la quincena», solo con el envío automático prendido, y «Compañeros que no están», solo para administración).
     El detalle de un Público de otra persona (`#modal-evento-ajeno`):
@@ -108,6 +111,7 @@ Después, cómo se ve:
 `claseDelEvento` ('publico-otro' un Público de otra persona, 'compartido' un Laboral, tuyo o ajeno, y 'propio' lo tuyo que no es Laboral: un Privado y un Público tuyo);
 `iconoDelEvento(evento)` (`{ icono: 'ojo' }` un Público tuyo, que se suma a su cosa en `cosasPorDia`, a la fila del día elegido y a la cosa de `gruposDeProximos`;
 `{}` lo demás, así el resto de los ítems no lleva la clave `icono`);
+`INSIGNIA_SIN_AVISO_POR_MAIL` («Sin aviso por mail») y `sinAvisoDelEvento(evento)` (`{ sin_aviso: true }` solo para un Público tuyo con `aviso_por_mail === false`, `{}` lo demás; se suma como `iconoDelEvento` a la fila del día elegido y a la cosa de `gruposDeProximos`, que la pasa al ítem, y `htmlDeProximo` y `htmlDeFilaDelDia` dibujan `<span class="me-insignia gris">` después de «Lo ven …»);
 `htmlDeProximo` (un Público tuyo lleva `<span class="me-lo-ven">` con el ojo y su `quien_texto`, sin insignia; uno de otra persona nunca lleva quién, aunque llegara); y `htmlDelEventoAjeno` (un Público: la insignia `.me-insignia.rosado` con el ojo y «Personal (Público)» y «Es un evento personal de Carla: se ve solo lo que eligió mostrar.» —sin creador, «de otra persona»—, sin `detalle` aunque llegara y sin `opciones`; un Laboral, la insignia «Laboral»; los nombres, de `OPCIONES_DEL_TIPO`).
 El ítem recortado de un Público ajeno no rompe ningún dibujo: todo se lee con `?.`, `esObjeto` y `comoTexto` (Ruling 5 del plan, con un test armado con el `itemDeEvento` real).
 Lo que toca el DOM:

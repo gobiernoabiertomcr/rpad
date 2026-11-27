@@ -2325,6 +2325,10 @@ const iconoDelEvento = (evento) => {
   if (evento.publico === true) return { icono: 'ojo' };
   return evento.compartido === true ? {} : { icono: 'candado' };
 };
+// La insignia de un Público tuyo con el aviso por mail apagado (`sin_aviso`, para sumarlo a su cosa como el ícono). El de otra persona
+// nunca lo trae (llega recortado), y solo el `false` literal la muestra
+const INSIGNIA_SIN_AVISO_POR_MAIL = 'Sin aviso por mail';
+const sinAvisoDelEvento = (evento) => (evento.es_mio === true && evento.publico === true && evento.aviso_por_mail === false ? { sin_aviso: true } : {});
 // Los eventos (los ítems de GET /mi-espacio/eventos) con una fecha, por fecha, hora y título
 const eventosEnOrden = (eventos) => listaDe(eventos).filter((evento) => esFechaDeTexto(evento.fecha))
   .sort((a, b) => a.fecha.localeCompare(b.fecha) || horaDelEvento(a).localeCompare(horaDelEvento(b))
@@ -2724,10 +2728,11 @@ const enlaceVotar = (enlace) => `<a class="sg-btn me-votar" href="${esc(enlace)}
 // botón (lo abre, como en la grilla)
 const htmlDeFilaDelDia = (fila) => {
   const quien = conTexto(fila.quien) ? ` <small>${esc(fila.quien)}</small>` : '';
+  const sinAviso = fila.sin_aviso === true ? ` <span class="me-insignia gris">${INSIGNIA_SIN_AVISO_POR_MAIL}</span>` : '';
   // Votar la principal lleva su enlace «Votar»
   const votar = conTexto(fila.enlace) ? enlaceVotar(fila.enlace) : '';
   const cuerpo = `<span class="me-elegido-icono" aria-hidden="true">${iconoOPunto(fila.clase, fila.icono)}</span>`
-    + `<span class="me-elegido-hora">${esc(fila.hora)}</span> <span class="me-elegido-texto">${esc(fila.texto)}${quien}${votar}</span>`;
+    + `<span class="me-elegido-hora">${esc(fila.hora)}</span> <span class="me-elegido-texto">${esc(fila.texto)}${quien}${sinAviso}${votar}</span>`;
   return `<li class="me-fila-del-dia ${fila.clase}">${Object.hasOwn(fila, 'evento_id')
     ? `<button type="button" class="me-elegido-cosa" data-evento="${esc(fila.evento_id)}">${cuerpo}</button>`
     : `<div class="me-elegido-cosa">${cuerpo}</div>`}</li>`;
@@ -2770,7 +2775,7 @@ function htmlDelDiaElegido(fecha, datos, hoy) {
   for (const evento of eventosEnOrden(fuente.eventos)) {
     if (evento.fecha !== fecha) continue;
     filas.push({
-      clase: claseDelEvento(evento), ...iconoDelEvento(evento), hora: horaDelEvento(evento), texto: comoTexto(evento.titulo),
+      clase: claseDelEvento(evento), ...iconoDelEvento(evento), ...sinAvisoDelEvento(evento), hora: horaDelEvento(evento), texto: comoTexto(evento.titulo),
       quien: comoTexto(evento.quien_texto), evento_id: evento.id ?? null
     });
   }
@@ -2826,7 +2831,7 @@ function gruposDeProximos(datos, hoy) {
   for (const evento of eventosEnOrden(fuente.eventos)) {
     if (!enRango(evento.fecha)) continue;
     cosas.push({
-      fecha: evento.fecha, clase: claseDelEvento(evento), ...iconoDelEvento(evento), hora: horaDelEvento(evento),
+      fecha: evento.fecha, clase: claseDelEvento(evento), ...iconoDelEvento(evento), ...sinAvisoDelEvento(evento), hora: horaDelEvento(evento),
       texto: comoTexto(evento.titulo), detalle: comoTexto(esObjeto(evento.aviso) ? evento.aviso.corto : ''),
       quien: comoTexto(evento.quien_texto), evento_id: evento.id ?? null
     });
@@ -2852,6 +2857,7 @@ function gruposDeProximos(datos, hoy) {
       : { hora: grupo.dia(cosa.fecha), titulo: conHora && cosa.hora ? `${cosa.hora} ${cosa.texto}` : cosa.texto };
     Object.assign(item, { detalle: cosa.detalle, clase: cosa.clase });
     if (Object.hasOwn(cosa, 'icono')) item.icono = cosa.icono;
+    if (Object.hasOwn(cosa, 'sin_aviso')) item.sin_aviso = cosa.sin_aviso;
     if (Object.hasOwn(cosa, 'enlace')) item.enlace = cosa.enlace;
     if (esEvento) Object.assign(item, { quien: cosa.quien, evento_id: cosa.evento_id });
     grupo.items.push(item);
@@ -2873,6 +2879,8 @@ const htmlDeProximo = (item) => {
     quien = item.icono === 'ojo' ? `<span class="me-lo-ven">${ICONO_DEL_OJO}${esc(item.quien)}</span>`
       : `<span class="me-insignia ${item.clase === 'propio' ? 'azul' : 'violeta'}">${esc(item.quien)}</span>`;
   }
+  // Un Público tuyo sin aviso por mail suma su insignia gris después de «Lo ven …»
+  if (quien !== '' && item.sin_aviso === true) quien += `<span class="me-insignia gris">${INSIGNIA_SIN_AVISO_POR_MAIL}</span>`;
   // Votar la principal suma su enlace «Votar» al detalle
   const votar = conTexto(item.enlace) ? enlaceVotar(item.enlace) : '';
   const detalle = quien !== '' || conTexto(item.detalle) || votar !== ''

@@ -6909,6 +6909,35 @@ describe('cómo se ve el evento Personal (Público) en la agenda (lo puro)', () 
     assert.ok(!conQuien.includes('Con Carla'));
   });
 
+  it('sinAvisoDelEvento: solo un Público tuyo con el aviso por mail apagado lleva `sin_aviso`; los demás, nada', () => {
+    assert.equal(M.INSIGNIA_SIN_AVISO_POR_MAIL, 'Sin aviso por mail');
+    assert.deepEqual(plano(M.sinAvisoDelEvento({ es_mio: true, publico: true, aviso_por_mail: false })), { sin_aviso: true });
+    assert.deepEqual(plano(M.sinAvisoDelEvento({ es_mio: true, publico: true, aviso_por_mail: true })), {});
+    assert.deepEqual(plano(M.sinAvisoDelEvento({ es_mio: true, publico: true })), {});
+    assert.deepEqual(plano(M.sinAvisoDelEvento({ es_mio: true, publico: false, aviso_por_mail: false })), {});
+    assert.deepEqual(plano(M.sinAvisoDelEvento({ es_mio: false, publico: true, aviso_por_mail: false })), {});
+  });
+
+  it('«Próximos» y el día elegido: un Público tuyo sin aviso por mail lleva la insignia gris después de «Lo ven»; uno prendido o ajeno, no', () => {
+    const itemApagado = { ...itemDel(PUBLICO_CON_TODOS), aviso_por_mail: false };
+    const eventos = [{ ...itemApagado }, { ...itemDel(PUBLICO_CON_DOS), aviso_por_mail: true }, { ...itemDel(PUBLICO_DE_CARLA), aviso_por_mail: false }];
+    const crudo = respuestaDeEventos({ desde: HOY, hasta: '2026-11-25' }, { eventos: [], licencias: [], ausencias: [], feriados: [] });
+    const grupos = plano(M.gruposDeProximos({ ...crudo, eventos }, HOY));
+    const items = grupos.flatMap((grupo) => grupo.items);
+    assert.equal(items.find((item) => item.evento_id === 16).sin_aviso, true);
+    assert.ok(!Object.hasOwn(items.find((item) => item.evento_id === 17), 'sin_aviso'));
+    assert.ok(!Object.hasOwn(items.find((item) => item.evento_id === 18), 'sin_aviso'));
+    const html = M.htmlDeProximos(grupos);
+    assert.ok(html.includes(`<span class="me-lo-ven">${OJO()}Lo ven todos como «Trámite personal»</span>`
+      + '<span class="me-insignia gris">Sin aviso por mail</span>Aviso 1 h antes</span>'));
+    assert.equal(html.split('Sin aviso por mail').length - 1, 1);
+    // El día elegido
+    const delMes = { ...delMesCon([]), eventos };
+    const elegido = M.htmlDelDiaElegido('2026-10-30', delMes, HOY);
+    assert.ok(elegido.includes('<small>Lo ven todos como «Trámite personal»</small> <span class="me-insignia gris">Sin aviso por mail</span>'));
+    assert.equal(elegido.split('Sin aviso por mail').length - 1, 1);
+  });
+
   it('el día elegido: uno tuyo con el ojo y debajo a quiénes se lo mostrás; uno de otra persona, en rosado con el ojo y nada debajo', () => {
     const html = M.htmlDelDiaElegido('2026-10-30', delMesCon(PUBLICOS()), HOY);
     assert.ok(html.includes('<li class="me-fila-del-dia publico-otro"><button type="button" class="me-elegido-cosa" data-evento="18">'
