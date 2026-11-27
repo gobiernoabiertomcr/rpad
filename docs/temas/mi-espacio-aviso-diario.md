@@ -43,8 +43,9 @@ Historia y motivos, en las specs:
 - `mi_espacio_evento_informados` tiene una fila por evento, persona y fecha del evento, escrita solo cuando el mail salió bien.
 - Es por fecha porque cambiar un Público de fecha lo vuelve a poner sin informar; si vuelve a una fecha ya informada de ese evento, no se avisa de nuevo.
 - Un rezagado es un evento sin informar, de hoy, con `publicado_at` anterior a hoy o NULL (los de antes de la migración) y que todavía no empezó.
-- `publicado_at` se escribe en hora argentina cuando un evento queda Público siendo nuevo, cuando pasa a Público desde otro tipo y cuando un Público cambia de fecha.
-  Un cambio de título, hora o texto no lo toca, y un evento que deja de ser Público queda con NULL.
+- `publicado_at` se escribe en hora argentina cuando un evento queda Público siendo nuevo, cuando pasa a Público desde otro tipo, cuando un Público cambia de fecha y cuando se prende su aviso por mail.
+  Prenderlo cuenta como cargarlo en ese momento (decisión del usuario): prendido hoy para hoy, no es rezagado a las 8:05.
+  Un cambio de título, hora o texto no lo toca, apagar el aviso por mail tampoco, y un evento que deja de ser Público queda con NULL.
 - `claveDeInformado` usa siempre el texto de la fecha, `AAAA-MM-DD`: la consulta la pasa con `DATE_FORMAT`.
 
 ## La frase de cuándo llega
