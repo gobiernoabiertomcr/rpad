@@ -859,6 +859,7 @@ describe('el aviso diario: la cadena en la API', () => {
       assert.equal(await publicadoDe(id), VIEJO);
       assert.equal((await cambiar('adminB', id, { ...publicoCon('lector'), aviso_por_mail: true })).status, 200);
       assert.notEqual(await publicadoDe(id), VIEJO);
+      assert.match(await publicadoDe(id), /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
       await ponerPublicado(id, VIEJO);
       assert.equal((await cambiar('adminB', id, { ...publicoCon('lector'), aviso_por_mail: true })).status, 200);
       assert.equal(await publicadoDe(id), VIEJO);
@@ -879,10 +880,12 @@ describe('el aviso diario: la cadena en la API', () => {
         // Para hoy no le llegaría igual, pero apagado lo dice (spec, 5.3)
         const paraHoy = await api.post('/mi-espacio/eventos',
           formulario(apagado({ fecha: hoy, desde: '23:58', hasta: '23:59' })), como('adminB'));
+        assert.equal(paraHoy.status, 201, JSON.stringify(paraHoy.body));
         assert.equal(paraHoy.body.message,
           'Evento guardado. Lo ve Test l. como «Trámite personal» en su agenda, sin aviso por mail.');
         const sinCadena = await api.post('/mi-espacio/eventos',
           formulario({ ...publicoCon('adminB'), aviso_por_mail: false }), como('lector'));
+        assert.equal(sinCadena.status, 201, JSON.stringify(sinCadena.body));
         assert.equal(sinCadena.body.message, 'Evento guardado. Lo ve Test adminB como «Trámite personal» en su agenda.');
       });
 
