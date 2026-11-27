@@ -115,7 +115,7 @@ const VERSION_PROYECTOS = '20261206';
 // 2026-11-03-mi-espacio-horas-acumuladas, 5 y 10; y lo que dice de la reiteración una licencia sin persona autorizada, spec
 // 2026-11-03-reiteracion-bimestral, 5; y el dato de la quincena en la agenda —su chip, su color y su muestra en la leyenda—, spec
 // 2026-11-14-dato-quincena-en-mi-espacio, 5). Su versión es propia
-const VERSION_MI_ESPACIO = '20261234';
+const VERSION_MI_ESPACIO = '20261235';
 // dato-quincena.js (la página de El dato de la quincena, el archivo de las ediciones de Datito, spec 2026-11-07-dato-quincena, 10 y
 // 11; las tarjetas, la pestaña Correo y la caja del correo del detalle, spec 2026-11-12-dato-quincena-correo, 13; la etiqueta Repite
 // y la caja de la repetición, spec 2026-11-14-dato-quincena-v1-3, 4; la agenda en sus grupos, spec
@@ -1053,7 +1053,9 @@ describe('páginas', () => {
         // los velos tienen el mismo z-index y el que va más abajo en el HTML queda arriba
         // «¿Quién lo ve?» primero (spec 2026-11-04-agenda-aviso-y-dependencia, 2.1; sus botones los dibuja mi-espacio.js) y lo del Público
         // (spec 2026-10-29-mi-espacio-evento-publico, 4): qué ven los demás, «Otro» con su cuenta y la vista previa
-        'modal-evento': ['modal-evento-titulo', 'ev-error', 'ev-grupo-tipo', 'ev-tipo-rotulo', 'ev-tipos', 'ev-tipo-ayuda', 'ev-tipo-error',
+        // La casilla del aviso por mail (spec 2026-11-27-evento-mail-optativo, 4), entre los botones y la frase
+        'modal-evento': ['modal-evento-titulo', 'ev-error', 'ev-grupo-tipo', 'ev-tipo-rotulo', 'ev-tipos', 'ev-aviso-mail-rotulo', 'ev-aviso-mail',
+          'ev-tipo-ayuda', 'ev-tipo-error',
           'ev-titulo', 'ev-titulo-error', 'ev-fecha', 'ev-fecha-error', 'ev-desde', 'ev-desde-error', 'ev-hasta', 'ev-hasta-error', 'ev-detalle',
           'ev-detalle-error', 'ev-publico', 'ev-grupo-texto', 'ev-textos', 'ev-texto-error', 'ev-otro-grupo', 'ev-otro',
           'ev-otro-cuenta', 'ev-otro-error', 'ev-vista-previa', 'ev-vista-previa-dia', 'ev-vista-previa-evento', 'ev-grupo-personas',
@@ -1188,9 +1190,12 @@ describe('páginas', () => {
         for (const control of ['ev-desde', 'ev-hasta']) assert.match(html, new RegExp(`<input type="time" class="form-input" id="${control}" aria-describedby="${control}-error">`), control);
         assert.match(html, /<textarea class="form-textarea" id="ev-detalle" rows="3" aria-describedby="ev-detalle-error"><\/textarea>/);
         // El tipo, para todos los roles (sus tres botones, con data-tipo y aria-pressed, los dibuja mi-espacio.js), con su frase y su
-        // error en la descripción del grupo
+        // error en la descripción del grupo. Entre los botones y la frase, la casilla del aviso por mail (spec
+        // 2026-11-27-evento-mail-optativo, 4), oculta: su rótulo es «Aviso por mail» y la frase la describe. No va dentro de la frase,
+        // que se lee como la descripción del grupo
         assert.match(html, new RegExp('<div class="me-grupo" id="ev-grupo-tipo" role="group" aria-labelledby="ev-tipo-rotulo" aria-describedby="ev-tipo-ayuda ev-tipo-error">\\s*'
           + '<span class="form-label" id="ev-tipo-rotulo">¿Quién lo ve\\?</span>\\s*<div class="me-barra-tipos" id="ev-tipos"></div>\\s*'
+          + '<label class="me-aviso-mail" id="ev-aviso-mail-rotulo" hidden><input type="checkbox" id="ev-aviso-mail" aria-describedby="ev-tipo-ayuda"> <b>Aviso por mail</b></label>\\s*'
           + '<p class="form-hint me-frase-tipo" id="ev-tipo-ayuda" hidden></p>\\s*<p class="form-error" id="ev-tipo-error" hidden></p>\\s*</div>'));
         assert.doesNotMatch(html, /Tipo de evento|Solo yo|>Compartido</);
         // Lo del Público, oculto hasta elegirlo: qué ven los demás (las pastillas las dibuja mi-espacio.js), «Otro» con su cuenta (fuera

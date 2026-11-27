@@ -1,7 +1,7 @@
 # Mi espacio: el evento Personal (Público)
 
 Un evento personal que ven las personas que se elijan, de cualquier rol, solo como «Carla: Turno médico» y sin emails a quienes lo ven.
-A quienes están en la cadena de quien lo cargó, y solo a ellas, les llega ese texto corto por mail: ver `docs/temas/mi-espacio-aviso-diario.md`.
+A quienes están en la cadena de quien lo cargó, y solo a ellas, les llega ese texto corto por mail, salvo con el aviso por mail de ese evento apagado: ver `docs/temas/mi-espacio-aviso-diario.md`.
 
 Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-10-29-mi-espacio-evento-publico-design.md`
@@ -63,9 +63,14 @@ Historia y motivos, en las specs:
     Turno médico», que cambia mientras se escriben la fecha y la hora o se elige el texto, con «En su agenda y en «Hoy y mañana» del Resumen.
     No ven el título ni el detalle.»), «Quiénes lo ven en su agenda» («Todos» y la lista completa, con su ayuda: «Lo ven en su agenda y en el Resumen, solo con el texto corto. Por marcarlas acá, no les llega ningún mail.») y la ayuda del recordatorio «Te llega solo a vos.».
     Los errores, debajo de su campo, también «Escribí qué ven los demás.» con «Otro» vacío.
-    **El mail y la agenda, separados** (decisión del usuario): en la frase, «Aviso por mail», con la cadena y el cuándo de `GET /mi-espacio/eventos/aviso-de-la-cadena`, que cambia al elegir la fecha; en el grupo de personas, quién lo ve en su agenda.
+    **El mail y la agenda, separados** (decisión del usuario): el aviso por mail, en un recuadro debajo de la barra; en el grupo de personas, quién lo ve en su agenda.
+    El recuadro sale solo si quien carga depende de alguien: arriba, la casilla «Aviso por mail» (spec 2026-11-27-evento-mail-optativo, 4: en la columna de los íconos de las otras frases, con el foco visible y la frase en su `aria-describedby`), y abajo, las iniciales y el nombre corto de la cadena y el cuándo de `GET /mi-espacio/eventos/aviso-de-la-cadena`, que cambia al elegir la fecha.
+    La casilla viene prendida en un evento nuevo y, en uno que se edita, como la dejó quien lo cargó (sin el dato, prendida); cambiar de tipo y volver no la toca.
+    Apagada, a nadie de la cadena le llega ningún mail por ese evento: los chips van en gris (sin fondo, con el borde punteado y el texto `--sg-suave`) y la frase, sin el cuándo, es «De quien dependés: no le va a llegar ningún mail por este evento.» o «De quienes dependés: no les va a llegar ningún mail por este evento.».
+    El cuándo se sigue pidiendo con la casilla apagada, para tenerlo al prenderla; tocarla deja el foco en ella.
     Quienes están en la cadena vienen marcados y primeros, solo en un evento nuevo y una sola vez (`marcarLosSuperiores`), y se les puede sacar la marca: el mail depende de la cadena y la agenda, de lo marcado.
     Por eso la ayuda dice «ya está en la lista» solo si están todas marcadas; si no, «A Federico, de quien dependés, le llega el mail aunque no tenga la marca.».
+    Con la casilla apagada, la ayuda no habla del mail: con todas marcadas, «Federico ya está en la lista, porque dependés de esa persona. Si le sacás la marca, no lo ve en su agenda.» (con varias, «Federico y Graciela ya están en la lista, porque dependés de esas personas. Si les sacás la marca, no lo ven en su agenda.»); si no, solo su primera oración.
     Un Laboral que suma cinco personas o más (`PERSONAS_PARA_CONFIRMAR`) o que pasa a «Todos» pide confirmación antes de guardar, «Les va a llegar un mail a 11 personas.», porque cualquier rol lo puede hacer.
     Al guardar, el aviso nombra a quién le llega y suma «Cambiar», que abre ese evento: el error de origen fue cargar un Privado queriendo que se vea, y sin eso no se nota.
     En la grilla, «Próximos» y el día elegido, un Público tuyo va en tinta con el ojo (Lucide `eye`: el ojo dice siempre «lo ven otros») y su título, y en «Próximos» y el día elegido, debajo, su «Lo ven …»; uno de otra persona va **en rosado** con el ojo, como «Carla:
@@ -86,12 +91,13 @@ Historia y motivos, en las specs:
 
 Lo puro del evento Personal (Público) (spec 2026-10-29-mi-espacio-evento-publico; ver `docs/temas/mi-espacio-agenda.md`), primero el formulario de los tres tipos:
 `valoresDelEvento` trae `tipo` ('laboral' si es compartido, 'publico' si es un Público y si no 'privado'; '' en uno nuevo; no trae `compartido`), `texto_publico` y `otro` (un texto que no es de la lista: el de «Otro») y, en un Público, toma `para_todos` de `publico_todos` y `personas` de `personas_ids`;
+también trae `aviso_por_mail`, la casilla: `true` en uno nuevo y, de un ítem, `item.aviso_por_mail !== false` (`valoresConElTipo` la conserva);
 `tipoDelEvento` (copia de `tipoPedido`, privada en el servidor: sin `tipo`, o con null, Laboral con `compartido` en el `true` literal y si no Privado; atada por la paridad de `erroresDelEvento`);
 `valoresConElTipo(valores, tipo, original)` (al cambiar de tipo, con quién —`para_todos`, `personas` y `conocidas`— empieza de nuevo, salvo al volver al tipo con que se abrió el formulario, que trae lo suyo: el «Todos» y las personas de cada tipo son otros, y una persona de un tipo ofrecida en el otro daría 400 `personasInvalidas`; lo que ven los demás se conserva);
 `erroresDelEvento(valores, hoy)` (controla el tipo —ninguno elegido o uno inválido, `MENSAJES_EVENTO.tipo`— y, solo en un Público, el texto —«Otro» vacío, `MENSAJE_OTRO_VACIO`; sin texto, `textoPublico`; de más de 60, `textoPublicoLargo`—, y las personas con el mensaje de su tipo, `personasPublico` o `personas`, en el orden de `validarEvento`);
-`cuerpoDelEvento(valores)` (siempre con `tipo` y nunca con `compartido`; un Público trae `para_todos`, `personas` y `texto_publico` recortado; un Laboral, `para_todos` y `personas`; un Privado, solo el tipo);
+`cuerpoDelEvento(valores)` (siempre con `tipo` y nunca con `compartido`; un Público trae `para_todos`, `personas`, `texto_publico` recortado y, al final, `aviso_por_mail`, false solo con la casilla apagada; un Laboral, `para_todos` y `personas`; un Privado, solo el tipo);
 `htmlDeTiposDeEvento(valores)` (`.me-opcion` con `data-tipo` y `aria-pressed`, con el ícono y el nombre de `BARRA_DE_TIPOS`, los tres para todos);
-`htmlDeLaFraseDelTipo` (`FRASE_SIN_TIPO`, `FRASE_DEL_PRIVADO`, `FRASE_DEL_LABORAL` o, en un Público, el aviso por mail con la cadena), `htmlDeLaAyudaDeLasPersonas`, `superioresDeLaLista` (por `es_superior`, del servidor: el navegador no recorre la cadena), `cuantosMailsParaConfirmar`, `textoDeLaConfirmacionDeMails` y `ayudaDeLaCasilla`;
+`htmlDeLaFraseDelTipo` (`FRASE_SIN_TIPO`, `FRASE_DEL_PRIVADO`, `FRASE_DEL_LABORAL` o, en un Público, la parte de abajo del recuadro: los chips de la cadena, `.me-superiores`, y el cuándo, o, con `aviso_por_mail` en el false literal, `.me-superiores.apagados` y `FRASE_SIN_AVISO_POR_MAIL`), `htmlDeLaAyudaDeLasPersonas` (apagada, sin la parte del mail), `superioresDeLaLista` (por `es_superior`, del servidor: el navegador no recorre la cadena), `cuantosMailsParaConfirmar`, `textoDeLaConfirmacionDeMails` y `ayudaDeLaCasilla`;
 `htmlDeTextosPublicos` (una `.sg-chip` por cada uno de `TEXTOS_PUBLICOS` y «Otro», `data-texto="otro"`, con `aria-pressed` y una sola elegida), `elegirTextoPublico` y `cuentaDelTextoPublico` («12 de 60 caracteres», recortado y con `Array.from`, y `pasado` si pasa de 60);
 `htmlDeLaVistaPrevia(valores, { nombre })` (`{ dia, evento }`: el día como en la agenda, «Jue 5» o «Sin fecha», en texto plano, y la pastilla `<span class="me-ev publico-otro" data-lineas="3">` con el ojo, la hora en negrita y «Carla:
 Turno médico», escapados, con el `mi_nombre_corto` del servidor o, sin él, `NOMBRE_DE_LA_VISTA_PREVIA`, «Tu nombre», y «…» sin texto);
@@ -115,17 +121,20 @@ las dos listas de personas, con `pedirUnaListaDePersonas(clave, ruta)` (`pagina.
 y el nombre de la vista previa, `nombreDeLaVistaPrevia` (el `mi_nombre_corto` de lo que llegó del mes o de los próximos) y, si el formulario se abre sin la agenda cargada (por ejemplo, «Nuevo evento» desde el Resumen), `pedirMiNombre` (una sola vez por página, con `GET /mi-espacio/eventos?desde=hoy&hasta=hoy`, al elegir un Público; mientras tanto o si falla, «Tu nombre»).
 `pagina` trae `personasPublico`, `miNombre` y `pidiendoMiNombre`.
 `pintarMesDeEventos` prende `#ag-leyenda-ausentes` solo con `ve_companeros`;
-`pintarLaFrase`, `programarAvisoDeLaCadena` (pide el cuándo al cambiar la fecha o la hora; una respuesta vieja se descarta), `mandarElEvento`, `sumarCambiarAlAviso`, `abrirElEventoGuardado`, `pintarLaCasilla` y `alCambiarLaCasilla`, que anota `pagina.eventosPorMail` para que redibujar no la vuelva atrás;
+`pintarLaFrase` (también muestra `#ev-aviso-mail-rotulo` solo en un Público con alguien en la cadena y pone `#ev-aviso-mail` como dicen los valores), `alCambiarElAvisoPorMail` (lo que dice `#ev-aviso-mail` pasa a los valores y se redibujan la frase y la ayuda, no la casilla: el foco se queda en ella), `programarAvisoDeLaCadena` (pide el cuándo al cambiar la fecha o la hora; una respuesta vieja se descarta), `mandarElEvento`, `sumarCambiarAlAviso`, `abrirElEventoGuardado`, `pintarLaCasilla` y `alCambiarLaCasilla`, que anota `pagina.eventosPorMail` para que redibujar no la vuelva atrás;
 `abrirEventoAjeno`, con un Público, oculta `#mea-grupo-recordatorio` (el `form-group` de «Mi recordatorio»), no muestra el aviso y lleva el foco a «Cerrar» (con un Laboral, el grupo vuelve, con el foco en «Mi recordatorio»), y `guardarMiRecordatorio` no hace nada con un Público (un `change` en el select oculto no manda ningún `PUT`).
 Copias atadas por tests de paridad:
 `TIPOS_DE_EVENTO`, `TEXTOS_PUBLICOS` y `LARGO_TEXTO_PUBLICO` (de `services/miEspacioEventosReglas.js`), `MENSAJES_EVENTO` (entero) y `erroresDelEvento` (con `validarEvento`, en los casos del tipo, el texto y las personas de cada tipo).
 Solo del navegador, con tests de comportamiento:
 `MENSAJE_OTRO_VACIO` («Escribí qué ven los demás.»), las cuatro ayudas, `OPCIONES_DEL_TIPO` y `NOMBRE_DE_LA_VISTA_PREVIA`.
+También `FRASE_SIN_AVISO_POR_MAIL` (`{ uno, varios }`) y las oraciones de la ayuda con la casilla apagada: el servidor no tiene esas frases, así que no hay paridad que atar.
 En el HTML están `#ev-grupo-tipo`, justo después de `#ev-error` (`role="group"`, con `aria-labelledby="ev-tipo-rotulo"` y `aria-describedby="ev-tipo-ayuda ev-tipo-error"`; se ve para todos), y `#ev-publico` (oculto), que tiene `#ev-grupo-texto` con `#ev-textos` y `#ev-texto-error`, `#ev-otro-grupo` con `#ev-otro` (con `aria-describedby="ev-otro-cuenta ev-otro-error"` y sin `maxlength`) y `#ev-otro-cuenta`, y `#ev-vista-previa` (`#ev-vista-previa-dia` y `#ev-vista-previa-evento`);
+entre `#ev-tipos` y `#ev-tipo-ayuda` está `#ev-aviso-mail-rotulo`, un `<label>` oculto con la casilla `#ev-aviso-mail` (`aria-describedby="ev-tipo-ayuda"`) y «Aviso por mail», fuera de la frase, que es la descripción del grupo;
 la leyenda tiene ocho muestras, con `#ag-leyenda-ausentes` y `#ag-leyenda-dato` ocultas de entrada, y «Solo vos» lleva el candado;
 en la tarjeta de Próximos están `#ag-por-mail`, `#ag-eventos-por-mail` y `#ag-eventos-por-mail-ayuda`.
 Los estilos, en el `<style>` de `mi-espacio.html` y sin ninguna clase `ag-`: los tokens `--sg-rosado` (#8A3B5C), `--sg-rosado-fondo` (#F7E3EC) y `--sg-rosado-borde` (#B5577F);
 `.me-ev.publico-otro, .me-leyenda .publico-otro`, `.me-insignia.rosado`, `.me-lo-ven`, `.me-prox-icono.publico-otro` (y `.me-prox-icono.propio`, en tinta) y `.me-fila-del-dia.publico-otro`;
+`.me-aviso-mail` (la parte de arriba del recuadro, con el fondo y el borde de `.me-frase-tipo` y sin el de abajo), `.me-aviso-mail:not([hidden]) + .me-frase-tipo` (la de abajo, sin el borde de arriba y con la sangría de la casilla) y `.me-superiores.apagados .me-superior` y su `i` (el texto `--sg-suave`, con 4,5:1 o más sobre el recuadro: lo mide `tests/mi-espacio-frontend.test.js`);
 `.me-opciones.tres`, `button.me-opcion:disabled` (sin `opacity`), `.me-textos`, `.me-otro`, `.me-cuenta.pasado` y `.me-vista-previa*`; en 640 px, una columna para `.me-opciones.tres` y `.me-vista-previa`, y el anillo de un Público ajeno (`.me-puntos .publico-otro`: fondo blanco con un `box-shadow` rosado); y en alto contraste, después de `.me-puntos i[class]`, el anillo con `Canvas` y `outline` en `CanvasText`.
 
 ## Reglas de los tests

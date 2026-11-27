@@ -6368,14 +6368,14 @@ describe('el formulario del evento: lo puro', () => {
   it('valoresDelEvento: uno nuevo, sin ningún tipo elegido, con la fecha que se le pasa y «2 horas antes»', () => {
     assert.deepEqual(plano(M.valoresDelEvento(null, { fecha: HOY })), {
       id: null, titulo: '', fecha: HOY, desde: '', hasta: '', detalle: '', tipo: '', para_todos: false, personas: [],
-      conocidas: [], texto_publico: '', otro: false, recordatorio: '2h'
+      conocidas: [], texto_publico: '', otro: false, aviso_por_mail: true, recordatorio: '2h'
     });
   });
 
   it('valoresDelEvento: uno propio, con sus personas (los ids y los nombres) y su recordatorio', () => {
     assert.deepEqual(plano(M.valoresDelEvento(itemDe(12), { fecha: HOY })), {
       id: 12, titulo: 'Reunión de equipo', fecha: '2026-10-27', desde: '10:00', hasta: '11:00', detalle: '', tipo: 'laboral',
-      para_todos: false, personas: [3, 4, 5, 6], recordatorio: '2h', texto_publico: '', otro: false,
+      para_todos: false, personas: [3, 4, 5, 6], recordatorio: '2h', texto_publico: '', otro: false, aviso_por_mail: true,
       conocidas: [{ id: 3, nombre: 'Martín Ríos' }, { id: 4, nombre: 'Diego Fernández' }, { id: 5, nombre: 'Sofía Paz' },
         { id: 6, nombre: 'Carla Benítez' }]
     });
@@ -6587,13 +6587,14 @@ describe('el formulario del evento: los tres tipos (lo puro)', () => {
     assert.equal(plano(M.valoresDelEvento(itemDe(11), { fecha: HOY })).tipo, 'privado');
     assert.deepEqual(plano(M.valoresDelEvento(itemDel(PUBLICO_CON_TODOS), { fecha: HOY })), {
       id: 16, titulo: 'Firma en la escribanía', fecha: '2026-10-30', desde: '10:00', hasta: '', detalle: '', tipo: 'publico',
-      para_todos: true, personas: [], conocidas: [], texto_publico: 'Trámite personal', otro: false, recordatorio: '1h'
+      para_todos: true, personas: [], conocidas: [], texto_publico: 'Trámite personal', otro: false, aviso_por_mail: true,
+      recordatorio: '1h'
     });
     // Un texto que no es de la lista viene en «Otro», con sus personas (los ids y los nombres)
     assert.deepEqual(plano(M.valoresDelEvento(itemDel(PUBLICO_CON_DOS), { fecha: HOY })), {
       id: 17, titulo: 'Mudanza', fecha: '2026-11-05', desde: '08:00', hasta: '', detalle: '', tipo: 'publico', para_todos: false,
       personas: [6, 9], conocidas: [{ id: 6, nombre: 'Carla Benítez' }, { id: 9, nombre: 'Tomás Herrera' }],
-      texto_publico: 'Ayudo a mi hermana', otro: true, recordatorio: '2h'
+      texto_publico: 'Ayudo a mi hermana', otro: true, aviso_por_mail: true, recordatorio: '2h'
     });
     // Cada uno de la lista, sin «Otro»; uno con espacios o en minúsculas, en «Otro» (no es el de la lista)
     for (const texto of TEXTOS_PUBLICOS) {
@@ -6605,6 +6606,26 @@ describe('el formulario del evento: los tres tipos (lo puro)', () => {
       { fecha: HOY }))[clave]), ['', false]);
     assert.deepEqual(['texto_publico', 'otro'].map((clave) => plano(M.valoresDelEvento({ ...itemDe(11), texto_publico: 'Viaje' },
       { fecha: HOY }))[clave]), ['', false]);
+  });
+
+  // El aviso por mail a la cadena (spec 2026-11-27-evento-mail-optativo, 4): uno nuevo, prendido; uno que se edita, con lo que tiene
+  // (el `aviso_por_mail` del ítem propio, armado por el itemDeEvento real); si no viene, prendido
+  it('valoresDelEvento: el aviso por mail, prendido en uno nuevo y el del ítem al editar (apagado solo con el false)', () => {
+    assert.equal(NUEVO().aviso_por_mail, true);
+    assert.equal(plano(M.valoresDelEvento(itemDel(PUBLICO_CON_DOS), { fecha: HOY })).aviso_por_mail, true);
+    const apagado = itemDel({ ...PUBLICO_CON_DOS, aviso_por_mail: 0 });
+    assert.equal(apagado.aviso_por_mail, false);
+    assert.equal(plano(M.valoresDelEvento(apagado, { fecha: HOY })).aviso_por_mail, false);
+    // Un ítem sin la clave (un Privado, un Laboral) o con otra cosa, prendido
+    assert.equal(plano(M.valoresDelEvento(itemDe(11), { fecha: HOY })).aviso_por_mail, true);
+    for (const raro of [null, 0, 'false', undefined]) {
+      assert.equal(plano(M.valoresDelEvento({ ...itemDel(PUBLICO_CON_DOS), aviso_por_mail: raro }, { fecha: HOY })).aviso_por_mail, true, String(raro));
+    }
+    // Cambiar de tipo y volver no lo toca: es del formulario mientras esté abierto
+    const valores = plano(M.valoresDelEvento(apagado, { fecha: HOY }));
+    const aPrivado = plano(M.valoresConElTipo(valores, 'privado', valores));
+    assert.equal(aPrivado.aviso_por_mail, false);
+    assert.equal(plano(M.valoresConElTipo(aPrivado, 'publico', valores)).aviso_por_mail, false);
   });
 
   it('erroresDelEvento: «Otro» vacío dice «Escribí qué ven los demás.»; sin elegir, «Elegí qué ven los demás.»; de más de 60, el largo', () => {
@@ -6634,12 +6655,30 @@ describe('el formulario del evento: los tres tipos (lo puro)', () => {
     const publico = { ...NUEVO(), titulo: ' Control ', desde: '10:00', tipo: 'publico', para_todos: true, personas: [9], texto_publico: ' Turno médico ' };
     assert.deepEqual(plano(M.cuerpoDelEvento(publico)), {
       titulo: 'Control', fecha: HOY, desde: '10:00', hasta: null, detalle: '', recordatorio: '2h', tipo: 'publico', para_todos: true,
-      personas: [], texto_publico: 'Turno médico'
+      personas: [], texto_publico: 'Turno médico', aviso_por_mail: true
     });
     const conPersonas = plano(M.cuerpoDelEvento({ ...publico, para_todos: false, personas: [9, 6], otro: true, texto_publico: 'Ayudo a mi hermana' }));
     assert.deepEqual([conPersonas.para_todos, conPersonas.personas, conPersonas.texto_publico], [false, [9, 6], 'Ayudo a mi hermana']);
     assert.ok(!Object.hasOwn(conPersonas, 'compartido'));
     assert.ok(!Object.hasOwn(plano(M.cuerpoDelEvento({ ...publico, compartido: true })), 'compartido'));
+  });
+
+  it('cuerpoDelEvento: un Público trae el aviso por mail después de texto_publico (solo el false lo apaga); un Privado y un Laboral, no', () => {
+    const publico = { ...NUEVO(), titulo: 'Control', desde: '10:00', tipo: 'publico', para_todos: true, texto_publico: 'Turno médico' };
+    const apagado = plano(M.cuerpoDelEvento({ ...publico, aviso_por_mail: false }));
+    assert.equal(apagado.aviso_por_mail, false);
+    assert.deepEqual(Object.keys(apagado),
+      ['titulo', 'fecha', 'desde', 'hasta', 'detalle', 'recordatorio', 'tipo', 'para_todos', 'personas', 'texto_publico', 'aviso_por_mail']);
+    assert.equal(plano(M.cuerpoDelEvento({ ...publico, aviso_por_mail: true })).aviso_por_mail, true);
+    // Sin la clave (unos valores armados a mano) o con otra cosa, prendido: el formulario siempre manda un booleano
+    const sinLaClave = { ...publico };
+    delete sinLaClave.aviso_por_mail;
+    assert.equal(plano(M.cuerpoDelEvento(sinLaClave)).aviso_por_mail, true);
+    assert.equal(plano(M.cuerpoDelEvento({ ...publico, aviso_por_mail: 'false' })).aviso_por_mail, true);
+    // Un Privado y un Laboral no lo mandan, aunque los valores lo traigan apagado (el servidor los guarda prendidos)
+    for (const tipo of ['privado', 'laboral']) {
+      assert.ok(!Object.hasOwn(plano(M.cuerpoDelEvento({ ...publico, tipo, aviso_por_mail: false })), 'aviso_por_mail'), tipo);
+    }
   });
 
   it('valoresConElTipo: cambia el tipo y empieza de nuevo con quién (el «Todos» de cada tipo es otro); al volver al del evento, el suyo', () => {
@@ -7493,14 +7532,44 @@ describe('¿Quién lo ve?: lo puro', () => {
     assert.ok(M.htmlDeLaFraseDelTipo({ tipo: 'privado' }).includes(M.ICONO_DEL_CANDADO));
   });
 
-  it('un Público: el aviso por mail con las iniciales, el nombre corto y lo que manda el servidor, escapado', () => {
+  // «Aviso por mail» es el rótulo de la casilla (#ev-aviso-mail-rotulo, en el HTML): la frase no lo repite ni lleva ícono
+  it('un Público: las iniciales, el nombre corto y lo que manda el servidor, escapado, sin «Aviso por mail» ni el ícono', () => {
     const html = M.htmlDeLaFraseDelTipo({ tipo: 'publico' }, { superiores: [FEDERICO, GRACIELA], aviso: 'De quienes dependés: les llega la notificación por mail el jueves 05/11 a las 14:00.' });
-    assert.equal(textoDe(html).replace(/\s+/g, ' '), 'Aviso por mail FR Federico GP Graciela De quienes dependés: les llega la notificación por mail el jueves 05/11 a las 14:00.');
+    assert.equal(textoDe(html), 'FR Federico GP Graciela De quienes dependés: les llega la notificación por mail el jueves 05/11 a las 14:00.');
+    assert.ok(html.startsWith('<span class="me-superiores"><span class="me-superior"><i aria-hidden="true">FR</i>Federico</span>'), html);
+    assert.ok(!html.includes('<svg'));
+    // Prendido a propósito (el true literal), lo mismo
+    assert.equal(M.htmlDeLaFraseDelTipo({ tipo: 'publico', aviso_por_mail: true }, { superiores: [FEDERICO, GRACIELA], aviso: 'Llega.' }),
+      M.htmlDeLaFraseDelTipo({ tipo: 'publico' }, { superiores: [FEDERICO, GRACIELA], aviso: 'Llega.' }));
     const raro = M.htmlDeLaFraseDelTipo({ tipo: 'publico' }, { superiores: [{ iniciales: '<i>', nombre_corto: MALICIOSO }], aviso: MALICIOSO });
     assert.ok(raro.includes(ESCAPADO));
     assert.ok(!raro.includes('<img'));
     // Mientras llega el texto, solo los nombres: nunca uno viejo
-    assert.equal(textoDe(M.htmlDeLaFraseDelTipo({ tipo: 'publico' }, { superiores: [GRACIELA] })).replace(/\s+/g, ' '), 'Aviso por mail GP Graciela');
+    assert.equal(textoDe(M.htmlDeLaFraseDelTipo({ tipo: 'publico' }, { superiores: [GRACIELA] })), 'GP Graciela');
+  });
+
+  it('un Público con el aviso por mail apagado: los chips en gris (apagados) y la frase del navegador, en singular y en plural', () => {
+    assert.deepEqual(plano(M.FRASE_SIN_AVISO_POR_MAIL), {
+      uno: 'De quien dependés: no le va a llegar ningún mail por este evento.',
+      varios: 'De quienes dependés: no les va a llegar ningún mail por este evento.'
+    });
+    assert.ok(Object.isFrozen(M.FRASE_SIN_AVISO_POR_MAIL));
+    const AVISO = 'De quien dependés: le llega la notificación por mail el jueves 05/11 a las 14:00.';
+    const uno = M.htmlDeLaFraseDelTipo({ tipo: 'publico', aviso_por_mail: false }, { superiores: [FEDERICO], aviso: AVISO });
+    assert.equal(textoDe(uno), 'FR Federico De quien dependés: no le va a llegar ningún mail por este evento.');
+    assert.ok(uno.startsWith('<span class="me-superiores apagados"><span class="me-superior">'), uno);
+    // El cuándo del servidor no se dice: no va a llegar
+    assert.ok(!uno.includes('05/11'));
+    const varios = M.htmlDeLaFraseDelTipo({ tipo: 'publico', aviso_por_mail: false }, { superiores: [FEDERICO, GRACIELA], aviso: AVISO });
+    assert.equal(textoDe(varios), 'FR Federico GP Graciela De quienes dependés: no les va a llegar ningún mail por este evento.');
+    assert.ok(varios.startsWith('<span class="me-superiores apagados">'));
+    // Solo el false literal la apaga
+    for (const otro of [0, null, 'false']) {
+      assert.ok(!M.htmlDeLaFraseDelTipo({ tipo: 'publico', aviso_por_mail: otro }, { superiores: [FEDERICO], aviso: AVISO }).includes('apagados'), String(otro));
+    }
+    // Sin nadie arriba no hay frase, apagado o no; en un Privado o un Laboral, la suya
+    assert.equal(M.htmlDeLaFraseDelTipo({ tipo: 'publico', aviso_por_mail: false }, { superiores: [] }), '');
+    assert.equal(M.htmlDeLaFraseDelTipo({ tipo: 'privado', aviso_por_mail: false }, { superiores: [FEDERICO] }), M.htmlDeLaFraseDelTipo({ tipo: 'privado' }));
   });
 
   it('la ayuda de las personas: quienes se marcan no reciben mail y, marcados, «ya están en la lista»', () => {
@@ -7519,6 +7588,25 @@ describe('¿Quién lo ve?: lo puro', () => {
       .endsWith('A Graciela, de quien dependés, le llega el mail aunque no tenga la marca.'));
     assert.ok(textoDe(M.htmlDeLaAyudaDeLasPersonas({ tipo: 'publico', para_todos: true, personas: [] }, { superiores: [GRACIELA] }))
       .endsWith('A Graciela, de quien dependés, le llega el mail aunque no tenga la marca.'));
+  });
+
+  // Apagado, ya no dice que el mail les llega (spec 2026-11-27-evento-mail-optativo, 4): marcadas, solo lo de la agenda; si no, solo la
+  // primera oración de siempre
+  it('la ayuda de las personas con el aviso por mail apagado: sin la parte del mail', () => {
+    const SIN_MAIL = 'Lo ven en su agenda y en el Resumen, solo con el texto corto. Por marcarlas acá, no les llega ningún mail.';
+    const apagado = (cambios) => ({ tipo: 'publico', aviso_por_mail: false, personas: [], ...cambios });
+    assert.equal(textoDe(M.htmlDeLaAyudaDeLasPersonas(apagado({ personas: [2] }), { superiores: [FEDERICO] })),
+      `${SIN_MAIL} Federico ya está en la lista, porque dependés de esa persona. Si le sacás la marca, no lo ve en su agenda.`);
+    assert.equal(textoDe(M.htmlDeLaAyudaDeLasPersonas(apagado({ personas: [2, 3, 9] }), { superiores: [FEDERICO, GRACIELA] })),
+      `${SIN_MAIL} Federico y Graciela ya están en la lista, porque dependés de esas personas. Si les sacás la marca, no lo ven en su agenda.`);
+    // Sin todas marcadas, o con «Todos», solo la primera oración
+    assert.equal(textoDe(M.htmlDeLaAyudaDeLasPersonas(apagado({ personas: [2] }), { superiores: [FEDERICO, GRACIELA] })), SIN_MAIL);
+    assert.equal(textoDe(M.htmlDeLaAyudaDeLasPersonas(apagado({}), { superiores: [GRACIELA] })), SIN_MAIL);
+    assert.equal(textoDe(M.htmlDeLaAyudaDeLasPersonas(apagado({ para_todos: true }), { superiores: [GRACIELA] })), SIN_MAIL);
+    assert.equal(textoDe(M.htmlDeLaAyudaDeLasPersonas(apagado({}), { superiores: [] })), SIN_MAIL);
+    // Prendido, como siempre
+    assert.ok(textoDe(M.htmlDeLaAyudaDeLasPersonas({ tipo: 'publico', aviso_por_mail: true, personas: [2] }, { superiores: [FEDERICO] }))
+      .endsWith('pero igual le llega el mail.'));
   });
 
   it('un Laboral dice la suya, y un Privado, nada', () => {
@@ -7604,7 +7692,7 @@ describe('¿Quién lo ve?: en la página (DOM falso)', () => {
     await pagina.correr();
     assert.deepEqual(marcadas(pagina), ['2', '3']);
     assert.equal(pagina.el('ev-personas-rotulo').textContent, 'Quiénes lo ven en su agenda');
-    assert.match(textoDe(pagina.el('ev-tipo-ayuda').innerHTML), /Aviso por mail FR\s*Federico GP\s*Graciela/);
+    assert.match(textoDe(pagina.el('ev-tipo-ayuda').innerHTML), /^FR Federico GP Graciela /);
     assert.ok(textoDe(pagina.el('ev-tipo-ayuda').innerHTML).endsWith(AVISO));
     assert.match(textoDe(pagina.el('ev-personas-ayuda').innerHTML), /Federico y Graciela ya están en la lista/);
 
@@ -7658,17 +7746,134 @@ describe('¿Quién lo ve?: en la página (DOM falso)', () => {
     contestar = () => respuesta(500, { success: false, error: 'Falló' });
     await pagina.escribir('ev-fecha', '2026-11-21');
     await pagina.correr();
-    assert.match(textoDe(pagina.el('ev-tipo-ayuda').innerHTML), /Aviso por mail/);
+    assert.equal(textoDe(pagina.el('ev-tipo-ayuda').innerHTML), 'FR Federico GP Graciela');
     assert.ok(!textoDe(pagina.el('ev-tipo-ayuda').innerHTML).includes('Aviso 2'));
   });
 
-  it('sin nadie arriba, un Público no tiene frase ni nombra a nadie', async () => {
+  it('sin nadie arriba, un Público no tiene frase ni nombra a nadie, y no hay casilla', async () => {
     const pagina = await abrirNuevo(conElFormulario());
     await pagina.tocar(tipoDel(pagina, 'publico'));
     await pagina.correr();
     assert.equal(pagina.el('ev-tipo-ayuda').hidden, true);
+    assert.equal(pagina.el('ev-aviso-mail-rotulo').hidden, true);
     assert.equal(textoDe(pagina.el('ev-personas-ayuda').innerHTML), M.AYUDA_DE_LAS_PERSONAS_DEL_PUBLICO);
     assert.deepEqual(marcadas(pagina), []);
+  });
+
+  // La casilla del aviso por mail (spec 2026-11-27-evento-mail-optativo, 4): arriba del recuadro de la frase, solo en un Público con la
+  // cadena; prendida en uno nuevo
+  const casillaDelAviso = (pagina) => pagina.el('ev-aviso-mail');
+  const apagarElAviso = async (pagina, prender = false) => {
+    const casilla = casillaDelAviso(pagina);
+    casilla.focus();
+    casilla.checked = prender;
+    casilla.disparar('change');
+    await pagina.esperar();
+  };
+
+  it('la casilla del aviso por mail: oculta hasta elegir «Yo y quienes elija» con la cadena; ahí, a la vista y prendida', async () => {
+    const pagina = await abrirNuevo(conCadena());
+    assert.equal(pagina.el('ev-aviso-mail-rotulo').hidden, true);
+    await pagina.tocar(tipoDel(pagina, 'privado'));
+    assert.equal(pagina.el('ev-aviso-mail-rotulo').hidden, true);
+    await pagina.tocar(tipoDel(pagina, 'publico'));
+    await pagina.correr();
+    assert.equal(pagina.el('ev-aviso-mail-rotulo').hidden, false);
+    assert.equal(casillaDelAviso(pagina).checked, true);
+    assert.equal(pagina.el('ev-aviso-mail-rotulo').textContent.trim(), 'Aviso por mail');
+    assert.ok(textoDe(pagina.el('ev-tipo-ayuda').innerHTML).endsWith(AVISO));
+    await pagina.tocar(tipoDel(pagina, 'laboral'));
+    assert.equal(pagina.el('ev-aviso-mail-rotulo').hidden, true);
+  });
+
+  it('apagarla: la frase y la ayuda lo dicen, los chips van en gris, el foco queda en ella y el POST lleva aviso_por_mail en false', async () => {
+    const pagina = await abrirNuevo(conCadena());
+    await pagina.escribir('ev-titulo', 'Turno con el oculista');
+    await pagina.escribir('ev-fecha', '2026-11-05');
+    await pagina.escribir('ev-desde', '10:00');
+    await pagina.tocar(tipoDel(pagina, 'publico'));
+    await pagina.correr();
+    await pagina.tocar(textoDel(pagina, 'Turno médico'));
+    await apagarElAviso(pagina);
+    assert.equal(casillaDelAviso(pagina).checked, false);
+    assert.equal(pagina.documento.activeElement, casillaDelAviso(pagina));
+    assert.equal(textoDe(pagina.el('ev-tipo-ayuda').innerHTML),
+      'FR Federico GP Graciela De quienes dependés: no les va a llegar ningún mail por este evento.');
+    assert.ok(pagina.el('ev-tipo-ayuda').querySelector('.me-superiores').classList.contains('apagados'));
+    assert.equal(textoDe(pagina.el('ev-personas-ayuda').innerHTML), `${M.AYUDA_DE_LAS_PERSONAS_DEL_PUBLICO} Federico y Graciela ya están `
+      + 'en la lista, porque dependés de esas personas. Si les sacás la marca, no lo ven en su agenda.');
+    // Llega otra vez el cuándo (cambió la hora): sigue apagada y la frase no lo dice
+    await pagina.escribir('ev-desde', '11:00');
+    await pagina.correr();
+    assert.equal(casillaDelAviso(pagina).checked, false);
+    assert.ok(!textoDe(pagina.el('ev-tipo-ayuda').innerHTML).includes(AVISO));
+    await pagina.tocar(pagina.el('ev-guardar'));
+    const [{ cuerpo }] = pagina.pedidosA('POST', '/api/mi-espacio/eventos');
+    assert.deepEqual(cuerpo, {
+      titulo: 'Turno con el oculista', fecha: '2026-11-05', desde: '11:00', hasta: null, detalle: '', recordatorio: '2h', tipo: 'publico',
+      para_todos: false, personas: [2, 3], texto_publico: 'Turno médico', aviso_por_mail: false
+    });
+    assert.equal(Object.keys(cuerpo).at(-1), 'aviso_por_mail');
+  });
+
+  it('prenderla otra vez vuelve a la frase del servidor y a los chips de siempre', async () => {
+    const pagina = await abrirNuevo(conCadena());
+    await pagina.tocar(tipoDel(pagina, 'publico'));
+    await pagina.correr();
+    await apagarElAviso(pagina);
+    await apagarElAviso(pagina, true);
+    assert.equal(casillaDelAviso(pagina).checked, true);
+    assert.equal(pagina.documento.activeElement, casillaDelAviso(pagina));
+    assert.equal(textoDe(pagina.el('ev-tipo-ayuda').innerHTML), `FR Federico GP Graciela ${AVISO}`);
+    assert.ok(!pagina.el('ev-tipo-ayuda').querySelector('.me-superiores').classList.contains('apagados'));
+    assert.match(textoDe(pagina.el('ev-personas-ayuda').innerHTML), /pero igual les llega el mail\.$/);
+  });
+
+  it('pasar a «Solo yo» y volver la conserva apagada; el Privado no manda aviso_por_mail', async () => {
+    const pagina = await abrirNuevo(conCadena());
+    await pagina.escribir('ev-titulo', 'Trámite en el banco');
+    await pagina.escribir('ev-desde', '10:00');
+    await pagina.tocar(tipoDel(pagina, 'publico'));
+    await pagina.correr();
+    await apagarElAviso(pagina);
+    await pagina.tocar(tipoDel(pagina, 'privado'));
+    assert.equal(pagina.el('ev-aviso-mail-rotulo').hidden, true);
+    await pagina.tocar(tipoDel(pagina, 'publico'));
+    await pagina.correr();
+    assert.equal(pagina.el('ev-aviso-mail-rotulo').hidden, false);
+    assert.equal(casillaDelAviso(pagina).checked, false);
+    assert.ok(textoDe(pagina.el('ev-tipo-ayuda').innerHTML).endsWith(M.FRASE_SIN_AVISO_POR_MAIL.varios));
+    await pagina.tocar(tipoDel(pagina, 'privado'));
+    await pagina.tocar(pagina.el('ev-guardar'));
+    const [{ cuerpo }] = pagina.pedidosA('POST', '/api/mi-espacio/eventos');
+    assert.equal(cuerpo.tipo, 'privado');
+    assert.ok(!Object.hasOwn(cuerpo, 'aviso_por_mail'));
+  });
+
+  it('al editar un Público con el aviso apagado, la casilla abre apagada y el PUT lo conserva', async () => {
+    const APAGADO = eventoDe(19, 'Turno con la dentista', '2026-10-30', '16:00',
+      { publico: 1, texto_publico: 'Turno médico', vistas: [{ id: 2, nombre: 'Federico Ríos' }], aviso_por_mail: 0 });
+    const pagina = montarPagina({
+      hash: '#agenda',
+      responder: conElFormulario({
+        extra: (metodo, ruta) => (ruta === RUTA_DE_PERSONAS_DEL_PUBLICO ? ok(CON_CADENA) : undefined)
+          ?? (ruta.startsWith(RUTA_DEL_AVISO_DE_LA_CADENA) ? ok({ texto: AVISO, llega: true }) : undefined),
+        eventos: {
+          [RUTA_DEL_MES]: ok(conLaFrase(respuestaDeEventos({ desde: '2026-09-28', hasta: '2026-11-01' },
+            { eventos: [...EVENTOS_DE_PRUEBA, APAGADO] }), '2026-10')),
+          [RUTA_DE_PROXIMOS]: ok(respuestaDeEventos({ desde: '2026-10-26', hasta: '2026-11-25' }, { eventos: [...EVENTOS_DE_PRUEBA, APAGADO] }))
+        }
+      })
+    });
+    await pagina.iniciar();
+    await abrirElEvento(pagina, '19');
+    await pagina.correr();
+    assert.equal(pagina.el('ev-aviso-mail-rotulo').hidden, false);
+    assert.equal(casillaDelAviso(pagina).checked, false);
+    assert.equal(textoDe(pagina.el('ev-tipo-ayuda').innerHTML),
+      'FR Federico GP Graciela De quienes dependés: no les va a llegar ningún mail por este evento.');
+    await pagina.tocar(pagina.el('ev-guardar'));
+    assert.deepEqual(pagina.pedidosA('PUT', '/api/mi-espacio/eventos/19').map((p) => p.cuerpo.aviso_por_mail), [false]);
   });
 
   it('un Laboral a muchas personas pide confirmar; «Cancelar» no manda nada y «Guardar» manda uno solo', async () => {
@@ -7787,7 +7992,7 @@ describe('el formulario del evento con los tres tipos en la página (DOM falso)'
     await pagina.tocar(pagina.el('ev-guardar'));
     assert.deepEqual(pagina.pedidosA('POST', '/api/mi-espacio/eventos').map((p) => p.cuerpo), [{
       titulo: 'Control con la dermatóloga', fecha: '2026-11-05', desde: '10:00', hasta: null, detalle: '', recordatorio: '2h',
-      tipo: 'publico', para_todos: true, personas: [], texto_publico: 'Turno médico'
+      tipo: 'publico', para_todos: true, personas: [], texto_publico: 'Turno médico', aviso_por_mail: true
     }]);
     assert.equal(pagina.rutas().filter((ruta) => ruta === RUTA_DE_PERSONAS_DEL_PUBLICO).length, 1);
     assert.equal(pagina.rutas().filter((ruta) => ruta === RUTA_DE_PERSONAS).length, 0);
@@ -7972,7 +8177,7 @@ describe('el formulario del evento con los tres tipos en la página (DOM falso)'
     await pagina.tocar(pagina.el('ev-guardar'));
     assert.deepEqual(pagina.pedidosA('PUT', '/api/mi-espacio/eventos/17').map((p) => p.cuerpo), [{
       titulo: 'Mudanza', fecha: '2026-11-05', desde: '08:00', hasta: null, detalle: '', recordatorio: '2h', tipo: 'publico', para_todos: false,
-      personas: [6, 9], texto_publico: 'Ayudo a mi hermana'
+      personas: [6, 9], texto_publico: 'Ayudo a mi hermana', aviso_por_mail: true
     }]);
   });
 
@@ -11180,6 +11385,39 @@ describe('mi-espacio.html: los estilos de la agenda', () => {
     // Ninguna regla se los devuelve, tampoco las del teléfono (ahí el texto y el ícono son de 1 px, ocultos a la vista)
     for (const [, otro] of estilo.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/pointer-events: ([^;]+);/g)) assert.equal(otro, 'none');
     assert.match(telefono, /\.me-tira-texto, \.me-tira \.me-icono \{ position: absolute; width: 1px; height: 1px;/);
+  });
+
+  // La casilla del aviso por mail (spec 2026-11-27-evento-mail-optativo, 4): su rótulo es la parte de arriba del recuadro de la frase
+  // (el mismo fondo y el mismo borde) y la frase, la de abajo; apagada, los chips de la cadena en gris, con el borde punteado (el color
+  // nunca es lo único: también la frase). Todo el texto, con 4,5:1 o más
+  it('la casilla del aviso por mail arriba del recuadro y los chips apagados: el texto con 4,5:1 o más, y el borde punteado', () => {
+    const recuadro = de('.me-frase-tipo', 'background');
+    assert.equal(de('.me-aviso-mail', 'background'), recuadro);
+    const borde = (regla) => /(?:^|[;{\s])border: ([^;]+);/.exec(regla ?? '')?.[1];
+    assert.ok(borde(reglaDe('.me-frase-tipo')));
+    assert.equal(borde(reglaDe('.me-aviso-mail')), borde(reglaDe('.me-frase-tipo')));
+    const arriba = reglaDe('.me-aviso-mail');
+    assert.match(arriba, /border-bottom: 0;/);
+    const abajo = reglaDe('.me-aviso-mail:not([hidden]) + .me-frase-tipo');
+    assert.ok(abajo, 'la frase debajo de la casilla');
+    assert.match(abajo, /border-top: 0;/);
+    assert.match(abajo, /margin-top: 0;/);
+    const chip = reglaDe('.me-superiores.apagados .me-superior');
+    assert.ok(chip, 'el chip apagado');
+    assert.match(chip, /background: transparent;/);
+    assert.match(chip, /border-style: dashed;/);
+    const pares = [
+      ['el rótulo de la casilla', de('.me-aviso-mail', 'color'), recuadro],
+      // La frase es un .form-hint del modal: su color es el de .me-modal .form-hint, que gana sobre el de .me-frase-tipo
+      ['la frase', de('.me-modal .form-hint', 'color'), recuadro],
+      ['un chip apagado', de('.me-superiores.apagados .me-superior', 'color'), recuadro],
+      ['las iniciales de un chip apagado', de('.me-superiores.apagados .me-superior i', 'color'),
+        de('.me-superiores.apagados .me-superior i', 'background')]
+    ];
+    for (const [nombre, texto, fondo] of pares) {
+      assert.ok(contraste(texto, fondo) >= 4.5, `${nombre}: ${texto} sobre ${fondo}, ${contraste(texto, fondo).toFixed(2)}:1`);
+    }
+    assert.equal(de('.me-superiores.apagados .me-superior', 'color'), token('--sg-suave'));
   });
 });
 
