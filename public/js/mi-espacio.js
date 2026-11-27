@@ -2867,7 +2867,7 @@ function gruposDeProximos(datos, hoy) {
 
 // Una cosa de los próximos: la hora, el título con el ícono de la cosa delante (decorativo; lo que es solo tuyo, un punto; un
 // Público, el ojo; un evento es un botón con su id: lo abre) y el detalle (de un evento, quién está, en su color, y su aviso). Un
-// Público tuyo (el que lleva el ojo, `icono`) dice a quiénes se lo mostrás y cómo, en una línea con el ojo y sin insignia («Lo ven
+// Público tuyo (el que lleva el ojo, `icono`) dice a quiénes se lo mostrás y cómo, en una línea con el ojo y sin insignia de color (con el aviso por mail apagado, suma la gris) («Lo ven
 // todos como «Turno médico»», spec 2026-10-29-mi-espacio-evento-publico, 5.1); uno de otra persona, nada de quién está
 const htmlDeProximo = (item) => {
   const icono = `<span class="me-prox-icono ${esc(item.clase)}" aria-hidden="true">${iconoOPunto(item.clase, item.icono)}</span>`;

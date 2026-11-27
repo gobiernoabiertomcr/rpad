@@ -108,7 +108,7 @@ usuariosReglas (roles y la cadena de «Depende de», puro), usuariosAuditoriaSer
 ## De quién depende cada uno
 
 - «Depende de», en el panel de Usuarios, después de «Vínculo»: «Nadie» y la lista de los activos, sin la propia persona ni quienes ya dependen de ella (spec 2026-11-04-agenda-aviso-y-dependencia, 3).
-- Sirve para una sola cosa: a esa persona y a quien esté más arriba les llega por mail el texto corto de lo que su gente deja a la vista, salvo los que cargó sin aviso por mail (`docs/temas/mi-espacio-aviso-diario.md`).
+- Sirve para una sola cosa: a esa persona y a quien esté más arriba les llega por mail el texto corto de los eventos que su gente deja a la vista, salvo los que cargue sin aviso por mail (`docs/temas/mi-espacio-aviso-diario.md`).
   El texto de ayuda de `#u-depende-ayuda` lo dice, y `tests/paginas.test.js` lo controla.
   No ven nada más de su Mi espacio.
 - `superioresDe(id, usuarios)` de `services/usuariosReglas.js` es la única que recorre la cadena: sube por `depende_de`, salta a los desactivados sin cortar, termina en quien no depende de nadie, sin repetidos, nunca incluye a la persona y se corta si encuentra un ciclo.

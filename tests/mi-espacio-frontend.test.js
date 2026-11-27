@@ -6938,6 +6938,13 @@ describe('cómo se ve el evento Personal (Público) en la agenda (lo puro)', () 
     assert.equal(elegido.split('Sin aviso por mail').length - 1, 1);
   });
 
+  it('la grilla del mes no lleva la insignia, con un Público tuyo sin aviso por mail', () => {
+    const eventos = [{ ...itemDel(PUBLICO_CON_TODOS), aviso_por_mail: false }];
+    const datos = { ...delMesCon([]), eventos };
+    assert.ok(!JSON.stringify(plano(Object.fromEntries([...M.cosasPorDia(datos)]))).includes('sin_aviso'));
+    assert.ok(!M.htmlDelMes('2026-10', datos, HOY).includes('Sin aviso por mail'));
+  });
+
   it('el día elegido: uno tuyo con el ojo y debajo a quiénes se lo mostrás; uno de otra persona, en rosado con el ojo y nada debajo', () => {
     const html = M.htmlDelDiaElegido('2026-10-30', delMesCon(PUBLICOS()), HOY);
     assert.ok(html.includes('<li class="me-fila-del-dia publico-otro"><button type="button" class="me-elegido-cosa" data-evento="18">'
