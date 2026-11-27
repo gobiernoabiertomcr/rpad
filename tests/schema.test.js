@@ -550,6 +550,9 @@ describe('database/schema.sql', () => {
       'mi_espacio_eventos.texto_publico varchar(60) null=YES default=NULL key=',
       // Cuándo quedó Público con esa fecha (spec 2026-11-04-agenda-aviso-y-dependencia, 5.4): NULL, los de antes
       'mi_espacio_eventos.publicado_at datetime null=YES default=NULL key=',
+      // El aviso por mail a la cadena (spec 2026-11-27-evento-mail-optativo, 9): 0 en un Público que quien lo cargó no avisa por mail
+      // a quienes están más arriba; los de antes y lo que guarda el código anterior, 1
+      'mi_espacio_eventos.aviso_por_mail tinyint(1) null=NO default=1 key=',
       // De entrada, «2 horas antes»
       "mi_espacio_eventos.recordatorio enum('ninguno','1h','2h','dia_anterior') null=NO default='2h' key=",
       'mi_espacio_eventos.activo tinyint(1) null=NO default=1 key=',
@@ -2486,6 +2489,10 @@ describe('migracion-mi-espacio-agenda.sql', () => {
   // Lo del aviso diario (spec 2026-11-04-agenda-aviso-y-dependencia, 9): mi_espacio_evento_informados apunta a los eventos
   const MIGRACION_DIARIO = 'migracion-mi-espacio-eventos-diario.sql';
   const ROLLBACK_DIARIO = 'rollback-mi-espacio-eventos-diario.sql';
+  // El aviso por mail optativo (spec 2026-11-27-evento-mail-optativo, 9): una columna de los eventos. Su vuelta atrás va antes que
+  // la del aviso diario
+  const MIGRACION_AVISO_POR_MAIL = 'migracion-mi-espacio-evento-aviso-por-mail.sql';
+  const ROLLBACK_AVISO_POR_MAIL = 'rollback-mi-espacio-evento-aviso-por-mail.sql';
   const esDelAvisoDiario = (c) => ['usuarios.depende_de ', 'usuarios.eventos_por_mail ', 'mi_espacio_diario_envios.', 'mi_espacio_evento_informados.'].some(inicio => c.startsWith(inicio));
   const ROLLBACK_PUBLICO = 'rollback-mi-espacio-evento-publico.sql';
   // Las cuatro tablas de esta migración: mi_espacio_evento_vistas, la última de la lista, es de la del evento Personal (Público)
@@ -2582,9 +2589,11 @@ describe('migracion-mi-espacio-agenda.sql', () => {
     assert.ok(!anterior.some(esDeLasTablas), 'la base de partida ya tiene las tablas');
     await root.query(sql(MIGRACION));
     await root.query(sql(MIGRACION));
-    // Y lo que se le sumó después: las tres columnas del evento Personal (Público) y a quién se le muestra, y lo del aviso diario
+    // Y lo que se le sumó después: las tres columnas del evento Personal (Público) y a quién se le muestra, lo del aviso diario y el
+    // aviso por mail optativo
     await root.query(sql(MIGRACION_PUBLICO));
     await root.query(sql(MIGRACION_DIARIO));
+    await root.query(sql(MIGRACION_AVISO_POR_MAIL));
     await comoSchema();
   });
 
@@ -2594,6 +2603,7 @@ describe('migracion-mi-espacio-agenda.sql', () => {
     for (const tabla of TABLAS_DE_LA_MIGRACION) assert.equal(await contarEn(tabla), 1, tabla);
     // Primero las vueltas atrás de lo que se le sumó después, como en el despliegue: mi_espacio_evento_informados y
     // mi_espacio_evento_vistas apuntan a los eventos, y con ellas puestas la base no deja borrarlos
+    await root.query(sql(ROLLBACK_AVISO_POR_MAIL));
     await root.query(sql(ROLLBACK_DIARIO));
     await root.query(sql(ROLLBACK_PUBLICO));
     await root.query(sql(ROLLBACK));
@@ -2603,10 +2613,11 @@ describe('migracion-mi-espacio-agenda.sql', () => {
     assert.deepEqual(await columnas(root, BASE_MI_ESPACIO_AGENDA), deMain);
     // Quien creó el evento y la persona invitada siguen ahí
     assert.equal(await contarEn('usuarios'), 2);
-    // Las tres migraciones vuelven a dejar exactamente la estructura de schema.sql
+    // Las cuatro migraciones vuelven a dejar exactamente la estructura de schema.sql
     await root.query(sql(MIGRACION));
     await root.query(sql(MIGRACION_PUBLICO));
     await root.query(sql(MIGRACION_DIARIO));
+    await root.query(sql(MIGRACION_AVISO_POR_MAIL));
     await comoSchema();
   });
 
@@ -4708,4 +4719,141 @@ describe('migracion-dato-quincena-votacion.sql', () => {
       assert.equal(resto.edicion_id, segunda);
     });
   }
+});
+
+// El aviso por mail optativo de un Público (spec 2026-11-27-evento-mail-optativo, 9): una columna de mi_espacio_eventos, aviso_por_mail,
+// 1 si el evento se avisa por mail a la cadena de quien lo cargó. La migración y su vuelta atrás, sobre una base descartable creada con schema.sql
+describe('migracion-mi-espacio-evento-aviso-por-mail.sql', () => {
+  const BASE_AVISO_POR_MAIL = 'rpad_schema_evento_aviso_por_mail';
+  const MIGRACION = 'migracion-mi-espacio-evento-aviso-por-mail.sql';
+  const ROLLBACK = 'rollback-mi-espacio-evento-aviso-por-mail.sql';
+  const TABLAS = ['mi_espacio_eventos'];
+  // La consulta que la cabecera del rollback da para listar, antes de correrlo, los eventos que vuelven a mandar el mail a la cadena
+  const CONSULTA_DE_LOS_APAGADOS = 'SELECT id, creado_por, fecha FROM mi_espacio_eventos WHERE aviso_por_mail = 0 AND activo = 1';
+  // Se leen en cada test: si un archivo falta, falla cada uno y no el archivo de tests entero
+  const sql = (archivo) => fs.readFileSync(new URL(`../database/updates/${archivo}`, import.meta.url), 'utf8');
+  // Sin los comentarios: lo que de verdad se ejecuta
+  const codigo = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('--')).join('\n');
+  const cabecera = (archivo) => sql(archivo).split(/\r?\n/).filter(l => l.startsWith('--')).join('\n');
+  // Cada sentencia en un renglón, sin comillas invertidas
+  const sentencias = (archivo) => codigo(archivo).split(';').map(s => s.replace(/`/g, '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const enLaBase = (tabla) => `\`${BASE_AVISO_POR_MAIL}\`.\`${tabla}\``;
+  const esLoNuevo = (c) => c.startsWith('mi_espacio_eventos.aviso_por_mail ');
+  // La estructura de schema.sql y, si no se quiere lo nuevo, la de antes de esta entrega (la de main): sin la columna
+  const crearBase = async ({ conLaColumna }) => {
+    await root.query(`DROP DATABASE IF EXISTS \`${BASE_AVISO_POR_MAIL}\``);
+    await root.query(`CREATE DATABASE \`${BASE_AVISO_POR_MAIL}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await root.query(`USE \`${BASE_AVISO_POR_MAIL}\``);
+    await root.query(fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+    if (!conLaColumna) await root.query('ALTER TABLE mi_espacio_eventos DROP COLUMN aviso_por_mail;');
+  };
+  const persona = async () => {
+    const [{ insertId }] = await root.query(
+      `INSERT INTO ${enLaBase('usuarios')} (username, password_hash, nombre_completo, email, rol) VALUES ('t_creadora', 'x', 'Test Creadora', 't_creadora@rpad.test', 'lector')`);
+    return insertId;
+  };
+  // Un evento como lo guarda el código anterior (sin aviso_por_mail) o, si se le pasa, con el tilde
+  const evento = async (creadoPor, { compartido = 0, publico = 0, activo = 1, avisoPorMail } = {}) => {
+    const columnasDelEvento = ['creado_por', 'titulo', 'fecha', 'desde', 'compartido', 'publico', 'texto_publico', 'activo'];
+    const valores = [creadoPor, 'Turno', '2026-12-03', '09:30', compartido, publico, publico ? 'Fuera de la oficina' : null, activo];
+    if (avisoPorMail !== undefined) {
+      columnasDelEvento.push('aviso_por_mail');
+      valores.push(avisoPorMail);
+    }
+    const [{ insertId }] = await root.query(
+      `INSERT INTO ${enLaBase('mi_espacio_eventos')} (${columnasDelEvento.join(', ')}) VALUES (${valores.map(() => '?').join(', ')})`, valores);
+    return insertId;
+  };
+  const avisos = async () => {
+    const [filas] = await root.query(`SELECT id, aviso_por_mail FROM ${enLaBase('mi_espacio_eventos')} ORDER BY id`);
+    return filas.map(f => [f.id, f.aviso_por_mail]);
+  };
+  // La misma estructura que schema.sql: las columnas, en su orden, y también las claves foráneas, los índices y el motor
+  const comoSchema = async () => {
+    assert.deepEqual(await columnas(root, BASE_AVISO_POR_MAIL), await columnas(root, BASE_TEMPORAL));
+    assert.deepEqual(await clavesAjenasDe(root, BASE_AVISO_POR_MAIL, TABLAS), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS));
+    assert.deepEqual(await indicesDe(root, BASE_AVISO_POR_MAIL, TABLAS), await indicesDe(root, BASE_TEMPORAL, TABLAS));
+    assert.deepEqual(await motoresDe(root, BASE_AVISO_POR_MAIL, TABLAS), await motoresDe(root, BASE_TEMPORAL, TABLAS));
+  };
+
+  after(async () => {
+    await root?.query(`DROP DATABASE IF EXISTS \`${BASE_AVISO_POR_MAIL}\``);
+  });
+
+  it('se pega tal cual en phpMyAdmin: sin DELIMITER ni USE; la migración solo agrega la columna y el rollback solo la saca', () => {
+    assert.doesNotMatch(codigo(MIGRACION), /\b(DELIMITER|USE|DROP|RENAME|CHECK)\b/i);
+    assert.doesNotMatch(codigo(ROLLBACK), /\b(DELIMITER|USE|DELETE|UPDATE|TRUNCATE|INSERT|RENAME)\b/i);
+    // Los acentos de los comentarios llegan bien desde phpMyAdmin
+    assert.match(codigo(MIGRACION), /^SET NAMES utf8mb4;/);
+    assert.match(codigo(ROLLBACK), /^SET NAMES utf8mb4;/);
+    assert.deepEqual(sentencias(MIGRACION), [
+      'SET NAMES utf8mb4',
+      'ALTER TABLE mi_espacio_eventos ADD COLUMN IF NOT EXISTS aviso_por_mail tinyint(1) NOT NULL DEFAULT 1 AFTER publicado_at'
+    ]);
+    assert.deepEqual(sentencias(ROLLBACK), [
+      'SET NAMES utf8mb4',
+      'ALTER TABLE mi_espacio_eventos DROP COLUMN IF EXISTS aviso_por_mail'
+    ]);
+  });
+
+  it('las cabeceras dicen la spec, el orden y cómo se deshace; el rollback, que los apagados vuelven a mandar el mail y cómo listarlos antes', () => {
+    assert.match(cabecera(MIGRACION), /docs\/superpowers\/specs\/2026-11-27-evento-mail-optativo-design\.md/);
+    assert.match(cabecera(MIGRACION), /Solo agrega/);
+    assert.match(cabecera(MIGRACION), /ORDEN: correr ANTES de subir el código nuevo, después de migracion-dato-quincena-votacion\.sql/);
+    assert.match(cabecera(MIGRACION), /Se puede volver a correr/);
+    assert.match(cabecera(MIGRACION), /Para deshacer: rollback-mi-espacio-evento-aviso-por-mail\.sql/);
+    assert.match(cabecera(ROLLBACK), /migracion-mi-espacio-evento-aviso-por-mail\.sql/);
+    assert.match(cabecera(ROLLBACK), /ORDEN: primero volver a subir los archivos anteriores y hacer Restart; después correr esto/);
+    // Lo que cambia para quien cargó un Público con el tilde apagado, dicho con su nombre, y la consulta para listarlos antes
+    assert.match(cabecera(ROLLBACK), /los eventos con el tilde apagado vuelven a mandar el mail a la cadena/i);
+    assert.ok(cabecera(ROLLBACK).includes(CONSULTA_DE_LOS_APAGADOS), cabecera(ROLLBACK));
+    // Si también se deshace el aviso diario, esto va antes: las vueltas atrás van de la más nueva a la más vieja
+    assert.match(cabecera(ROLLBACK), /antes que rollback-mi-espacio-eventos-diario\.sql/);
+    assert.match(cabecera(ROLLBACK), /Se puede volver a correr/);
+  });
+
+  it('desde la estructura de main deja la de schema.sql, se puede repetir y los eventos que ya estaban quedan en 1', async () => {
+    await crearBase({ conLaColumna: false });
+    assert.ok(!(await columnas(root, BASE_AVISO_POR_MAIL)).some(esLoNuevo), 'la base de partida ya tiene la columna');
+    const creadora = await persona();
+    // Un Privado, un Laboral, un Público y un Público borrado
+    const deAntes = [
+      await evento(creadora),
+      await evento(creadora, { compartido: 1 }),
+      await evento(creadora, { publico: 1 }),
+      await evento(creadora, { publico: 1, activo: 0 })
+    ];
+    await root.query(sql(MIGRACION));
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+    assert.deepEqual(await avisos(), deAntes.map(id => [id, 1]));
+    // Lo que guarda el código anterior, que no conoce la columna, también queda en 1
+    const delCodigoAnterior = await evento(creadora, { publico: 1 });
+    assert.deepEqual((await avisos()).at(-1), [delCodigoAnterior, 1]);
+  });
+
+  it('el rollback se puede repetir, deja la tabla como antes con los eventos, y la migración la recupera con todos en 1', async () => {
+    await crearBase({ conLaColumna: true });
+    const creadora = await persona();
+    const apagado = await evento(creadora, { publico: 1, avisoPorMail: 0 });
+    const apagadoBorrado = await evento(creadora, { publico: 1, activo: 0, avisoPorMail: 0 });
+    const prendido = await evento(creadora, { publico: 1 });
+    // La consulta de la cabecera lista los que van a volver a mandar el mail: los activos con el tilde apagado
+    const [lista] = await root.query(CONSULTA_DE_LOS_APAGADOS);
+    assert.deepEqual(lista.map(f => [f.id, f.creado_por]), [[apagado, creadora]]);
+    assert.deepEqual(Object.keys(lista[0]), ['id', 'creado_por', 'fecha']);
+    await root.query(sql(ROLLBACK));
+    await root.query(sql(ROLLBACK));
+    // La estructura de main: la de schema.sql sin la columna; las claves y los índices de los eventos no cambian
+    const deMain = (await columnas(root, BASE_TEMPORAL)).filter(c => !esLoNuevo(c));
+    assert.deepEqual(await columnas(root, BASE_AVISO_POR_MAIL), deMain);
+    assert.deepEqual(await clavesAjenasDe(root, BASE_AVISO_POR_MAIL, TABLAS), await clavesAjenasDe(root, BASE_TEMPORAL, TABLAS));
+    assert.deepEqual(await indicesDe(root, BASE_AVISO_POR_MAIL, TABLAS), await indicesDe(root, BASE_TEMPORAL, TABLAS));
+    const [eventos] = await root.query(`SELECT id FROM ${enLaBase('mi_espacio_eventos')} ORDER BY id`);
+    assert.deepEqual(eventos.map(e => e.id), [apagado, apagadoBorrado, prendido]);
+    // La migración vuelve a dejar exactamente la estructura de schema.sql, y lo apagado se perdió: todos en 1
+    await root.query(sql(MIGRACION));
+    await comoSchema();
+    assert.deepEqual(await avisos(), [[apagado, 1], [apagadoBorrado, 1], [prendido, 1]]);
+  });
 });

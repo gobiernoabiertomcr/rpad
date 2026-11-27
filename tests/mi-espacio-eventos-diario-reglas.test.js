@@ -126,6 +126,43 @@ describe('mensajeDelGuardado (spec, 2.5)', () => {
   });
 });
 
+// El aviso por mail optativo (spec 2026-11-27-evento-mail-optativo, 5.3): con la cadena y el tilde apagado, lo dice, aunque la fecha no
+// llegue en ningún aviso; sin nadie arriba no vio ningún tilde, y sin avisoPorMail, como siempre
+describe('mensajeDelGuardado con el aviso por mail apagado', () => {
+  const quienTexto = 'Lo ve Lucía como «Trámite personal»';
+  const conTilde = (datos) => mensajeDelGuardado({ tipo: 'publico', verbo: 'guardado', quienTexto, superiores: ['Federico'], ...datos });
+  it('con la cadena: «… en su agenda, sin aviso por mail.», llegue o no el aviso', () => {
+    const esperado = 'Evento guardado. Lo ve Lucía como «Trámite personal» en su agenda, sin aviso por mail.';
+    assert.equal(conTilde({ aviso: { llega: true, cuando: 'hoy a las 14:00' }, avisoPorMail: false }), esperado);
+    assert.equal(conTilde({ aviso: { llega: false, motivo: 'como es para hoy' }, avisoPorMail: false }), esperado);
+    assert.equal(conTilde({ aviso: null, avisoPorMail: false }), esperado);
+    assert.equal(conTilde({ superiores: ['Federico', 'Graciela'], aviso: { llega: true, cuando: 'hoy a las 14:00' }, avisoPorMail: false }),
+      esperado);
+    assert.equal(conTilde({ verbo: 'cambiado', aviso: { llega: true, cuando: 'hoy a las 14:00' }, avisoPorMail: false }),
+      'Evento cambiado. Lo ve Lucía como «Trámite personal» en su agenda, sin aviso por mail.');
+  });
+
+  it('sin nadie arriba, como siempre', () => {
+    assert.equal(conTilde({ superiores: [], aviso: { llega: true, cuando: 'hoy a las 14:00' }, avisoPorMail: false }),
+      'Evento guardado. Lo ve Lucía como «Trámite personal» en su agenda.');
+  });
+
+  it('prendido o sin avisoPorMail, como siempre; en un Privado y un Laboral no cuenta', () => {
+    const llega = { llega: true, cuando: 'hoy a las 14:00' };
+    const conAviso = 'Evento guardado. Lo ve Lucía como «Trámite personal» en su agenda, y a Federico le llega antes del evento.';
+    assert.equal(conTilde({ aviso: llega }), conAviso);
+    assert.equal(conTilde({ aviso: llega, avisoPorMail: true }), conAviso);
+    // Solo el false literal
+    for (const avisoPorMail of [0, null, 'false']) assert.equal(conTilde({ aviso: llega, avisoPorMail }), conAviso, String(avisoPorMail));
+    assert.equal(conTilde({ aviso: { llega: false, motivo: 'como es para hoy' } }),
+      'Evento guardado. Lo ve Lucía como «Trámite personal» en su agenda.');
+    assert.equal(mensajeDelGuardado({ tipo: 'privado', verbo: 'guardado', quienTexto: 'Solo vos', avisoPorMail: false }),
+      'Evento guardado. Solo vos lo ves.');
+    assert.equal(mensajeDelGuardado({ tipo: 'laboral', verbo: 'guardado', quienTexto: 'Con Federico', superiores: ['Graciela'],
+      avisoPorMail: false }), 'Evento guardado. Con Federico.');
+  });
+});
+
 describe('mensajeDeLaCasilla (spec, 2.7)', () => {
   it('cada caso', () => {
     assert.equal(mensajeDeLaCasilla({ recibir: true, alguienDepende: true }), 'Te va a llegar tu agenda por mail.');
@@ -217,16 +254,20 @@ describe('mailDeLaPersona (spec, 5.2 a 5.4)', () => {
       assert.equal(mail(TOMAS, eventos), null);
     });
 
-    it('**de un Público ajeno no se lee ni el título, ni el detalle, ni con quién está**', () => {
-      const conTrampas = publico(1);
-      for (const campo of ['titulo', 'detalle', 'personas', 'vistas']) {
-        Object.defineProperty(conTrampas, campo, { get() { throw new Error(`se leyó ${campo}`); } });
-      }
+    it('**de un Público ajeno no se lee ni el título, ni el detalle, ni con quién está**, tampoco con el aviso por mail apagado', () => {
+      const conTrampas = (id, cambios = {}) => {
+        const elEvento = publico(id, cambios);
+        for (const campo of ['titulo', 'detalle', 'personas', 'vistas']) {
+          Object.defineProperty(elEvento, campo, { get() { throw new Error(`se leyó ${campo}`); } });
+        }
+        return elEvento;
+      };
+      const eventos = [conTrampas(1), conTrampas(2, { desde: '11:00', aviso_por_mail: false, texto_publico: 'Asunto familiar' })];
       for (const persona of [FEDERICO, GRACIELA, TOMAS, LUCIA]) {
-        const resultado = mail(persona, [conTrampas]);
+        const resultado = mail(persona, eventos);
         if (resultado) assert.ok(!JSON.stringify(resultado).includes('Título'));
       }
-      assert.equal(mail(FEDERICO, [conTrampas]).gente[0].texto, 'Micaela: Fuera de la oficina');
+      assert.deepEqual(mail(FEDERICO, eventos).gente.map((item) => item.texto), ['Micaela: Fuera de la oficina']);
     });
 
     it('con publico y compartido juntos (datos mal), manda el Público: a un Laboral no entra', () => {
@@ -335,6 +376,99 @@ describe('mailDeLaPersona (spec, 5.2 a 5.4)', () => {
     it('el evento que cambió de fecha entra como no informado para la nueva, aunque ya se le haya informado la otra', () => {
       const informados = new Set([claveDeInformado(1, 2, '2026-11-09')]);
       assert.equal(mail(FEDERICO, [cargadoAyer()], opciones(informados)).gente.length, 1);
+    });
+  });
+
+  // El aviso por mail optativo (spec 2026-11-27-evento-mail-optativo, 6): un Público de su gente con el tilde apagado no le llega a la cadena
+  // por ningún camino, ni cuenta como rezagado; lo propio de quien lo cargó no cambia
+  describe('con el aviso por mail apagado', () => {
+    const apagado = (id, cambios = {}) => publico(id, { aviso_por_mail: false, texto_publico: 'Asunto familiar', ...cambios });
+    const VIERNES_TARDE = '2026-11-06 14:00:00';
+
+    it('a las 14:00 no le llega a nadie de la cadena', () => {
+      for (const persona of [FEDERICO, GRACIELA]) assert.equal(mail(persona, [apagado(1)]), null, persona.nombre_completo);
+    });
+
+    it('con otro prendido el mismo día, solo el prendido, y solo ese queda informado', () => {
+      const eventos = [apagado(1), publico(2, { desde: '11:00' })];
+      for (const persona of [FEDERICO, GRACIELA]) {
+        const resultado = mail(persona, eventos);
+        assert.deepEqual(resultado.gente.map(({ evento_id: id, texto }) => [id, texto]), [[2, 'Micaela: Fuera de la oficina']], persona.nombre_completo);
+        assert.deepEqual(resultado.informa, [{ evento_id: 2, fecha: '2026-11-06' }]);
+      }
+    });
+
+    it('a las 8:05, uno de hoy sin informar y publicado antes no dispara el mail; con otro rezagado prendido, no aparece', () => {
+      const opciones = { momento: 'manana', ahora: VIERNES_MANANA };
+      const deHoy = apagado(1, { desde: '08:15', publicado_at: '2026-11-05 14:02:00' });
+      assert.equal(mail(FEDERICO, [deHoy], opciones), null);
+      const resultado = mail(FEDERICO, [deHoy, publico(2, { desde: '09:00', publicado_at: '2026-11-05 15:00:00' })], opciones);
+      assert.deepEqual(resultado.gente.map(({ evento_id: id, nuevo }) => [id, nuevo]), [[2, true]]);
+      assert.deepEqual(resultado.informa, [{ evento_id: 2, fecha: '2026-11-06' }]);
+    });
+
+    it('a las 14:00 tampoco entra al grupo «Hoy»', () => {
+      const deHoy = apagado(1, { desde: '16:00', publicado_at: '2026-11-05 15:00:00' });
+      assert.equal(mail(FEDERICO, [deHoy], { ahora: VIERNES_TARDE }), null);
+      const resultado = mail(FEDERICO, [deHoy, publico(2, { desde: '17:00', publicado_at: '2026-11-05 15:00:00' })], { ahora: VIERNES_TARDE });
+      assert.deepEqual(resultado.gente.map((item) => item.evento_id), [2]);
+    });
+
+    it('prendido hoy para hoy (publicado_at de hoy) no es rezagado: ni a las 8:05 ni a las 14:00', () => {
+      const prendidoHoy = publico(1, { aviso_por_mail: true, desde: '16:00', publicado_at: '2026-11-06 07:30:00' });
+      assert.equal(mail(FEDERICO, [prendidoHoy], { momento: 'manana', ahora: VIERNES_MANANA }), null);
+      assert.equal(mail(FEDERICO, [{ ...prendidoHoy, publicado_at: '2026-11-06 09:00:00' }], { ahora: VIERNES_TARDE }), null);
+    });
+
+    // No es rezagado, pero tampoco se esconde: con otro rezagado de su gente, el mail de las 8:05 trae toda la agenda de hoy, y ahí va
+    // como nuevo y queda informado. Es la regla de cualquier Público cargado hoy antes de las 8:05, que no se cambia (Revisión final, M2)
+    it('prendido hoy para hoy, con otro rezagado de su gente, sale a las 8:05 como nuevo y queda informado, igual que uno cargado hoy', () => {
+      const opciones = { momento: 'manana', ahora: VIERNES_MANANA };
+      const otroRezagado = publico(2, { desde: '09:00', publicado_at: '2026-11-05 15:00:00', texto_publico: 'Trámite personal' });
+      const prendidoHoy = publico(1, { aviso_por_mail: true, desde: '16:00', publicado_at: '2026-11-06 07:30:00' });
+      for (const persona of [FEDERICO, GRACIELA]) {
+        const resultado = mail(persona, [otroRezagado, prendidoHoy], opciones);
+        assert.deepEqual(resultado.gente.map(({ evento_id: id, texto, nuevo }) => [id, texto, nuevo]), [
+          [2, 'Micaela: Trámite personal', true], [1, 'Micaela: Fuera de la oficina', true]
+        ], persona.nombre_completo);
+        assert.deepEqual(resultado.informa, [{ evento_id: 2, fecha: '2026-11-06' }, { evento_id: 1, fecha: '2026-11-06' }]);
+        // Uno cargado hoy antes de las 8:05, sin el tilde de por medio, sale igual
+        const cargadoHoy = publico(1, { desde: '16:00', publicado_at: '2026-11-06 07:30:00' });
+        assert.deepEqual(mail(persona, [otroRezagado, cargadoHoy], opciones), resultado, persona.nombre_completo);
+      }
+    });
+
+    // Lo que salió, salió (spec 2026-11-27-evento-mail-optativo, 2 y 6): apagarlo no borra lo informado y prenderlo otra vez reescribe
+    // publicado_at; para la misma fecha, no se repite (Revisión final, M3)
+    it('apagarlo y volver a prenderlo para la misma fecha no repite: ni rezagado a las 8:05, ni «Nuevo:», ni en el grupo «Hoy»', () => {
+      const informados = new Set([claveDeInformado(1, 2, '2026-11-06'), claveDeInformado(1, 1, '2026-11-06')]);
+      const manana = { momento: 'manana', ahora: VIERNES_MANANA, informados };
+      const otroRezagado = publico(2, { desde: '09:00', publicado_at: '2026-11-05 15:00:00', texto_publico: 'Trámite personal' });
+      // Prendido otra vez ayer después de las 14:00, o hoy antes de las 8:05
+      for (const publicadoAt of ['2026-11-05 15:00:00', '2026-11-06 07:30:00']) {
+        const otraVez = publico(1, { aviso_por_mail: true, desde: '16:00', publicado_at: publicadoAt });
+        for (const persona of [FEDERICO, GRACIELA]) {
+          const donde = `${persona.nombre_completo}, publicado_at ${publicadoAt}`;
+          assert.equal(mail(persona, [otraVez], manana), null, donde);
+          const conOtro = mail(persona, [otroRezagado, otraVez], manana);
+          assert.deepEqual(conOtro.gente.map(({ evento_id: id, nuevo }) => [id, nuevo]), [[2, true], [1, false]], donde);
+          assert.equal(mail(persona, [otraVez], { ahora: VIERNES_TARDE, informados }), null, donde);
+        }
+      }
+    });
+
+    it('lo propio de quien lo cargó sigue saliendo, con su marca de siempre', () => {
+      const resultado = mail(MICAELA, [apagado(1, { vistas: [{ id: 4, nombre: 'Lucía Ortiz' }] })]);
+      assert.deepEqual(resultado.propios.map(({ evento_id: id, titulo, detalle, marca }) => [id, titulo, detalle, marca]), [
+        [1, 'Título 1', 'Detalle 1', 'Lo ve Lucía como «Asunto familiar»']
+      ]);
+      assert.deepEqual(resultado.gente, []);
+    });
+
+    it('un evento sin la clave (los de los datos de antes) cuenta como prendido', () => {
+      const sinLaClave = publico(1);
+      assert.equal('aviso_por_mail' in sinLaClave, false);
+      assert.equal(mail(FEDERICO, [sinLaClave]).gente.length, 1);
     });
   });
 

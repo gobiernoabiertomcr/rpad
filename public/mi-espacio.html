@@ -579,10 +579,20 @@
         .me-frase-tipo.apagada { background: none; border-style: dashed; color: var(--sg-suave); }
         .me-renglon-aviso { display: flex; gap: 10px; align-items: flex-start; }
         .me-renglon-aviso > .me-icono { width: 18px; height: 18px; flex: none; margin-top: 1px; color: var(--sg-tinta); }
-        .me-renglon-aviso b { color: var(--sg-tinta); }
         .me-superiores { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
         .me-superior { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 2px; border-radius: 999px; background: #fff; border: 1px solid var(--sg-linea); font-weight: 600; color: var(--sg-tinta); font-size: 0.82rem; }
         .me-superior i { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--sg-tinta); color: #fff; font-style: normal; font-size: 0.68rem; font-weight: 700; }
+        /* La casilla del aviso por mail de un Público (spec 2026-11-27-evento-mail-optativo, 4): su rótulo es la parte de arriba del
+           recuadro de la frase (el mismo fondo y el mismo borde, sin el de abajo) y la frase, la de abajo, con la sangría de la casilla,
+           que va en la columna de los íconos de las otras frases. Su foco es el de todo el modal (.me-modal :focus-visible). Apagada, los
+           chips de la cadena en gris, sin fondo y con el borde punteado (el color no es lo único: la frase también cambia); el texto
+           --sg-suave da 5,36:1 sobre el recuadro y 5,09:1 sobre el fondo de las iniciales */
+        .me-aviso-mail { display: flex; gap: 10px; align-items: center; margin: 8px 0 0; padding: 10px 12px 0; border-radius: 10px 10px 0 0; background: var(--sg-sutil); border: 1px solid var(--sg-linea); border-bottom: 0; color: var(--sg-tinta); font-size: 0.84rem; line-height: 1.4; cursor: pointer; }
+        .me-aviso-mail input { width: 18px; height: 18px; margin: 0; accent-color: var(--sg-tinta); flex: none; cursor: pointer; }
+        .me-aviso-mail:not([hidden]) + .me-frase-tipo { margin-top: 0; padding: 6px 12px 10px 40px; border-top: 0; border-radius: 0 0 10px 10px; }
+        .me-aviso-mail:not([hidden]) + .me-frase-tipo .me-superiores { margin-top: 0; }
+        .me-superiores.apagados .me-superior { background: transparent; border-style: dashed; border-color: var(--sg-borde-control); color: var(--sg-suave); }
+        .me-superiores.apagados .me-superior i { background: var(--sg-gris-fondo); color: var(--sg-suave); }
         .me-por-mail { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--sg-linea); }
         .me-por-mail .form-hint { margin: 4px 0 0 25px; }
         .me-tilde-por-mail { display: flex; gap: 8px; align-items: center; cursor: pointer; color: var(--sg-tinta); font-size: 0.9rem; }
@@ -1474,6 +1484,7 @@
                 <div class="me-grupo" id="ev-grupo-tipo" role="group" aria-labelledby="ev-tipo-rotulo" aria-describedby="ev-tipo-ayuda ev-tipo-error">
                     <span class="form-label" id="ev-tipo-rotulo">¿Quién lo ve?</span>
                     <div class="me-barra-tipos" id="ev-tipos"></div>
+                    <label class="me-aviso-mail" id="ev-aviso-mail-rotulo" hidden><input type="checkbox" id="ev-aviso-mail" aria-describedby="ev-tipo-ayuda"> <b>Aviso por mail</b></label>
                     <p class="form-hint me-frase-tipo" id="ev-tipo-ayuda" hidden></p>
                     <p class="form-error" id="ev-tipo-error" hidden></p>
                 </div>
@@ -1606,6 +1617,6 @@
     <script src="js/auth.js?v=20261204"></script>
     <script src="js/main.js?v=20261204"></script>
     <script src="js/api.js?v=20261204"></script>
-    <script src="js/mi-espacio.js?v=20261234"></script>
+    <script src="js/mi-espacio.js?v=20261235"></script>
 </body>
 </html>

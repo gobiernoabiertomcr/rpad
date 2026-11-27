@@ -23,7 +23,8 @@ import pool from '../config/database.js';
 import { ahoraArgentina, esFechaIso, hoyArgentina, sumarDias } from '../services/notasDigitalesCalendario.js';
 import {
   MENSAJES_EVENTO, validarEvento, validarAvisoDelEvento, avisoDe, personasDelPedido, itemDeEvento, itemDeLicencia,
-  itemDeAusencia, itemsDeFeriados, emailsDelGuardado, companerosPorDia, mesDeLaFrase, fraseDelMes, textoRangoEvento, fechaMaximaEvento
+  itemDeAusencia, itemsDeFeriados, emailsDelGuardado, companerosPorDia, mesDeLaFrase, fraseDelMes, textoRangoEvento, fechaMaximaEvento,
+  avisoPorMailAlGuardar
 } from '../services/miEspacioEventosReglas.js';
 import {
   eventosVisibles, eventoVisible, eventoPropio, personasParaElegir, licenciasPropiasEntre, audienciaDe
@@ -161,11 +162,14 @@ const conLasPersonas = (datos, { usuario, lista, yaEstaban, tipo }) => {
  * Un Laboral con `compartido` en el true literal y «Todos» es el «Toda la administración» de una pestaña con la página anterior: la
  * página nueva no manda `compartido`. Se guarda con la administración activa como personas, que es lo que quiso decir: como «Todos»
  * les llegarían el título, el detalle y un mail a todos los lectores, sin confirmación (spec 2026-11-04-agenda-aviso-y-dependencia, 2.1).
+ * `aviso_por_mail` sale ya resuelto, un booleano, con el evento de antes (`avisoPorMailAlGuardar`, spec
+ * 2026-11-27-evento-mail-optativo, 5.1): un cuerpo que no lo trae no prende ni apaga un Público que ya lo era.
  * Devuelve `{ datos }` o `{ error }`.
  */
 const datosDelGuardado = async (entrada, { usuario, anterior = null }, conexion) => {
-  const { datos, error } = validarEvento(entrada, hoyArgentina());
+  const { datos: validados, error } = validarEvento(entrada, hoyArgentina());
   if (error) return { error };
+  const datos = { ...validados, aviso_por_mail: avisoPorMailAlGuardar(validados, anterior) };
   if (datos.publico) {
     if (datos.publico_todos) return { datos };
     const yaEstaban = anterior?.publico ? (anterior.vistas ?? []).map((persona) => persona.id) : [];
@@ -199,14 +203,16 @@ const mensajeDe = async (conexion, evento, usuarioId, verbo) => {
     ? cuandoLlegaElAviso({ fecha: evento.fecha, desde: evento.desde, ahora, calendario })
     : { llega: true };
   const superiores = superioresConNombre(usuarioId, filas).map((persona) => persona.nombre_corto);
-  return mensajeDelGuardado({ tipo: 'publico', verbo, quienTexto, superiores, aviso });
+  return mensajeDelGuardado({
+    tipo: 'publico', verbo, quienTexto, superiores, aviso, avisoPorMail: evento.aviso_por_mail !== false
+  });
 };
 
 // Las columnas que se guardan de un evento, en el orden de INSERT y de UPDATE (un Público lleva compartido y para_todos en 0:
-// lo dice validarEvento)
+// lo dice validarEvento; `aviso_por_mail`, el de datosDelGuardado, ya resuelto)
 const valoresDelEvento = (datos) => [datos.titulo, datos.detalle, datos.fecha, datos.desde, datos.hasta,
   datos.compartido ? 1 : 0, datos.para_todos ? 1 : 0, datos.publico ? 1 : 0, datos.publico_todos ? 1 : 0,
-  datos.texto_publico, datos.recordatorio];
+  datos.texto_publico, datos.recordatorio, datos.aviso_por_mail ? 1 : 0];
 
 /**
  * Las filas de las personas de un evento después de guardarlo (spec, sección 3): sin compartir, ninguna; con «Todos», solo
@@ -434,8 +440,8 @@ export const crearEvento = (req, res) => guardarEvento(res, 'Error al guardar el
   if (error) return rechazo(error);
   const [resultado] = await conexion.query(
     `INSERT INTO mi_espacio_eventos (titulo, detalle, fecha, desde, hasta, compartido, para_todos, publico, publico_todos,
-       texto_publico, recordatorio, creado_por, publicado_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       texto_publico, recordatorio, aviso_por_mail, creado_por, publicado_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [...valoresDelEvento(datos), usuario.id, datos.publico ? ahoraArgentina() : null]
   );
   await guardarPersonas(conexion, resultado.insertId, datos, []);
@@ -456,14 +462,17 @@ export const cambiarEvento = (req, res) => guardarEvento(res, 'Error al cambiar 
   const { datos, error } = await datosDelGuardado(cuerpoDe(req), { usuario, anterior: antes }, conexion);
   if (error) return rechazo(error);
   const audienciaAntes = await audienciaDe(antes, conexion);
-  // Cuándo quedó Público con esa fecha (spec 2026-11-04-agenda-aviso-y-dependencia, 5.4): un cambio de título, de hora o de texto no lo toca
-  const yaEraPublicoConEsaFecha = datos.publico && antes.publico && antes.fecha === datos.fecha;
+  // Cuándo quedó Público con esa fecha (spec 2026-11-04-agenda-aviso-y-dependencia, 5.4): un cambio de título, de hora o de texto no lo
+  // toca. Prender el tilde del aviso por mail cuenta como cargarlo en ese momento, y apagarlo no lo toca (spec
+  // 2026-11-27-evento-mail-optativo, 5.2)
+  const prendeElAviso = antes.aviso_por_mail === false && datos.aviso_por_mail === true;
+  const conservaPublicadoAt = datos.publico && antes.publico && antes.fecha === datos.fecha && !prendeElAviso;
   await conexion.query(
     `UPDATE mi_espacio_eventos
      SET titulo = ?, detalle = ?, fecha = ?, desde = ?, hasta = ?, compartido = ?, para_todos = ?, publico = ?,
-       publico_todos = ?, texto_publico = ?, recordatorio = ?${yaEraPublicoConEsaFecha ? '' : ', publicado_at = ?'}
+       publico_todos = ?, texto_publico = ?, recordatorio = ?, aviso_por_mail = ?${conservaPublicadoAt ? '' : ', publicado_at = ?'}
      WHERE id = ?`,
-    [...valoresDelEvento(datos), ...(yaEraPublicoConEsaFecha ? [] : [datos.publico ? ahoraArgentina() : null]), antes.id]
+    [...valoresDelEvento(datos), ...(conservaPublicadoAt ? [] : [datos.publico ? ahoraArgentina() : null]), antes.id]
   );
   await guardarPersonas(conexion, antes.id, datos, antes.personas);
   await guardarVistas(conexion, antes.id, datos, antes.vistas ?? []);

@@ -1,9 +1,10 @@
 # Mi espacio: el aviso diario de la agenda
 
-Un mail a las 14:00 del día hábil anterior con la agenda de cada persona, y a sus jefes, el texto corto de lo que su gente deja a la vista.
+Un mail a las 14:00 del día hábil anterior con la agenda de cada persona, y a sus jefes, el texto corto de lo que su gente deja a la vista con aviso por mail.
 
 Historia y motivos, en las specs:
 - `docs/superpowers/specs/2026-11-04-agenda-aviso-y-dependencia-design.md`
+- `docs/superpowers/specs/2026-11-27-evento-mail-optativo-design.md` (el aviso por mail optativo de un Público)
 
 ## Archivos
 
@@ -30,7 +31,10 @@ Historia y motivos, en las specs:
 - `mailDeLaPersona({ persona, eventos, informados, momento, ahora, calendario, usuarios })` da null o `{ propios, gente, dias, soloHoy, informa }`.
 - Lo propio, solo con `eventos_por_mail`: lo que creó, de los tres tipos, con título, detalle y una marca, y los Laborales de otra persona en los que está, con «Laboral, de Federico».
 - Haber apagado «Mi recordatorio» de un evento no lo saca de este mail.
-- Lo de su gente, siempre: los Públicos activos de quien la tiene en su cadena, de un creador activo, solo con el nombre corto y el texto corto, «Micaela: Fuera de la oficina», con la hora y «Hasta las 10:00» si tiene fin.
+- Lo de su gente, sin casilla de por medio: los Públicos activos de quien la tiene en su cadena, de un creador activo, solo con el nombre corto y el texto corto, «Micaela: Fuera de la oficina», con la hora y «Hasta las 10:00» si tiene fin.
+- Un Público con el aviso por mail apagado (`aviso_por_mail` en 0) no le llega a nadie de la cadena: ni a las 14:00, ni a las 8:05, ni en el grupo «Hoy»; no cuenta como rezagado ni queda informado.
+  Quien esté marcado lo ve igual en su agenda, y quien lo cargó lo sigue recibiendo en lo propio, con su casilla.
+  `eventosDelAviso` lo trae prendido salvo un 0 de la base, y `mailDeLaPersona` corta solo con el `false` literal, en la rama del Público ajeno, junto a `creador_activo` y antes de leer nada más del evento.
 - Quien solo fue elegida para ver un Público no recibe nada: el mail es para que los jefes estén enterados, no para quienes lo ven en su agenda (decisión del usuario).
 - Un jefe no ve el título aunque esté marcado para verlo: la marca decide la agenda, y la cadena, el mail.
   Tampoco lo ve en su agenda, donde un Público siempre llega recortado.
@@ -43,8 +47,13 @@ Historia y motivos, en las specs:
 - `mi_espacio_evento_informados` tiene una fila por evento, persona y fecha del evento, escrita solo cuando el mail salió bien.
 - Es por fecha porque cambiar un Público de fecha lo vuelve a poner sin informar; si vuelve a una fecha ya informada de ese evento, no se avisa de nuevo.
 - Un rezagado es un evento sin informar, de hoy, con `publicado_at` anterior a hoy o NULL (los de antes de la migración) y que todavía no empezó.
-- `publicado_at` se escribe en hora argentina cuando un evento queda Público siendo nuevo, cuando pasa a Público desde otro tipo y cuando un Público cambia de fecha.
-  Un cambio de título, hora o texto no lo toca, y un evento que deja de ser Público queda con NULL.
+- `publicado_at` se escribe en hora argentina cuando un evento queda Público siendo nuevo, cuando pasa a Público desde otro tipo, cuando un Público cambia de fecha y cuando se prende su aviso por mail.
+  Prenderlo cuenta como cargarlo en ese momento (decisión del usuario): prendido hoy para hoy, no es rezagado a las 8:05.
+  Pero si ese jefe tiene otro rezagado, el mail de las 8:05 trae toda la agenda de hoy: prendido hoy antes de las 8:05, va ahí como «Nuevo:» y queda informado.
+  Es la regla de cualquier Público cargado hoy antes de las 8:05 y no se le hace una excepción: prenderlo es cargarlo, igual que un Privado que pasa a Público (spec 2026-11-27-evento-mail-optativo, sección 2, «Prenderlo tarde»).
+  Un cambio de título, hora o texto no lo toca, apagar el aviso por mail tampoco, y un evento que deja de ser Público queda con NULL.
+- Apagar el aviso por mail no borra lo informado: apagarlo y volver a prenderlo para la misma fecha no repite el mail (decisión del usuario, spec 2026-11-27-evento-mail-optativo, secciones 2 y 6).
+  Lo que salió, salió: la cadena ya se enteró, y limpiar los informados al apagarlo haría que, prendido otra vez antes del día, le vuelva a llegar a las 8:05 como «Nuevo:».
 - `claveDeInformado` usa siempre el texto de la fecha, `AAAA-MM-DD`: la consulta la pasa con `DATE_FORMAT`.
 
 ## La frase de cuándo llega
@@ -86,7 +95,11 @@ Historia y motivos, en las specs:
 
 - `usuarios.eventos_por_mail`, `PUT /api/mi-espacio/eventos-por-mail` con `{ recibir: true | false }`; otro valor, 400 en `recibir`.
 - `GET /api/mi-espacio/eventos` trae `eventos_por_mail` y `alguien_depende`, con el que la página suma «Lo de quienes dependen de vos te llega igual.».
-- Apaga solo lo propio: lo que le llega como jefe no se apaga, para que el objetivo no dependa de una casilla (decisión del usuario).
+- Apaga solo lo propio: lo que le llega como jefe no se apaga desde su casilla, para que el objetivo no dependa de ella (decisión del usuario).
+- El mail a la cadena depende también del tilde «Aviso por mail» de quien carga cada Público: quien recibe no puede apagar lo de su gente, y quien carga decide evento por evento (decisión del usuario, spec 2026-11-27-evento-mail-optativo, sección 10).
+  El motivo: poder dejar algo a la vista de quien se elige, en su agenda, sin avisarle por mail a la cadena.
+- Por eso los textos de la casilla («Lo de quienes dependen de vos te llega igual.») y las notas al pie del mail del jefe («…lo demás te llega siempre.») no nombran el tilde: desde el lado de quien recibe son ciertos, porque no puede apagar lo de su gente.
+  El tilde se le explica a quien carga el evento: en el formulario, al guardar, en Próximos y en el Resumen.
 
 ## Los mails
 

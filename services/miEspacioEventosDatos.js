@@ -13,13 +13,14 @@
  * audiencia de emails es nadie: el recordatorio le llega solo a quien lo creó.
  *
  * Un `Evento` es `{ id, creado_por, creador, titulo, detalle, fecha, desde, hasta, compartido, para_todos, publico,
- * publico_todos, texto_publico, recordatorio, personas }`, y un Público suma `vistas`:
+ * publico_todos, texto_publico, aviso_por_mail, recordatorio, personas }`, y un Público suma `vistas`:
  * - `creado_por`, el id de quien lo creó (null si la cuenta se borró: la clave es ON DELETE SET NULL), y `creador`, su
  *   nombre (también si está desactivada: el evento sigue para los invitados);
  * - `fecha` 'AAAA-MM-DD' (DATE_FORMAT) y `desde` y `hasta` 'HH:MM' (TIME_FORMAT: el pool no tiene `dateStrings`, y un TIME
  *   crudo, '10:00:00', deja el aviso en null), `hasta` null sin hora de fin; `detalle` null si no tiene;
  * - `compartido`, `para_todos`, `publico` y `publico_todos`, booleanos; `texto_publico`, lo que ven los demás de un Público
- *   (null en los otros); `recordatorio`, el del enum;
+ *   (null en los otros); `aviso_por_mail`, el tilde del aviso por mail a la cadena (spec 2026-11-27-evento-mail-optativo:
+ *   booleano, false solo con un 0; un Privado y un Laboral lo guardan prendido); `recordatorio`, el del enum;
  * - `personas`: `[{ id, nombre, sin_recordatorio }]`, todas sus filas, por nombre (también las de cuentas desactivadas o que
  *   ya no están en la lista: siguen en el evento). Con «Todos», las filas son solo las de quienes apagaron su
  *   recordatorio; sin compartir (también en un Público), ninguna;
@@ -50,7 +51,7 @@ const esSi = (valor) => valor === true || valor === 1;
 
 const COLUMNAS_EVENTO = `e.id, e.creado_por, c.nombre_completo AS creador, c.activo AS creador_activo, e.titulo, e.detalle,
   DATE_FORMAT(e.fecha, '%Y-%m-%d') AS fecha, TIME_FORMAT(e.desde, '%H:%i') AS desde, TIME_FORMAT(e.hasta, '%H:%i') AS hasta,
-  e.compartido, e.para_todos, e.publico, e.publico_todos, e.texto_publico, e.recordatorio`;
+  e.compartido, e.para_todos, e.publico, e.publico_todos, e.texto_publico, e.aviso_por_mail, e.recordatorio`;
 
 // Los que ve una persona (tres parámetros: su id, tres veces), cualquiera sea su rol: los que creó, los compartidos con una fila
 // suya o «para todos» y los Personales (Públicos) que le muestran (VISTA_PUBLICA: de quien sigue activo, para todos o con una fila
@@ -105,7 +106,8 @@ export const vistasDe = async (eventoIds, conexion = pool) => {
 };
 
 // Un Personal (Público) de otra persona, recortado (spec 2026-10-29-mi-espacio-evento-publico, 6.3): lo que necesita
-// itemDeEvento para «Carla: Turno médico». Ni el título, ni el detalle, ni el recordatorio, ni con quién más está
+// itemDeEvento para «Carla: Turno médico». Ni el título, ni el detalle, ni el recordatorio, ni con quién más está, ni el tilde
+// del aviso por mail (spec 2026-11-27-evento-mail-optativo, 5.4: es de quien lo cargó)
 const recortado = (evento) => ({
   id: evento.id, creado_por: evento.creado_por, creador: evento.creador, fecha: evento.fecha, desde: evento.desde,
   hasta: evento.hasta, compartido: 0, publico: 1, texto_publico: evento.texto_publico
@@ -149,6 +151,7 @@ const leerEventos = async (condicion, valores, conexion, { quienMira = null } = 
       publico: Number(fila.publico) === 1,
       publico_todos: Number(fila.publico_todos) === 1,
       texto_publico: fila.texto_publico ?? null,
+      aviso_por_mail: Number(fila.aviso_por_mail) !== 0,
       recordatorio: fila.recordatorio
     },
     creadorActivo: Number(fila.creador_activo) === 1

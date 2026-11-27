@@ -2325,6 +2325,10 @@ const iconoDelEvento = (evento) => {
   if (evento.publico === true) return { icono: 'ojo' };
   return evento.compartido === true ? {} : { icono: 'candado' };
 };
+// La insignia de un Público tuyo con el aviso por mail apagado (`sin_aviso`, para sumarlo a su cosa como el ícono). El de otra persona
+// nunca lo trae (llega recortado), y solo el `false` literal la muestra
+const INSIGNIA_SIN_AVISO_POR_MAIL = 'Sin aviso por mail';
+const sinAvisoDelEvento = (evento) => (evento.es_mio === true && evento.publico === true && evento.aviso_por_mail === false ? { sin_aviso: true } : {});
 // Los eventos (los ítems de GET /mi-espacio/eventos) con una fecha, por fecha, hora y título
 const eventosEnOrden = (eventos) => listaDe(eventos).filter((evento) => esFechaDeTexto(evento.fecha))
   .sort((a, b) => a.fecha.localeCompare(b.fecha) || horaDelEvento(a).localeCompare(horaDelEvento(b))
@@ -2724,10 +2728,11 @@ const enlaceVotar = (enlace) => `<a class="sg-btn me-votar" href="${esc(enlace)}
 // botón (lo abre, como en la grilla)
 const htmlDeFilaDelDia = (fila) => {
   const quien = conTexto(fila.quien) ? ` <small>${esc(fila.quien)}</small>` : '';
+  const sinAviso = fila.sin_aviso === true ? ` <span class="me-insignia gris">${INSIGNIA_SIN_AVISO_POR_MAIL}</span>` : '';
   // Votar la principal lleva su enlace «Votar»
   const votar = conTexto(fila.enlace) ? enlaceVotar(fila.enlace) : '';
   const cuerpo = `<span class="me-elegido-icono" aria-hidden="true">${iconoOPunto(fila.clase, fila.icono)}</span>`
-    + `<span class="me-elegido-hora">${esc(fila.hora)}</span> <span class="me-elegido-texto">${esc(fila.texto)}${quien}${votar}</span>`;
+    + `<span class="me-elegido-hora">${esc(fila.hora)}</span> <span class="me-elegido-texto">${esc(fila.texto)}${quien}${sinAviso}${votar}</span>`;
   return `<li class="me-fila-del-dia ${fila.clase}">${Object.hasOwn(fila, 'evento_id')
     ? `<button type="button" class="me-elegido-cosa" data-evento="${esc(fila.evento_id)}">${cuerpo}</button>`
     : `<div class="me-elegido-cosa">${cuerpo}</div>`}</li>`;
@@ -2770,7 +2775,7 @@ function htmlDelDiaElegido(fecha, datos, hoy) {
   for (const evento of eventosEnOrden(fuente.eventos)) {
     if (evento.fecha !== fecha) continue;
     filas.push({
-      clase: claseDelEvento(evento), ...iconoDelEvento(evento), hora: horaDelEvento(evento), texto: comoTexto(evento.titulo),
+      clase: claseDelEvento(evento), ...iconoDelEvento(evento), ...sinAvisoDelEvento(evento), hora: horaDelEvento(evento), texto: comoTexto(evento.titulo),
       quien: comoTexto(evento.quien_texto), evento_id: evento.id ?? null
     });
   }
@@ -2826,7 +2831,7 @@ function gruposDeProximos(datos, hoy) {
   for (const evento of eventosEnOrden(fuente.eventos)) {
     if (!enRango(evento.fecha)) continue;
     cosas.push({
-      fecha: evento.fecha, clase: claseDelEvento(evento), ...iconoDelEvento(evento), hora: horaDelEvento(evento),
+      fecha: evento.fecha, clase: claseDelEvento(evento), ...iconoDelEvento(evento), ...sinAvisoDelEvento(evento), hora: horaDelEvento(evento),
       texto: comoTexto(evento.titulo), detalle: comoTexto(esObjeto(evento.aviso) ? evento.aviso.corto : ''),
       quien: comoTexto(evento.quien_texto), evento_id: evento.id ?? null
     });
@@ -2852,6 +2857,7 @@ function gruposDeProximos(datos, hoy) {
       : { hora: grupo.dia(cosa.fecha), titulo: conHora && cosa.hora ? `${cosa.hora} ${cosa.texto}` : cosa.texto };
     Object.assign(item, { detalle: cosa.detalle, clase: cosa.clase });
     if (Object.hasOwn(cosa, 'icono')) item.icono = cosa.icono;
+    if (Object.hasOwn(cosa, 'sin_aviso')) item.sin_aviso = cosa.sin_aviso;
     if (Object.hasOwn(cosa, 'enlace')) item.enlace = cosa.enlace;
     if (esEvento) Object.assign(item, { quien: cosa.quien, evento_id: cosa.evento_id });
     grupo.items.push(item);
@@ -2861,8 +2867,9 @@ function gruposDeProximos(datos, hoy) {
 
 // Una cosa de los próximos: la hora, el título con el ícono de la cosa delante (decorativo; lo que es solo tuyo, un punto; un
 // Público, el ojo; un evento es un botón con su id: lo abre) y el detalle (de un evento, quién está, en su color, y su aviso). Un
-// Público tuyo (el que lleva el ojo, `icono`) dice a quiénes se lo mostrás y cómo, en una línea con el ojo y sin insignia («Lo ven
-// todos como «Turno médico»», spec 2026-10-29-mi-espacio-evento-publico, 5.1); uno de otra persona, nada de quién está
+// Público tuyo (el que lleva el ojo, `icono`) dice a quiénes se lo mostrás y cómo, en una línea con el ojo y sin insignia de color:
+// «Lo ven todos como «Turno médico»» (spec 2026-10-29-mi-espacio-evento-publico, 5.1). Con el aviso por mail apagado, suma después
+// la insignia gris (spec 2026-11-27-evento-mail-optativo, 7). Uno de otra persona, nada de quién está
 const htmlDeProximo = (item) => {
   const icono = `<span class="me-prox-icono ${esc(item.clase)}" aria-hidden="true">${iconoOPunto(item.clase, item.icono)}</span>`;
   const titulo = Object.hasOwn(item, 'evento_id')
@@ -2873,6 +2880,8 @@ const htmlDeProximo = (item) => {
     quien = item.icono === 'ojo' ? `<span class="me-lo-ven">${ICONO_DEL_OJO}${esc(item.quien)}</span>`
       : `<span class="me-insignia ${item.clase === 'propio' ? 'azul' : 'violeta'}">${esc(item.quien)}</span>`;
   }
+  // Un Público tuyo sin aviso por mail suma su insignia gris después de «Lo ven …»
+  if (quien !== '' && item.sin_aviso === true) quien += `<span class="me-insignia gris">${INSIGNIA_SIN_AVISO_POR_MAIL}</span>`;
   // Votar la principal suma su enlace «Votar» al detalle
   const votar = conTexto(item.enlace) ? enlaceVotar(item.enlace) : '';
   const detalle = quien !== '' || conTexto(item.detalle) || votar !== ''
@@ -2964,6 +2973,12 @@ const BARRA_DE_TIPOS = Object.freeze({
 const FRASE_SIN_TIPO = 'Elegí una opción para ver a quién le llega.';
 const FRASE_DEL_PRIVADO = 'Solo vos lo ves. Nadie más, ni en la agenda ni por mail.';
 const FRASE_DEL_LABORAL = 'Lo ven las personas que elijas, con todo el detalle. A esas personas les llega un mail.';
+// La de un Público con el aviso por mail apagado (spec 2026-11-27-evento-mail-optativo, 2 y 4): no depende de la fecha, así que es del
+// navegador; con una persona en la cadena y con varias
+const FRASE_SIN_AVISO_POR_MAIL = Object.freeze({
+  uno: 'De quien dependés: no le va a llegar ningún mail por este evento.',
+  varios: 'De quienes dependés: no les va a llegar ningún mail por este evento.'
+});
 const ROTULO_DE_LAS_PERSONAS_DEL_PUBLICO = 'Quiénes lo ven en su agenda';
 const ROTULO_DE_LAS_PERSONAS = 'Con quién';
 // Desde cuántas personas que entran un Laboral pide confirmar, porque a cada una le llega un mail (spec, 2.4)
@@ -3057,14 +3072,16 @@ function erroresDelEvento(valores, hoy) {
  * ('' sin ellos); `tipo`, 'laboral' si es compartido, 'publico' si es un Personal (Público) y si no 'privado'; `para_todos`, el
  * «Todos» de su tipo (`para_todos` en un Laboral, `publico_todos` en un Público); `personas`, los ids elegidos ([] con
  * «Todos»); `conocidas`, las personas del evento con su nombre (`{ id, nombre }`), así una que ya no está en la lista para elegir
- * (se desactivó) se ve y no se saca sin querer; y, en un Público, `texto_publico`, lo que ven los demás, con `otro`
- * si no es uno de TEXTOS_PUBLICOS (lo escribió en «Otro»).
+ * (se desactivó) se ve y no se saca sin querer; en un Público, `texto_publico`, lo que ven los demás, con `otro`
+ * si no es uno de TEXTOS_PUBLICOS (lo escribió en «Otro»); y `aviso_por_mail`, la casilla del aviso por mail a la cadena (spec
+ * 2026-11-27-evento-mail-optativo, 4): prendida en uno nuevo y, en uno que se edita, la del ítem (apagada solo con el false; un
+ * Privado o un Laboral no la traen: prendida). Es del formulario mientras esté abierto: cambiar de tipo y volver no la toca.
  */
 function valoresDelEvento(item, { fecha = '' } = {}) {
   if (!esObjeto(item)) {
     return {
       id: null, titulo: '', fecha: comoTexto(fecha), desde: '', hasta: '', detalle: '', tipo: '', para_todos: false,
-      personas: [], conocidas: [], texto_publico: '', otro: false, recordatorio: RECORDATORIO_POR_DEFECTO
+      personas: [], conocidas: [], texto_publico: '', otro: false, aviso_por_mail: true, recordatorio: RECORDATORIO_POR_DEFECTO
     };
   }
   const nombres = Array.isArray(item.personas) ? item.personas : [];
@@ -3079,7 +3096,7 @@ function valoresDelEvento(item, { fecha = '' } = {}) {
     id: item.id ?? null, titulo: comoTexto(item.titulo), fecha: comoTexto(item.fecha), desde: comoTexto(item.desde),
     hasta: comoTexto(item.hasta), detalle: comoTexto(item.detalle), tipo, para_todos: paraTodos,
     personas: paraTodos ? [] : conocidas.map((persona) => persona.id), conocidas,
-    texto_publico: texto, otro: texto !== '' && !TEXTOS_PUBLICOS.includes(texto),
+    texto_publico: texto, otro: texto !== '' && !TEXTOS_PUBLICOS.includes(texto), aviso_por_mail: item.aviso_por_mail !== false,
     recordatorio: RECORDATORIOS.includes(item.recordatorio) ? item.recordatorio : RECORDATORIO_POR_DEFECTO
   };
 }
@@ -3105,10 +3122,10 @@ function valoresConElTipo(valores, tipo, original) {
 /**
  * El cuerpo de POST /mi-espacio/eventos y PUT /mi-espacio/eventos/:id (el formulario entero; spec
  * 2026-10-29-mi-espacio-evento-publico, 6.5): el título y el detalle recortados, la fecha, las horas (sin hora de fin, null), el
- * recordatorio y siempre `tipo`. Un Público suma `para_todos` (su «Todos»: solo el true literal), `personas` (con «Todos», []) y
- * `texto_publico`, recortado; un Laboral, `para_todos` y `personas`. Ninguno trae `compartido`: el servidor lee un Laboral con
- * `compartido` en el true literal y «Todos» como el «Toda la administración» de una pestaña con la página anterior. Un Privado, solo
- * el tipo.
+ * recordatorio y siempre `tipo`. Un Público suma `para_todos` (su «Todos»: solo el true literal), `personas` (con «Todos», []),
+ * `texto_publico`, recortado, y `aviso_por_mail` (la casilla: false solo si está apagada; spec 2026-11-27-evento-mail-optativo, 5.1);
+ * un Laboral, `para_todos` y `personas`. Ninguno trae `compartido`: el servidor lee un Laboral con `compartido` en el true literal y
+ * «Todos» como el «Toda la administración» de una pestaña con la página anterior. Un Privado, solo el tipo.
  */
 function cuerpoDelEvento(valores) {
   const datos = esObjeto(valores) ? valores : {};
@@ -3119,7 +3136,12 @@ function cuerpoDelEvento(valores) {
   };
   const paraTodos = datos.para_todos === true;
   const personas = !paraTodos && Array.isArray(datos.personas) ? [...datos.personas] : [];
-  if (tipo === 'publico') return { ...cuerpo, para_todos: paraTodos, personas, texto_publico: comoTexto(datos.texto_publico).trim() };
+  if (tipo === 'publico') {
+    return {
+      ...cuerpo, para_todos: paraTodos, personas, texto_publico: comoTexto(datos.texto_publico).trim(),
+      aviso_por_mail: datos.aviso_por_mail !== false
+    };
+  }
   if (tipo === 'laboral') return { ...cuerpo, para_todos: paraTodos, personas };
   return cuerpo;
 }
@@ -3202,8 +3224,7 @@ function htmlDeTiposDeEvento(valores) {
   }).join('');
 }
 
-// El ícono del mail y el del calendario de las frases (Lucide «mail» y «calendar»), decorativos
-const ICONO_DEL_MAIL = iconoDelMes('<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>');
+// El ícono del calendario de la ayuda de las personas (Lucide «calendar»), decorativo
 const ICONO_DEL_CALENDARIO = iconoDelMes('<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>');
 const renglonConIcono = (icono, contenido) => `<span class="me-renglon-aviso">${icono}<span>${contenido}</span></span>`;
 
@@ -3212,8 +3233,11 @@ const superioresDeLaLista = (lista) => listaDe(lista).filter((persona) => person
 
 /**
  * La frase debajo de la barra (spec 2026-11-04-agenda-aviso-y-dependencia, 2.2 y 2.3), en HTML escapado. Sin tipo, la que pide elegir; un
- * Privado y un Laboral, la suya, con el ícono de la grilla; un Público, solo el aviso por mail: las iniciales y el nombre corto de quienes
- * lo reciben y el texto que manda el servidor (`aviso`, '' mientras llega). Sin nadie de quien dependa, no hay frase ('').
+ * Privado y un Laboral, la suya, con el ícono de la grilla; un Público, la parte de abajo del recuadro del aviso por mail (arriba va la
+ * casilla, #ev-aviso-mail-rotulo, con «Aviso por mail»: spec 2026-11-27-evento-mail-optativo, 4): las iniciales y el nombre corto de
+ * quienes lo reciben y el texto que manda el servidor (`aviso`, '' mientras llega) o, con la casilla apagada (`aviso_por_mail` en el
+ * false literal), los chips en gris (`apagados`) y FRASE_SIN_AVISO_POR_MAIL, que no depende de la fecha. Sin nadie de quien dependa, no
+ * hay frase ('').
  */
 function htmlDeLaFraseDelTipo(valores, { superiores = [], aviso = '' } = {}) {
   const tipo = esObjeto(valores) ? valores.tipo : null;
@@ -3222,14 +3246,18 @@ function htmlDeLaFraseDelTipo(valores, { superiores = [], aviso = '' } = {}) {
   if (tipo !== 'publico') return esc(FRASE_SIN_TIPO);
   const personas = listaDe(superiores);
   if (personas.length === 0) return '';
+  const apagado = valores.aviso_por_mail === false;
   const chips = personas.map((persona) => `<span class="me-superior"><i aria-hidden="true">${esc(comoTexto(persona.iniciales))}</i>${esc(comoTexto(persona.nombre_corto))}</span>`).join('');
-  return renglonConIcono(ICONO_DEL_MAIL, `<b>Aviso por mail</b><span class="me-superiores">${chips}</span>${esc(comoTexto(aviso))}`);
+  const texto = apagado ? FRASE_SIN_AVISO_POR_MAIL[personas.length === 1 ? 'uno' : 'varios'] : comoTexto(aviso);
+  return `<span class="me-superiores${apagado ? ' apagados' : ''}">${chips}</span>${esc(texto)}`;
 }
 
 /**
  * La ayuda debajo de las personas (spec, 2.3), en HTML escapado. La de un Público, con el calendario, dice que quienes se marcan no reciben
  * mail y, si depende de alguien, que el mail les llega igual: si están todas marcadas, «ya están en la lista»; si no (una que se sacó, «Todos»
- * o un evento que se edita y no las tenía), solo que les llega. Decir «ya está» de alguien sin la marca sería falso. La de un Laboral, la suya.
+ * o un evento que se edita y no las tenía), solo que les llega. Decir «ya está» de alguien sin la marca sería falso. Con el aviso por mail
+ * apagado (spec 2026-11-27-evento-mail-optativo, 4), sin la parte del mail: marcadas, solo lo de la agenda; si no, nada más que la primera
+ * oración. La de un Laboral, la suya.
  */
 function htmlDeLaAyudaDeLasPersonas(valores, { superiores = [] } = {}) {
   const tipo = esObjeto(valores) ? valores.tipo : null;
@@ -3239,8 +3267,15 @@ function htmlDeLaAyudaDeLasPersonas(valores, { superiores = [] } = {}) {
   const lista = nombres.length < 2 ? nombres.join('') : `${nombres.slice(0, -1).join(', ')} y ${nombres.at(-1)}`;
   const elegidas = new Set(Array.isArray(valores.personas) ? valores.personas : []);
   const todasMarcadas = valores.para_todos !== true && listaDe(superiores).every((persona) => elegidas.has(persona.id));
+  const apagado = valores.aviso_por_mail === false;
   let marcados = '';
-  if (nombres.length === 1) {
+  if (apagado) {
+    if (todasMarcadas && nombres.length === 1) {
+      marcados = `${lista} ya está en la lista, porque dependés de esa persona. Si le sacás la marca, no lo ve en su agenda.`;
+    } else if (todasMarcadas && nombres.length > 1) {
+      marcados = `${lista} ya están en la lista, porque dependés de esas personas. Si les sacás la marca, no lo ven en su agenda.`;
+    }
+  } else if (nombres.length === 1) {
     marcados = todasMarcadas
       ? `${lista} ya está en la lista, porque dependés de esa persona. Si le sacás la marca, no lo ve en su agenda, pero igual le llega el mail.`
       : `A ${lista}, de quien dependés, le llega el mail aunque no tenga la marca.`;
@@ -4475,8 +4510,8 @@ function conectarFormularios() {
   porId('ms-guardar').addEventListener('click', guardarSaldos);
 
   // El evento: la fecha, la hora y el recordatorio piden cuándo sale el aviso (y la fecha y la hora cambian la vista previa); el tipo,
-  // las pastillas de lo que ven los demás y cada persona (delegados en su lista, que se vuelve a dibujar); lo escrito en «Otro»;
-  // «Guardar» y «Borrar». El detalle de uno ajeno: «Mi recordatorio» se guarda enseguida
+  // las pastillas de lo que ven los demás y cada persona (delegados en su lista, que se vuelve a dibujar); lo escrito en «Otro»; la
+  // casilla del aviso por mail; «Guardar» y «Borrar». El detalle de uno ajeno: «Mi recordatorio» se guarda enseguida
   for (const id of ['ev-fecha', 'ev-desde', 'ev-recordatorio']) {
     porId(id).addEventListener('input', alCambiarElCuando);
     porId(id).addEventListener('change', alCambiarElCuando);
@@ -4485,6 +4520,7 @@ function conectarFormularios() {
   porId('ev-textos').addEventListener('click', alTocarUnTexto);
   porId('ev-otro').addEventListener('input', alEscribirElOtro);
   porId('ev-personas').addEventListener('click', alTocarUnaPersona);
+  porId('ev-aviso-mail').addEventListener('change', alCambiarElAvisoPorMail);
   porId('ev-guardar').addEventListener('click', guardarEvento);
   porId('ev-borrar').addEventListener('click', pedirBorrarEvento);
   porId('mea-recordatorio').addEventListener('change', guardarMiRecordatorio);
@@ -6660,12 +6696,16 @@ function pintarQuienLoVe() {
   pintarPersonas();
 }
 
-// La frase, el rótulo y la ayuda de las personas: lo que depende de la lista de un Público y del aviso de la cadena, que llegan después
+// La frase, el rótulo y la ayuda de las personas: lo que depende de la lista de un Público y del aviso de la cadena, que llegan después.
+// La casilla del aviso por mail (spec 2026-11-27-evento-mail-optativo, 4) se ve solo en un Público de quien depende de alguien, con lo
+// que dicen los valores (la frase no la redibuja: el foco se queda en ella)
 function pintarLaFrase() {
   const formulario = pagina.evento;
   if (!formulario) return;
   const { valores, listas, avisoDeLaCadena } = formulario;
   const superiores = superioresDeLaLista(listas.publico?.lista);
+  porId('ev-aviso-mail-rotulo').hidden = !(valores.tipo === 'publico' && superiores.length > 0);
+  porId('ev-aviso-mail').checked = valores.aviso_por_mail !== false;
   const frase = porId('ev-tipo-ayuda');
   frase.innerHTML = htmlDeLaFraseDelTipo(valores, { superiores, aviso: avisoDeLaCadena });
   frase.hidden = frase.innerHTML === '';
@@ -6736,6 +6776,22 @@ async function alCambiarLaCasilla() {
   } finally {
     casilla.disabled = false;
   }
+}
+
+// La casilla del aviso por mail: lo que dice queda en los valores (cambiar de tipo y volver no la toca) y la frase y la ayuda de las
+// personas lo dicen; el foco sigue en la casilla, que no se vuelve a dibujar. El cuándo del servidor se sigue pidiendo: al prenderla,
+// ya está. Mientras guarda, como los tipos, los textos y las personas, no cambia nada: el pedido ya salió, y la casilla vuelve a lo
+// que dicen los valores
+function alCambiarElAvisoPorMail() {
+  const formulario = pagina.evento;
+  if (!formulario) return;
+  if (formulario.guardando) {
+    pintarLaFrase();
+    return;
+  }
+  const casilla = porId('ev-aviso-mail');
+  formulario.valores = { ...valoresDelFormularioDeEvento(formulario), aviso_por_mail: casilla.checked === true };
+  pintarLaFrase();
 }
 
 // Un clic en un tipo (uno deshabilitado, o el que ya está, no hace nada): el formulario se vuelve a dibujar para ese tipo (con quién

@@ -878,6 +878,8 @@ CREATE TABLE `mi_espacio_restituibles` (
 -- El evento Personal (Público) (database/updates/migracion-mi-espacio-evento-publico.sql): publico, publico_todos y
 -- texto_publico en los eventos (un Público se guarda con compartido y para_todos en 0: para lo demás es un evento personal de
 -- quien lo creó) y a quién se le muestra uno con personas elegidas (mi_espacio_evento_vistas)
+-- El aviso por mail optativo (database/updates/migracion-mi-espacio-evento-aviso-por-mail.sql): aviso_por_mail en los eventos, 0
+-- en un Público que no se avisa por mail a la cadena de quien lo cargó
 -- =====================================================
 CREATE TABLE `mi_espacio_eventos` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
@@ -893,6 +895,7 @@ CREATE TABLE `mi_espacio_eventos` (
   `publico_todos` tinyint(1) NOT NULL DEFAULT 0,
   `texto_publico` varchar(60) DEFAULT NULL,
   `publicado_at` datetime DEFAULT NULL,
+  `aviso_por_mail` tinyint(1) NOT NULL DEFAULT 1,
   `recordatorio` enum('ninguno','1h','2h','dia_anterior') NOT NULL DEFAULT '2h',
   `activo` tinyint(1) NOT NULL DEFAULT 1,
   `created_at` timestamp NULL DEFAULT current_timestamp(),

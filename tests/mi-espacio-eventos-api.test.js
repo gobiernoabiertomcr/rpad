@@ -804,6 +804,109 @@ describe('el aviso diario: la cadena en la API', () => {
       assert.equal(await publicadoDe(id), null);
     });
   });
+
+  // El tilde del aviso por mail de un Público (spec 2026-11-27-evento-mail-optativo, 5.1 a 5.4): solo el true y el false
+  // literales lo mueven, y nada da 400 por él
+  describe('el aviso por mail (spec 2026-11-27-evento-mail-optativo)', () => {
+    const VIEJO = '2026-01-01 10:00:00';
+    const avisoDe = async (id) =>
+      Number((await query('SELECT aviso_por_mail FROM mi_espacio_eventos WHERE id = ?', [id]))[0].aviso_por_mail);
+    const apagado = (cambios = {}) => ({ ...publicoCon('lector'), aviso_por_mail: false, ...cambios });
+
+    it('un alta Pública con false guarda 0; sin la clave, o con otra cosa, 1', async () => {
+      assert.equal(await avisoDe(await crear('adminB', apagado())), 0);
+      assert.equal(await avisoDe(await crear('adminB', publicoCon('lector'))), 1);
+      for (const valor of ['false', 0, null]) {
+        assert.equal(await avisoDe(await crear('adminB', { ...publicoCon('lector'), aviso_por_mail: valor })), 1,
+          JSON.stringify(valor));
+      }
+    });
+
+    it('un cambio sin la clave (una pestaña con la página anterior) lo deja como estaba; solo el true o el false lo mueven',
+      async () => {
+        const id = await crear('adminB', apagado());
+        const cambiarCon = async (cambios) => {
+          const res = await cambiar('adminB', id, { ...publicoCon('lector'), ...cambios });
+          assert.equal(res.status, 200, JSON.stringify(res.body));
+          return avisoDe(id);
+        };
+        assert.equal(await cambiarCon({}), 0);
+        for (const valor of ['true', 1, null]) assert.equal(await cambiarCon({ aviso_por_mail: valor }), 0, JSON.stringify(valor));
+        assert.equal(await cambiarCon({ aviso_por_mail: true }), 1);
+        for (const valor of ['false', 0, null]) assert.equal(await cambiarCon({ aviso_por_mail: valor }), 1, JSON.stringify(valor));
+        assert.equal(await cambiarCon({}), 1);
+        assert.equal(await cambiarCon({ aviso_por_mail: false }), 0);
+      });
+
+    it('un Privado y un Laboral guardan 1 aunque llegue false; pasados a Público sin la clave, arrancan prendidos', async () => {
+      const privado = await crear('adminB', { aviso_por_mail: false });
+      assert.equal(await avisoDe(privado), 1);
+      assert.equal(await avisoDe(await crear('adminB', { ...compartidoCon('editor'), aviso_por_mail: false })), 1);
+      assert.equal((await cambiar('adminB', privado, publicoCon('lector'))).status, 200);
+      assert.equal(await avisoDe(privado), 1);
+      // Un Público apagado que pasa a Privado y vuelve a Público no hereda el 0 de antes
+      const id = await crear('adminB', apagado());
+      assert.equal((await cambiar('adminB', id, { tipo: 'privado', aviso_por_mail: false })).status, 200);
+      assert.equal(await avisoDe(id), 1);
+      assert.equal((await cambiar('adminB', id, publicoCon('lector'))).status, 200);
+      assert.equal(await avisoDe(id), 1);
+    });
+
+    it('publicado_at: prender el tilde lo escribe, aunque no cambie la fecha; apagarlo o dejarlo como estaba, no', async () => {
+      const id = await crear('adminB', apagado());
+      await ponerPublicado(id, VIEJO);
+      assert.equal((await cambiar('adminB', id, publicoCon('lector'))).status, 200);
+      assert.equal(await publicadoDe(id), VIEJO);
+      assert.equal((await cambiar('adminB', id, { ...publicoCon('lector'), aviso_por_mail: true })).status, 200);
+      assert.notEqual(await publicadoDe(id), VIEJO);
+      assert.match(await publicadoDe(id), /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+      await ponerPublicado(id, VIEJO);
+      assert.equal((await cambiar('adminB', id, { ...publicoCon('lector'), aviso_por_mail: true })).status, 200);
+      assert.equal(await publicadoDe(id), VIEJO);
+      assert.equal((await cambiar('adminB', id, apagado())).status, 200);
+      assert.equal(await publicadoDe(id), VIEJO);
+    });
+
+    it('el mensaje al guardar: con la cadena y el tilde apagado, «sin aviso por mail»; sin nadie arriba, como siempre',
+      async () => {
+        await conCadena();
+        const alta = await api.post('/mi-espacio/eventos', formulario(apagado()), como('adminB'));
+        assert.equal(alta.status, 201, JSON.stringify(alta.body));
+        assert.equal(alta.body.message,
+          'Evento guardado. Lo ve Test l. como «Trámite personal» en su agenda, sin aviso por mail.');
+        // Sin la clave sigue apagado, y el mensaje lo dice
+        assert.equal((await cambiar('adminB', alta.body.data.id, publicoCon('lector'))).body.message,
+          'Evento cambiado. Lo ve Test l. como «Trámite personal» en su agenda, sin aviso por mail.');
+        // Para hoy no le llegaría igual, pero apagado lo dice (spec, 5.3)
+        const paraHoy = await api.post('/mi-espacio/eventos',
+          formulario(apagado({ fecha: hoy, desde: '23:58', hasta: '23:59' })), como('adminB'));
+        assert.equal(paraHoy.status, 201, JSON.stringify(paraHoy.body));
+        assert.equal(paraHoy.body.message,
+          'Evento guardado. Lo ve Test l. como «Trámite personal» en su agenda, sin aviso por mail.');
+        const sinCadena = await api.post('/mi-espacio/eventos',
+          formulario({ ...publicoCon('adminB'), aviso_por_mail: false }), como('lector'));
+        assert.equal(sinCadena.status, 201, JSON.stringify(sinCadena.body));
+        assert.equal(sinCadena.body.message, 'Evento guardado. Lo ve Test adminB como «Trámite personal» en su agenda.');
+      });
+
+    it('GET /eventos: el Público propio trae aviso_por_mail; el de otra persona, recortado, no; el Resumen lo dice', async () => {
+      const id = await crear('adminB', apagado({ fecha: dia(1) }));
+      const prendido = await crear('adminB', { ...publicoCon('lector'), fecha: dia(1), desde: '12:00', hasta: '13:00' });
+      const mios = await eventosDe('adminB', dia(1), dia(1));
+      assert.equal(mios.find((evento) => evento.id === id).aviso_por_mail, false);
+      assert.equal(mios.find((evento) => evento.id === prendido).aviso_por_mail, true);
+      const ajeno = (await eventosDe('lector', dia(1), dia(1))).find((evento) => evento.id === id);
+      assert.deepEqual(Object.keys(ajeno),
+        ['id', 'fecha', 'desde', 'hasta', 'es_mio', 'compartido', 'publico', 'creador', 'titulo', 'texto_publico']);
+      assert.deepEqual(Object.keys(await datos.eventoVisible(id, { id: idDe('lector'), rol: 'lector' })),
+        ['id', 'creado_por', 'creador', 'fecha', 'desde', 'hasta', 'compartido', 'publico', 'texto_publico']);
+      // «Hoy y mañana» del Resumen de quien lo cargó
+      const resumen = (await api.get('/mi-espacio/resumen', como('adminB'))).body.data.hoy_y_manana.eventos;
+      assert.deepEqual(resumen.map((evento) => [evento.id, evento.quien]), [
+        [id, 'lo ve Test l. como «Trámite personal», sin aviso por mail'], [prendido, 'lo ve Test l. como «Trámite personal»']
+      ]);
+    });
+  });
 });
 
 describe('Review Focus 3: cuándo sale el aviso, con los feriados de cada pedido', () => {
@@ -865,7 +968,8 @@ describe('los datos (services/miEspacioEventosDatos.js)', () => {
     assert.deepEqual(propio, {
       id, creado_por: idDe('adminA'), creador: 'Test adminA', titulo: 'Reunión de equipo', detalle: null, fecha: q(1),
       desde: '10:00', hasta: null, compartido: true, para_todos: false, publico: false, publico_todos: false,
-      texto_publico: null, recordatorio: '2h', personas: [{ id: idDe('adminB'), nombre: 'Test adminB', sin_recordatorio: false }]
+      texto_publico: null, aviso_por_mail: true, recordatorio: '2h',
+      personas: [{ id: idDe('adminB'), nombre: 'Test adminB', sin_recordatorio: false }]
     });
     assert.equal(await datos.eventoPropio(id, idDe('adminB')), null);
     assert.equal(await datos.eventoPropio('abc', idDe('adminA')), null);
@@ -1585,8 +1689,8 @@ describe('Personal (Público)', () => {
   const CLAVES_DEL_AJENO_PUBLICO = ['id', 'fecha', 'desde', 'hasta', 'es_mio', 'compartido', 'publico', 'creador', 'titulo',
     'texto_publico'];
   const CLAVES_DEL_MIO_PUBLICO = ['id', 'titulo', 'detalle', 'fecha', 'desde', 'hasta', 'es_mio', 'compartido', 'para_todos',
-    'publico', 'publico_todos', 'texto_publico', 'creador', 'personas', 'personas_ids', 'recordatorio', 'recordatorio_texto',
-    'mi_recordatorio', 'aviso', 'quien_texto'];
+    'publico', 'publico_todos', 'texto_publico', 'aviso_por_mail', 'creador', 'personas', 'personas_ids', 'recordatorio',
+    'recordatorio_texto', 'mi_recordatorio', 'aviso', 'quien_texto'];
   const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   // Las columnas del Público de un evento y a quién se le muestra, por SQL
@@ -2023,7 +2127,7 @@ describe('Personal (Público)', () => {
         assert.deepEqual(propio, {
           id, creado_por: idDe('lector'), creador: 'Test lector', titulo: 'Turno con el dentista', detalle: 'Llevar el carnet',
           fecha: q(1), desde: '10:00', hasta: null, compartido: false, para_todos: false, publico: true, publico_todos: false,
-          texto_publico: 'Turno médico', recordatorio: '2h', personas: [],
+          texto_publico: 'Turno médico', aviso_por_mail: true, recordatorio: '2h', personas: [],
           vistas: [{ id: idDe('adminA'), nombre: 'Test adminA' }, { id: idDe('colab'), nombre: 'Test colab' }]
         });
         const RECORTADO = {

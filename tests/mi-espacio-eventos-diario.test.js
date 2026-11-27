@@ -69,12 +69,13 @@ const cadena = async () => {
 const MARCA = () => `Secreto-${sufijo()}`;
 const evento = async ({
   creador, titulo = MARCA(), detalle = 'Detalle del evento', fecha = '2026-11-06', desde = '10:00', hasta = null, publico = 0, todos = 0, texto = null,
-  vistas = [], publicado = null, compartido = 0, personas = [], paraTodos = 0
+  vistas = [], publicado = null, compartido = 0, personas = [], paraTodos = 0, avisoPorMail = 1
 }) => {
   const { insertId: id } = await query(
-    `INSERT INTO mi_espacio_eventos (creado_por, titulo, detalle, fecha, desde, hasta, compartido, para_todos, publico, publico_todos, texto_publico, publicado_at, recordatorio)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ninguno')`,
-    [creador.id, titulo, detalle, fecha, desde, hasta, compartido, paraTodos, publico, todos, texto, publicado]
+    `INSERT INTO mi_espacio_eventos (creado_por, titulo, detalle, fecha, desde, hasta, compartido, para_todos, publico, publico_todos, texto_publico, publicado_at,
+       aviso_por_mail, recordatorio)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ninguno')`,
+    [creador.id, titulo, detalle, fecha, desde, hasta, compartido, paraTodos, publico, todos, texto, publicado, avisoPorMail]
   );
   for (const quien of vistas) await query('INSERT INTO mi_espacio_evento_vistas (evento_id, usuario_id) VALUES (?, ?)', [id, quien.id]);
   for (const quien of personas) await query('INSERT INTO mi_espacio_evento_personas (evento_id, usuario_id) VALUES (?, ?)', [id, quien.id]);
@@ -356,6 +357,58 @@ describe('a las 8:05', () => {
     await publico({ creador: micaela, fecha: '2026-11-09', desde: '09:00', publicado: '2026-11-06 15:00:00' });
     assert.equal((await corrida('manana', '2026-11-09 08:05:00')).enviados, 2);
     assert.equal((await esperarDe(federico.email)).length, 1);
+  });
+});
+
+// El aviso por mail optativo (spec 2026-11-27-evento-mail-optativo, 6): un Público con el tilde apagado no le llega a la cadena; lo propio, sí
+describe('con el aviso por mail apagado', () => {
+  it('a las 14:00, con otro prendido el mismo día, a la cadena le llega solo el prendido', async () => {
+    const { graciela, federico, micaela } = await cadena();
+    const apagado = await publico({ creador: micaela, texto: 'Asunto familiar', avisoPorMail: 0 });
+    const prendido = await publico({ creador: micaela, desde: '11:00' });
+    assert.deepEqual(await corrida('tarde', JUEVES_14), resultado({ enviados: 3 }));
+    for (const superior of [federico, graciela]) {
+      const [mensaje] = await esperarDe(superior.email);
+      const html = await mailpit.html(mensaje.ID);
+      const texto = await mailpit.texto(mensaje.ID);
+      assert.match(html, /Fuera de la oficina/);
+      assert.match(texto, /Fuera de la oficina/);
+      assert.doesNotMatch(html, /Asunto familiar/);
+      assert.doesNotMatch(texto, /Asunto familiar/);
+    }
+    // Quien lo cargó lo recibe igual, con su título
+    const htmlDeMicaela = await mailpit.html((await esperarDe(micaela.email))[0].ID);
+    assert.ok(htmlDeMicaela.includes(apagado.titulo));
+    assert.ok(htmlDeMicaela.includes(prendido.titulo));
+    assert.deepEqual(await informados(), [[prendido.id, federico.id, '2026-11-06'], [prendido.id, graciela.id, '2026-11-06']].sort((a, b) => a[1] - b[1]));
+  });
+
+  it('con solo el apagado, a la cadena no le llega ningún mail y la corrida termina sin error', async () => {
+    const { graciela, federico, micaela } = await cadena();
+    await publico({ creador: micaela, texto: 'Asunto familiar', avisoPorMail: 0 });
+    assert.deepEqual(await corrida('tarde', JUEVES_14), resultado({ enviados: 1 }));
+    assert.equal((await esperarDe(micaela.email)).length, 1);
+    assert.deepEqual(await recibidos(federico.email), []);
+    assert.deepEqual(await recibidos(graciela.email), []);
+    assert.deepEqual(await informados(), []);
+    const anotada = await corridaAnotada();
+    assert.deepEqual([anotada.resultado, Number(anotada.con_errores)], ['Enviados: 1.', 0]);
+  });
+
+  it('a las 8:05, con un rezagado apagado y otro prendido, a la cadena le llega solo el prendido', async () => {
+    const { graciela, federico, micaela } = await cadena();
+    await publico({ creador: micaela, desde: '08:15', texto: 'Asunto familiar', publicado: '2026-11-05 14:02:00', avisoPorMail: 0 });
+    await publico({ creador: micaela, desde: '09:00', publicado: '2026-11-05 14:02:00' });
+    assert.deepEqual(await corrida('manana', VIERNES_8), resultado({ enviados: 2 }));
+    for (const superior of [federico, graciela]) {
+      const [mensaje] = await esperarDe(superior.email);
+      const html = await mailpit.html(mensaje.ID);
+      const texto = await mailpit.texto(mensaje.ID);
+      assert.match(html, /<strong>Nuevo:<\/strong> Test m[^<]*: Fuera de la oficina/);
+      assert.match(texto, /Nuevo: Test m[^\n]*: Fuera de la oficina/);
+      assert.doesNotMatch(html, /Asunto familiar/);
+      assert.doesNotMatch(texto, /Asunto familiar/);
+    }
   });
 });
 

@@ -9,7 +9,8 @@ import {
   RECORDATORIOS, RECORDATORIO_POR_DEFECTO, TEXTO_RECORDATORIO, AVISO_CORTO, LARGO_TITULO_EVENTO, LARGO_DETALLE_EVENTO,
   FECHA_MINIMA_EVENTO, ROLES_DE_ADMINISTRACION, DIAS_DE_PROXIMOS, VENTANA_DE_LA_CORRIDA, MINUTOS_SIN_CORRER, BLOQUEO_EVENTOS,
   MINUTOS_A_TIEMPO, HORA_DE_LOS_ATRASADOS, HORA_DE_CIERRE_DE_LOS_ATRASADOS, MENSAJES_EVENTO, TIPOS_DE_EVENTO, TEXTOS_PUBLICOS,
-  LARGO_TEXTO_PUBLICO, textoDeQuienVeElPublico, fechaMaximaEvento, textoRangoEvento, validarEvento, momentoDelAviso,
+  LARGO_TEXTO_PUBLICO, SUFIJO_SIN_AVISO_POR_MAIL, textoDeQuienVeElPublico, fechaMaximaEvento, textoRangoEvento, validarEvento,
+  avisoPorMailAlGuardar, momentoDelAviso,
   textoDelAviso, cuandoDelEvento, cuandoCortoDelEvento, cuandoEsElEvento, cuandoFue, textoDelEvento, listaConY, inicialesDe,
   recordatoriosQueTocan, cambioQueAvisa, emailsDelGuardado, validarAvisoDelEvento, avisoDe, personasDelPedido, itemDeEvento,
   itemDeLicencia, itemDeAusencia, itemsDeFeriados, eventosDeHoyYManana, textoDelResultadoDeEventos,
@@ -128,7 +129,7 @@ describe('validarEvento', () => {
       datos: {
         titulo: 'Reunión de equipo', detalle: null, fecha: '2026-10-27', desde: '10:00', hasta: '11:00', tipo: 'privado',
         compartido: false, para_todos: false, publico: false, publico_todos: false, personas: [], texto_publico: null,
-        recordatorio: '2h'
+        aviso_por_mail: true, recordatorio: '2h'
       },
       error: null
     });
@@ -291,7 +292,7 @@ describe('validarEvento', () => {
     };
     const PRIVADO = Object.freeze({
       ...BASE, tipo: 'privado', compartido: false, para_todos: false, publico: false, publico_todos: false, personas: [],
-      texto_publico: null
+      texto_publico: null, aviso_por_mail: true
     });
 
     it('Personal (Privado): nada de compartir, aunque el cuerpo traiga personas, «Todos» o un texto público', () => {
@@ -316,7 +317,8 @@ describe('validarEvento', () => {
     });
 
     it('Personal (Público): compartido y para_todos en false, con «Todos» (publico_todos) o con personas, y el texto', () => {
-      const publico = { ...PRIVADO, tipo: 'publico', publico: true, texto_publico: 'Turno médico' };
+      // Sin la clave aviso_por_mail, null: «no vino» (lo resuelve avisoPorMailAlGuardar)
+      const publico = { ...PRIVADO, tipo: 'publico', publico: true, texto_publico: 'Turno médico', aviso_por_mail: null };
       assert.deepEqual(datosDe({ tipo: 'publico', para_todos: true, texto_publico: '  Turno médico  ' }),
         { ...publico, publico_todos: true });
       assert.deepEqual(datosDe({ tipo: 'publico', personas: ['7', 2, '7'], texto_publico: 'Turno médico' }),
@@ -332,6 +334,26 @@ describe('validarEvento', () => {
       for (const paraTodos of ['true', 1, '1']) {
         assert.deepEqual(datosDe({ tipo: 'publico', para_todos: paraTodos, personas: [3], texto_publico: 'Turno médico' }),
           { ...publico, personas: [3] }, String(paraTodos));
+      }
+    });
+
+    // El aviso por mail optativo (spec 2026-11-27-evento-mail-optativo, 5.1): solo el true y el false literales lo mueven, y
+    // ningún valor da error (es una casilla, no un dato que se escriba)
+    it('aviso_por_mail: solo el true y el false literales, en un Público', () => {
+      const publico = (aviso) => ({ tipo: 'publico', para_todos: true, texto_publico: 'Turno médico', aviso_por_mail: aviso });
+      assert.equal(datosDe(publico(false)).aviso_por_mail, false);
+      assert.equal(datosDe(publico(true)).aviso_por_mail, true);
+      for (const aviso of ['false', 'true', 0, 1, '0', '1', null, undefined, '', [], {}, Symbol('x')]) {
+        assert.equal(datosDe(publico(aviso)).aviso_por_mail, null, String(aviso));
+      }
+      // Sin la clave, null
+      assert.equal(datosDe({ tipo: 'publico', para_todos: true, texto_publico: 'Turno médico' }).aviso_por_mail, null);
+      // Un Privado y un Laboral, siempre true, venga lo que venga
+      for (const aviso of [false, true, null, 0, 'false']) {
+        assert.equal(datosDe({ tipo: 'privado', aviso_por_mail: aviso }).aviso_por_mail, true, String(aviso));
+        assert.equal(datosDe({ tipo: 'laboral', para_todos: true, aviso_por_mail: aviso }).aviso_por_mail, true, String(aviso));
+        // Un cuerpo de antes, sin el tipo, tampoco
+        assert.equal(datosDe({ compartido: true, para_todos: true, aviso_por_mail: aviso }).aviso_por_mail, true, String(aviso));
       }
     });
 
@@ -406,6 +428,54 @@ describe('validarEvento', () => {
       assert.deepEqual(errorDe({ detalle: emojis(1001), tipo: 'publico', para_todos: true, texto_publico: '' }),
         { campo: 'detalle', mensaje: MENSAJES_EVENTO.detalle });
     });
+  });
+});
+
+// Lo que se guarda en aviso_por_mail (spec 2026-11-27-evento-mail-optativo, 5.1), de los datos de validarEvento y el evento de
+// antes: una pestaña con la página anterior (que no manda la clave) no prende ni apaga nada
+describe('avisoPorMailAlGuardar', () => {
+  const PUBLICO = Object.freeze({ tipo: 'publico', publico: true });
+  it('en un alta, prendido salvo el false literal', () => {
+    assert.equal(avisoPorMailAlGuardar({ ...PUBLICO, aviso_por_mail: null }), true);
+    assert.equal(avisoPorMailAlGuardar({ ...PUBLICO, aviso_por_mail: null }, null), true);
+    assert.equal(avisoPorMailAlGuardar({ ...PUBLICO, aviso_por_mail: false }, null), false);
+    assert.equal(avisoPorMailAlGuardar({ ...PUBLICO, aviso_por_mail: true }, null), true);
+  });
+
+  it('en un cambio sin la clave, lo que tenía si ya era Público; si no, prendido', () => {
+    assert.equal(avisoPorMailAlGuardar({ ...PUBLICO, aviso_por_mail: null }, { publico: true, aviso_por_mail: false }), false);
+    assert.equal(avisoPorMailAlGuardar({ ...PUBLICO, aviso_por_mail: null }, { publico: true, aviso_por_mail: true }), true);
+    // Como llega de la base (tinyint), igual
+    assert.equal(avisoPorMailAlGuardar({ ...PUBLICO, aviso_por_mail: null }, { publico: 1, aviso_por_mail: 0 }), false);
+    // De un Privado o un Laboral a Público: prendido, aunque traiga un 0 viejo
+    assert.equal(avisoPorMailAlGuardar({ ...PUBLICO, aviso_por_mail: null }, { publico: false, aviso_por_mail: false }), true);
+    // Un evento de antes, sin la clave: prendido
+    assert.equal(avisoPorMailAlGuardar({ ...PUBLICO, aviso_por_mail: null }, { publico: true }), true);
+  });
+
+  it('en un cambio con la clave, la del cuerpo', () => {
+    assert.equal(avisoPorMailAlGuardar({ ...PUBLICO, aviso_por_mail: true }, { publico: true, aviso_por_mail: false }), true);
+    assert.equal(avisoPorMailAlGuardar({ ...PUBLICO, aviso_por_mail: false }, { publico: true, aviso_por_mail: true }), false);
+    assert.equal(avisoPorMailAlGuardar({ ...PUBLICO, aviso_por_mail: false }, { publico: false, aviso_por_mail: true }), false);
+  });
+
+  it('un Privado y un Laboral, siempre prendido', () => {
+    for (const tipo of ['privado', 'laboral']) {
+      assert.equal(avisoPorMailAlGuardar({ tipo, publico: false, aviso_por_mail: false }), true, tipo);
+      assert.equal(avisoPorMailAlGuardar({ tipo, publico: false, aviso_por_mail: false }, { publico: true, aviso_por_mail: false }),
+        true, tipo);
+    }
+    // Con los datos de validarEvento
+    assert.equal(avisoPorMailAlGuardar(validar({ tipo: 'privado', aviso_por_mail: false }).datos), true);
+    assert.equal(avisoPorMailAlGuardar(
+      validar({ tipo: 'publico', para_todos: true, texto_publico: 'Turno médico', aviso_por_mail: false }).datos), false);
+  });
+
+  it('nada tira', () => {
+    for (const datos of [null, undefined, 42, 'x', []]) assert.equal(avisoPorMailAlGuardar(datos), true, String(datos));
+    for (const anterior of [undefined, 42, 'x', []]) {
+      assert.equal(avisoPorMailAlGuardar({ ...PUBLICO, aviso_por_mail: null }, anterior), true, String(anterior));
+    }
   });
 });
 
@@ -1505,8 +1575,8 @@ describe('itemDeEvento', () => {
     const CLAVES_DEL_AJENO_PUBLICO = ['id', 'fecha', 'desde', 'hasta', 'es_mio', 'compartido', 'publico', 'creador', 'titulo',
       'texto_publico'];
     const CLAVES_DEL_MIO_PUBLICO = ['id', 'titulo', 'detalle', 'fecha', 'desde', 'hasta', 'es_mio', 'compartido', 'para_todos',
-      'publico', 'publico_todos', 'texto_publico', 'creador', 'personas', 'personas_ids', 'recordatorio', 'recordatorio_texto',
-      'mi_recordatorio', 'aviso', 'quien_texto'];
+      'publico', 'publico_todos', 'texto_publico', 'aviso_por_mail', 'creador', 'personas', 'personas_ids', 'recordatorio',
+      'recordatorio_texto', 'mi_recordatorio', 'aviso', 'quien_texto'];
     // El trámite de Carla para todos, entero (como lo dan los datos a quien lo creó), con lo que cambia cada caso
     const tramite = (datos) => evento({
       id: 7, creado_por: CARLA.id, creador: CARLA.nombre, titulo: 'Trámite en el banco', detalle: 'Llevar el carnet',
@@ -1583,13 +1653,32 @@ describe('itemDeEvento', () => {
       assert.deepEqual(mio, {
         id: 7, titulo: 'Trámite en el banco', detalle: 'Llevar el carnet', fecha: '2026-10-30', desde: '10:00', hasta: null,
         es_mio: true, compartido: false, para_todos: false, publico: true, publico_todos: true, texto_publico: 'Trámite personal',
-        creador: 'Carla', personas: [], personas_ids: [], recordatorio: '1h', recordatorio_texto: '1 hora antes',
-        mi_recordatorio: '1h', aviso: mio.aviso, quien_texto: 'Lo ven todos como «Trámite personal»'
+        aviso_por_mail: true, creador: 'Carla', personas: [], personas_ids: [], recordatorio: '1h',
+        recordatorio_texto: '1 hora antes', mi_recordatorio: '1h', aviso: mio.aviso, quien_texto: 'Lo ven todos como «Trámite personal»'
       });
       assert.equal(mio.aviso.momento, '2026-10-30 09:00');
       assert.deepEqual(Object.keys(mio), CLAVES_DEL_MIO_PUBLICO);
       // Como llegan de la base (tinyint), igual
       assert.deepEqual(comoLoVe(CARLA, { publico: 1, publico_todos: 1, compartido: 0, para_todos: 0 }), mio);
+    });
+
+    // El aviso por mail optativo (spec 2026-11-27-evento-mail-optativo, 5.4): solo el tuyo lo trae; apagado solo con un 0 o un
+    // false de los datos, y sin la clave (los datos de antes), prendido
+    it('el tuyo trae aviso_por_mail; el de otra persona, no', () => {
+      for (const aviso of [0, '0', false]) {
+        const apagado = comoLoVe(CARLA, { aviso_por_mail: aviso });
+        assert.equal(apagado.aviso_por_mail, false, String(aviso));
+        assert.deepEqual(Object.keys(apagado), CLAVES_DEL_MIO_PUBLICO, String(aviso));
+      }
+      for (const aviso of [1, '1', true, null, undefined, 'x']) {
+        assert.equal(comoLoVe(CARLA, { aviso_por_mail: aviso }).aviso_por_mail, true, String(aviso));
+      }
+      const deCarla = comoLoVe(TOMAS, { aviso_por_mail: 0 });
+      assert.deepEqual(deCarla, DE_CARLA);
+      assert.deepEqual(Object.keys(deCarla), CLAVES_DEL_AJENO_PUBLICO);
+      // Un Privado y un Laboral no lo traen
+      assert.ok(!('aviso_por_mail' in item({ aviso_por_mail: 0 })));
+      assert.ok(!('aviso_por_mail' in item({ compartido: true, para_todos: true, aviso_por_mail: 0 })));
     });
 
     it('el tuyo con personas: «Lo ve Julián…», «Lo ven Julián y Tomás…» o «Lo ven 3 personas…», con sus nombres y sus ids', () => {
@@ -2073,6 +2162,44 @@ describe('eventosDeHoyYManana', () => {
     // Uno de otra persona con un quien_texto (no lo trae): nada de quién está
     assert.deepEqual(eventosDeHoyYManana([item({ es_mio: false, publico: true, quien_texto: 'De Carla' })], HOY)
       .map(({ quien, detalle }) => [quien, detalle]), [['', 'Hoy']]);
+  });
+
+  // El aviso por mail optativo (spec 2026-11-27-evento-mail-optativo, 7): el tuyo con el tilde apagado suma «, sin aviso por
+  // mail» a quién lo ve; el de otra persona, nada
+  it('un Personal (Público) tuyo sin aviso por mail: «…, sin aviso por mail»', () => {
+    assert.equal(SUFIJO_SIN_AVISO_POR_MAIL, ', sin aviso por mail');
+    const tramite = {
+      id: 9, creado_por: 2, creador: 'Carla Inés Benítez', titulo: 'Trámite en el banco', detalle: 'Llevar el carnet', fecha: HOY,
+      desde: '11:00', hasta: null, compartido: false, para_todos: false, publico: true, publico_todos: true,
+      texto_publico: 'Trámite personal', recordatorio: '1h', personas: [], vistas: [], aviso_por_mail: 0
+    };
+    const usuarios = [{ id: 2, nombre: 'Carla Inés Benítez' }, { id: 8, nombre: 'Tomás Quiroga' }];
+    const comoLoVe = (usuarioId, datos = {}) => eventosDeHoyYManana(
+      [itemDeEvento({ ...tramite, ...datos }, { usuarioId, ahora: `${HOY} 09:00:00`, feriados: new Set(), usuarios })], HOY);
+    assert.deepEqual(comoLoVe(2), [{
+      id: 9, hora: '11:00', titulo: 'Trámite en el banco', compartido: false, publico: true,
+      detalle: 'Hoy · lo ven todos como «Trámite personal», sin aviso por mail', dia: 'hoy',
+      quien: 'lo ven todos como «Trámite personal», sin aviso por mail'
+    }]);
+    // Prendido, como siempre
+    assert.equal(comoLoVe(2, { aviso_por_mail: 1 })[0].quien, 'lo ven todos como «Trámite personal»');
+    // El de otra persona, sin quién está
+    assert.deepEqual(comoLoVe(8).map(({ quien, detalle }) => [quien, detalle]), [['', 'Hoy']]);
+    // Con los ítems armados a mano: solo el false literal del ítem, y solo en un Público tuyo
+    const conTilde = (datos) => eventosDeHoyYManana([item({ publico: true, quien_texto: 'Lo ve Federico como «Turno médico»',
+      ...datos })], HOY)[0];
+    assert.equal(conTilde({ aviso_por_mail: false }).quien, 'lo ve Federico como «Turno médico», sin aviso por mail');
+    assert.equal(conTilde({ aviso_por_mail: false, fecha: '2026-10-27' }).detalle,
+      'Mañana · lo ve Federico como «Turno médico», sin aviso por mail');
+    for (const aviso of [true, 0, null, undefined]) {
+      assert.equal(conTilde({ aviso_por_mail: aviso }).quien, 'lo ve Federico como «Turno médico»', String(aviso));
+    }
+    assert.deepEqual([conTilde({ es_mio: false, quien_texto: 'De Carla', aviso_por_mail: false })]
+      .map(({ quien, detalle }) => [quien, detalle]), [['', 'Hoy']]);
+    assert.equal(conTilde({ publico: false, quien_texto: 'Solo vos', aviso_por_mail: false }).quien, 'solo vos');
+    // Sin quién lo ve, no queda una coma suelta
+    assert.deepEqual([conTilde({ quien_texto: undefined, aviso_por_mail: false })].map(({ quien, detalle }) => [quien, detalle]),
+      [['', 'Hoy']]);
   });
 
   // Decisión del usuario (27/10/2026; spec 2026-10-27-mi-espacio-resumen, 4.4): los de hoy que ya terminaron no van

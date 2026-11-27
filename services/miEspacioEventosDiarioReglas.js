@@ -61,12 +61,15 @@ export const superioresConNombre = (id, usuarios) => {
  * El aviso de un guardado (spec, 2.5): «Evento guardado. Solo vos lo ves.», «Evento guardado. Lo ven Lucía y Tomás como «…» en su agenda, y
  * a Federico y Graciela les llega antes del evento.» o «Evento guardado. Con Federico.». `verbo`: 'guardado' o 'cambiado'; `quienTexto`,
  * el de itemDeEvento; `superiores`, los nombres cortos, y `aviso`, el de cuandoLlegaElAviso: sin nadie, o si no llega, no se nombra a nadie.
+ * `avisoPorMail`, el tilde guardado (spec 2026-11-27-evento-mail-optativo, 5.3): en un Público con la cadena y el false literal, «Evento
+ * guardado. Lo ve Lucía como «…» en su agenda, sin aviso por mail.», llegue o no el aviso; sin nadie arriba no vio ningún tilde y no lo dice.
  */
-export const mensajeDelGuardado = ({ tipo, verbo, quienTexto, superiores = [], aviso = null }) => {
+export const mensajeDelGuardado = ({ tipo, verbo, quienTexto, superiores = [], aviso = null, avisoPorMail = true }) => {
   const inicio = `Evento ${verbo}.`;
   if (tipo === 'privado') return `${inicio} Solo vos lo ves.`;
   // El punto de una inicial («Con Test e.») ya cierra la oración
   if (tipo !== 'publico') return `${inicio} ${quienTexto}${quienTexto.endsWith('.') ? '' : '.'}`;
+  if (superiores.length > 0 && avisoPorMail === false) return `${inicio} ${quienTexto} en su agenda, sin aviso por mail.`;
   if (superiores.length === 0 || aviso?.llega !== true) return `${inicio} ${quienTexto} en su agenda.`;
   return `${inicio} ${quienTexto} en su agenda, y a ${listaConY(superiores)} ${superiores.length === 1 ? 'le llega' : 'les llega'} antes del evento.`;
 };
@@ -111,10 +114,11 @@ const marcaDe = (evento, contexto) => {
  * Devuelve `{ propios, gente, informa, dias, soloHoy }`:
  * - `propios`, solo con la casilla: los que creó, de los tres tipos, y los Laborales de otra persona en los que está (haber apagado su
  *   recordatorio no los saca), `{ fecha, desde, titulo, detalle, marca }`;
- * - `gente`, siempre: los Públicos de quien tiene a esta persona en su cadena, sean o no de los que marcó, `{ fecha, desde, hasta, texto,
- *   nuevo }`. De un Público de otra persona, **ni el título ni el detalle: acá no se leen**, y por eso los Públicos ajenos se separan
- *   antes de hacer nada más con el evento. Uno que no es de su gente no entra, aunque se lo muestren: a quien solo fue elegida no le llega
- *   nada;
+ * - `gente`, sin casilla de por medio: los Públicos de quien tiene a esta persona en su cadena, sean o no de los que marcó, `{ fecha, desde,
+ *   hasta, texto, nuevo }`. De un Público de otra persona, **ni el título ni el detalle: acá no se leen**, y por eso los Públicos ajenos se
+ *   separan antes de hacer nada más con el evento. Uno que no es de su gente no entra, aunque se lo muestren: a quien solo fue elegida no le
+ *   llega nada. Uno con `aviso_por_mail` en el false literal (el tilde apagado de quien lo cargó; sin la clave, prendido: spec
+ *   2026-11-27-evento-mail-optativo, 6) tampoco: ni a las 14:00, ni a las 8:05, ni como rezagado, y no queda informado;
  * - `informa`: lo que queda informado si el mail sale, `{ evento_id, fecha }`.
  * A las 14:00 trae los días de `diasDelAviso` y, a un superior, los rezagados de hoy. A las 8:05, solo si tiene un rezagado: entonces trae
  * todo hoy, con `nuevo` en lo sin informar. Un rezagado es un Público de su gente, de hoy, sin informar, publicado antes de hoy (o sin dato:
@@ -134,7 +138,9 @@ export const mailDeLaPersona = ({ persona, eventos, informados, momento, ahora, 
   const rezagados = [];
   for (const evento of eventos) {
     if (esPublico(evento) && evento.creado_por !== persona.id) {
-      if (!evento.creador_activo || !superioresDe(evento.creado_por, usuarios).some((fila) => fila.id === persona.id)) continue;
+      // El tilde de quien lo cargó, sin leer nada más del evento (spec 2026-11-27-evento-mail-optativo, 6)
+      if (!evento.creador_activo || evento.aviso_por_mail === false) continue;
+      if (!superioresDe(evento.creado_por, usuarios).some((fila) => fila.id === persona.id)) continue;
       const rezagado = evento.fecha === hoy && sinInformar(evento) && evento.desde > hora
         && (evento.publicado_at === null || evento.publicado_at.slice(0, 10) < hoy);
       const item = {
